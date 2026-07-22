@@ -1,0 +1,165 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             xmlns:charts="using:Terrafa.Continuum.Frontend.Controls.Charts"
+             x:Class="Terrafa.Continuum.Frontend.Views.TransferFunctionView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <DockPanel>
+    <controls:TerminalTopBar DockPanel.Dock="Top"
+                             CommandText="TFN &lt;GO&gt;"
+                             SubtitleText="TRANSFER FUNCTION EDITOR">
+      <controls:TerminalTopBar.RightContent>
+        <TextBlock Text="editing: fig.draft_h — not yet committed to network" FontSize="12"
+                   Foreground="{StaticResource TextMutedBrush}" />
+      </controls:TerminalTopBar.RightContent>
+    </controls:TerminalTopBar>
+
+    <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="1"
+                               HintText="composition is checked term-by-term: each stage needs ν ≪ μ before σ can propagate through it" />
+
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+      <controls:TerminalStatusBar.LeftContent>
+        <StackPanel Orientation="Horizontal" Spacing="18">
+          <TextBlock Text="COMPOSITION = ORDERED PRIMITIVE CHAIN" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock Text="EACH STAGE VALIDATED INDEPENDENTLY" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </StackPanel>
+      </controls:TerminalStatusBar.LeftContent>
+      <controls:TerminalStatusBar.RightContent>
+        <TextBlock Text="σ PROPAGATION: ANALYTIC (CHAIN RULE) · NO MC FALLBACK NEEDED — BOTH STAGES C¹"
+                   FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+      </controls:TerminalStatusBar.RightContent>
+    </controls:TerminalStatusBar>
+
+    <controls:DraftBar DockPanel.Dock="Bottom"
+                       CommandText="COMPOSE f(u)=1/u AFTER g(x)=x^2 -&gt; fig.draft_h AS h">
+      <controls:DraftBar.ChipContent>
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <controls:Chip Text="PARSE ✓" Accent="green" />
+          <controls:Chip Text="C¹ per-stage ✓" Accent="green" />
+          <controls:Chip Text="⚠ pole at x=0 — domain restricted x&gt;0" Accent="amber" />
+          <controls:Chip Text="σ exact via chain rule" Accent="cyan" />
+        </StackPanel>
+      </controls:DraftBar.ChipContent>
+    </controls:DraftBar>
+
+    <Border DockPanel.Dock="Left" Width="250"
+            Background="{StaticResource BgPanelBrush}"
+            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+      <controls:PanelBox Title="FUNCTION LIBRARY">
+        <controls:PanelBox.InnerContent>
+          <StackPanel Margin="12,10" Spacing="10">
+            <Border BorderBrush="{StaticResource AmberBrush}" BorderThickness="1"
+                    Background="{StaticResource AmberFillBrush}" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE · IN USE" Foreground="{StaticResource AmberBrush}" />
+                <TextBlock Text="f(u) = 1/u" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource AmberSoftBrush}" />
+                <TextBlock Classes="tag" Text="C¹ on u≠0 · pole flagged" Margin="0,3,0,0"
+                           Foreground="{StaticResource TextFaintBrush}" />
+              </StackPanel>
+            </Border>
+            <Border BorderBrush="{StaticResource CyanBrush}" BorderThickness="1"
+                    Background="{StaticResource CyanFillBrush}" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE · IN USE" Foreground="{StaticResource CyanBrush}" />
+                <TextBlock Text="g(x) = x²" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource CyanSoftBrush}" />
+                <TextBlock Classes="tag" Text="C∞ · monotone on x&gt;0 only" Margin="0,3,0,0"
+                           Foreground="{StaticResource TextFaintBrush}" />
+              </StackPanel>
+            </Border>
+            <Border BorderBrush="{StaticResource TextGhostBrush}" BorderThickness="1" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE" Foreground="{StaticResource TextMutedBrush}" />
+                <TextBlock Text="exp(θ·x)" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource TextMutedBrush}" />
+              </StackPanel>
+            </Border>
+            <Border BorderBrush="{StaticResource TextGhostBrush}" BorderThickness="1" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE" Foreground="{StaticResource TextMutedBrush}" />
+                <TextBlock Text="log(x)" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource TextMutedBrush}" />
+              </StackPanel>
+            </Border>
+            <Border BorderBrush="{StaticResource TextGhostBrush}" BorderThickness="1" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE" Foreground="{StaticResource TextMutedBrush}" />
+                <TextBlock Text="sum(a, b)" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource TextMutedBrush}" />
+              </StackPanel>
+            </Border>
+            <Border BorderBrush="{StaticResource TextGhostBrush}" BorderThickness="1" Padding="9,7">
+              <StackPanel>
+                <TextBlock Classes="tag" Text="PRIMITIVE" Foreground="{StaticResource TextMutedBrush}" />
+                <TextBlock Text="clip(x, lo, hi)" FontSize="11" Margin="0,2,0,0"
+                           Foreground="{StaticResource TextMutedBrush}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </controls:PanelBox.InnerContent>
+        <controls:PanelBox.FooterContent>
+          <TextBlock Text="Drag a primitive onto the stack to compose. Each arrow into the stack is itself a density check, not just plumbing."
+                     FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </controls:PanelBox.FooterContent>
+      </controls:PanelBox>
+    </Border>
+
+    <Border DockPanel.Dock="Left" Width="400"
+            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+      <controls:PanelBox Title="COMPOSITION STACK" Hint="h = f ∘ g">
+        <controls:PanelBox.InnerContent>
+          <StackPanel Margin="18" HorizontalAlignment="Stretch">
+            <controls:NodeCard Variant="Measure" TagText="STAGE 1 · INPUT" TagRight="x"
+                               Title="measure x · tank_01.level (norm.)" TitleSize="14" />
+            <charts:EdgeLayer x:Name="Arrow1" Height="34" />
+            <controls:NodeCard Variant="Measure" TagText="STAGE 2 · g(x)" TagRight="C∞"
+                               Title="g(x) = x²" TitleSize="15">
+              <controls:NodeCard.ExtraContent>
+                <Border Background="{StaticResource BgChartBrush}" Width="150" Height="96"
+                        HorizontalAlignment="Left">
+                  <charts:LineChart x:Name="StageGChart" />
+                </Border>
+              </controls:NodeCard.ExtraContent>
+            </controls:NodeCard>
+            <charts:EdgeLayer x:Name="Arrow2" Height="34" />
+            <controls:NodeCard Variant="Transfer" TagText="STAGE 3 · f(u)" TagRight="C¹ on u≠0"
+                               Title="f(u) = 1/u" TitleSize="15">
+              <controls:NodeCard.ExtraContent>
+                <Border Background="{StaticResource BgChartBrush}" Width="150" Height="96"
+                        HorizontalAlignment="Left">
+                  <charts:LineChart x:Name="StageFChart" />
+                </Border>
+              </controls:NodeCard.ExtraContent>
+            </controls:NodeCard>
+            <charts:EdgeLayer x:Name="Arrow3" Height="34" />
+            <controls:NodeCard Variant="Figure" TagText="STAGE 4 · OUTPUT" TagRight="h(x)"
+                               Title="h(x) = f(g(x)) = 1/x²" TitleSize="15" />
+          </StackPanel>
+        </controls:PanelBox.InnerContent>
+        <controls:PanelBox.FooterContent>
+          <TextBlock FontSize="10" LineHeight="16" Foreground="{StaticResource TextMutedBrush}">
+            <Run Text="chain rule: h′(x) = f′(g(x))·g′(x) = −2/x³" />
+            <LineBreak />
+            <Run Text="σₕ(x) = |h′(x)| · σₓ — propagated exactly, both stages C¹" />
+          </TextBlock>
+        </controls:PanelBox.FooterContent>
+      </controls:PanelBox>
+    </Border>
+
+    <controls:PanelBox Title="RESULT · h(x) = 1/x² OVER SELECTED DIMENSION"
+                       Hint="domain x ∈ [0.34, 3.2]">
+      <controls:PanelBox.InnerContent>
+        <charts:LineChart x:Name="ResultChart" Margin="20" />
+      </controls:PanelBox.InnerContent>
+      <controls:PanelBox.FooterContent>
+        <TextBlock Text="curvature amplifies noise as x→0 — σ band widens near the pole, exactly as h′ predicts"
+                   FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+      </controls:PanelBox.FooterContent>
+    </controls:PanelBox>
+  </DockPanel>
+</UserControl>

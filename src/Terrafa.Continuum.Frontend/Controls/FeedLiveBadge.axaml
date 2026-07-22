@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Terrafa.Continuum.Frontend.Controls.FeedLiveBadge"
+             x:Name="Root">
+  <UserControl.Styles>
+    <Style Selector="Ellipse.pulse">
+      <Style.Animations>
+        <Animation Duration="0:0:1.6" IterationCount="Infinite">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="1" />
+          </KeyFrame>
+          <KeyFrame Cue="50%">
+            <Setter Property="Opacity" Value="0.35" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="1" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </UserControl.Styles>
+  <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+    <TextBlock Text="{Binding TimeText, ElementName=Root}" FontSize="12"
+               Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <TextBlock Text="FEED LIVE" FontSize="12" Foreground="{StaticResource GreenBrush}"
+                 VerticalAlignment="Center" />
+      <Ellipse Classes="pulse" Width="8" Height="8" Fill="{StaticResource GreenBrush}"
+               VerticalAlignment="Center" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

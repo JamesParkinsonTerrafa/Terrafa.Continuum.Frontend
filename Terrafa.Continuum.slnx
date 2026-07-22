@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Terrafa.Continuum.Frontend/Terrafa.Continuum.Frontend.csproj" />
+  </Folder>
+</Solution>

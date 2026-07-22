@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Terrafa.Continuum.Frontend.Controls.TerminalStatusBar"
+             x:Name="Root"
+             Height="26">
+  <Border Background="{StaticResource BgPanelBrush}"
+          BorderBrush="{StaticResource BorderBrush}"
+          BorderThickness="0,1,0,0">
+    <DockPanel Margin="14,0">
+      <ContentControl DockPanel.Dock="Right"
+                      VerticalAlignment="Center"
+                      Content="{Binding RightContent, ElementName=Root}" />
+      <ContentControl VerticalAlignment="Center"
+                      HorizontalAlignment="Left"
+                      Content="{Binding LeftContent, ElementName=Root}" />
+    </DockPanel>
+  </Border>
+</UserControl>

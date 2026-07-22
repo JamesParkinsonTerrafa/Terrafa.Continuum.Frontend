@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             xmlns:charts="using:Terrafa.Continuum.Frontend.Controls.Charts"
+             x:Class="Terrafa.Continuum.Frontend.Views.DbTreeView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <DockPanel>
+    <controls:TerminalTopBar DockPanel.Dock="Top"
+                             CommandText="TREE &lt;GO&gt;"
+                             SubtitleText="SCHEMA · CONTRACT v1.4">
+      <controls:TerminalTopBar.RightContent>
+        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+          <Border Background="{StaticResource AmberBrush}" Padding="12,4">
+            <TextBlock Text="↻ REFRESH SCHEMA &lt;GO&gt;" FontSize="11" FontWeight="Bold"
+                       Foreground="Black" />
+          </Border>
+          <TextBlock Text="last 14:02:11" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+      </controls:TerminalTopBar.RightContent>
+    </controls:TerminalTopBar>
+
+    <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="3"
+                               HintText="SCHEMA Δ since last refresh: +2 leaves (tank_03.level, tank_03.temp) · 0 moved · contract unchanged"
+                               HintBrush="{StaticResource GreenBrush}" />
+
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+      <controls:TerminalStatusBar.LeftContent>
+        <StackPanel Orientation="Horizontal" Spacing="18">
+          <TextBlock Text="STORAGE: STRUCTURED JSON / PARQUET" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock Text="HYDRATED STATES RETAINED — FILTRATION 𝓕ₜ" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </StackPanel>
+      </controls:TerminalStatusBar.LeftContent>
+      <controls:TerminalStatusBar.RightContent>
+        <TextBlock Text="CONTRACT FIXED · EXTENDS BY GROWING THE TREE ONLY" FontSize="10"
+                   Foreground="{StaticResource TextFaintBrush}" />
+      </controls:TerminalStatusBar.RightContent>
+    </controls:TerminalStatusBar>
+
+    <Border DockPanel.Dock="Right" Width="390"
+            Background="{StaticResource BgPanelBrush}"
+            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+      <controls:PanelBox Title="EVENT LOG · APPEND-ONLY" Hint="source of truth">
+        <controls:PanelBox.InnerContent>
+          <StackPanel x:Name="EventRows" />
+        </controls:PanelBox.InnerContent>
+        <controls:PanelBox.FooterContent>
+          <StackPanel Spacing="6">
+            <TextBlock Text="Each event touches a bounded region of the tree — never the whole model."
+                       FontSize="10" LineHeight="16" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextMutedBrush}" />
+            <TextBlock Text="REPLAY TEST ✓  state = fold(events) · verified in CI 14:00 UTC"
+                       FontSize="10" Foreground="{StaticResource GreenBrush}" />
+          </StackPanel>
+        </controls:PanelBox.FooterContent>
+      </controls:PanelBox>
+    </Border>
+
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="45%,35%" GradientOrigin="45%,35%" RadiusX="70%" RadiusY="70%">
+          <GradientStop Color="{StaticResource CanvasGlowInnerColor}" Offset="0" />
+          <GradientStop Color="{StaticResource CanvasGlowOuterColor}" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+      <Canvas x:Name="TreeCanvas">
+        <charts:EdgeLayer x:Name="Edges" Canvas.Left="0" Canvas.Top="0" Width="1169" Height="854" />
+
+        <Border Canvas.Left="520" Canvas.Top="700"
+                Background="{StaticResource CanvasNoteBackdropBrush}" BorderBrush="{StaticResource PurpleBrush}"
+                BorderThickness="1" Padding="10,4">
+          <TextBlock Text="≡ EQUALITY — grade @ intake and flow-batch grade refer to the same underlying thing"
+                     FontSize="10" Foreground="{StaticResource PurpleBrush}" />
+        </Border>
+
+        <Border Canvas.Right="16" Canvas.Top="14"
+                Background="{StaticResource CanvasPanelBackdropBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                Padding="12,8">
+          <StackPanel Spacing="5" x:Name="LegendPanel" />
+        </Border>
+      </Canvas>
+    </Border>
+  </DockPanel>
+</UserControl>

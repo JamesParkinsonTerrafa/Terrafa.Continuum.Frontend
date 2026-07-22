@@ -1,0 +1,121 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             xmlns:charts="using:Terrafa.Continuum.Frontend.Controls.Charts"
+             x:Class="Terrafa.Continuum.Frontend.Views.DashboardView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <DockPanel>
+    <controls:TerminalTopBar DockPanel.Dock="Top"
+                             CommandText="DASH &lt;GO&gt;"
+                             SubtitleText="SITE ALPHA · LIVE STATE">
+      <controls:TerminalTopBar.RightContent>
+        <controls:FeedLiveBadge x:Name="FeedBadge" />
+      </controls:TerminalTopBar.RightContent>
+    </controls:TerminalTopBar>
+
+    <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="2"
+                               HintText="every figure carries propagated σ — reliability is computed, never asserted" />
+
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+      <controls:TerminalStatusBar.LeftContent>
+        <StackPanel Orientation="Horizontal" Spacing="18">
+          <TextBlock Text="SUPERSET-COMPATIBLE PANEL GRID" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock Text="SCORES STREAM PER EVENT" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </StackPanel>
+      </controls:TerminalStatusBar.LeftContent>
+      <controls:TerminalStatusBar.RightContent>
+        <TextBlock Text="1 MODEL FLAGGED — expiry_frailty_v1 crossed 1/α" FontSize="10"
+                   Foreground="{StaticResource RedBrush}" />
+      </controls:TerminalStatusBar.RightContent>
+    </controls:TerminalStatusBar>
+
+    <Grid Background="{StaticResource BorderBrush}" ColumnDefinitions="*,*,*" RowDefinitions="*,*">
+      <Border Grid.Column="0" Grid.Row="0" Background="{StaticResource BgDeepBrush}" Margin="0,0,1,1">
+        <controls:PanelBox Title="1) POSITIONS — LIVE STATE" Hint="hydrated tree @ t"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock x:Name="PositionsFootnote" DockPanel.Dock="Bottom" FontSize="9"
+                         Padding="0,6,0,0" Foreground="{StaticResource TextFaintBrush}" />
+              <StackPanel x:Name="PositionRows" Spacing="0" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Grid.Column="1" Grid.Row="0" Background="{StaticResource BgDeepBrush}" Margin="0,0,1,1">
+        <controls:PanelBox Title="2) MODEL LEADERBOARD — LOG SCORE · L1" Hint="per-event"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock Text="proper score — vague forecasts lose to sharp, correct ones by construction"
+                         DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
+                         Foreground="{StaticResource TextFaintBrush}" />
+              <StackPanel x:Name="LeaderboardRows" Spacing="0" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Grid.Column="2" Grid.Row="0" Background="{StaticResource BgDeepBrush}" Margin="0,0,0,1">
+        <controls:PanelBox Title="3) CALIBRATION — RELIABILITY · L2" Hint="flow_v3"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock Text="70% should happen 70% of the time — checkable from data alone"
+                         DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
+                         Foreground="{StaticResource TextFaintBrush}" />
+              <charts:LineChart x:Name="CalibrationChart" Margin="30,8" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Grid.Column="0" Grid.Row="1" Background="{StaticResource BgDeepBrush}" Margin="0,0,1,0">
+        <controls:PanelBox Title="4) EVIDENCE-AGAINST — WEALTH Wₜ · L3"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6"
+                           Hint="1 FLAG" HintForeground="{StaticResource RedBrush}">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock Text="anytime-valid — updates per event, cannot be p-hacked by watching"
+                         DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
+                         Foreground="{StaticResource TextFaintBrush}" />
+              <charts:LineChart x:Name="WealthChart" Margin="16,8" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Grid.Column="1" Grid.Row="1" Background="{StaticResource BgDeepBrush}" Margin="0,0,1,0">
+        <controls:PanelBox Title="5) EXPIRY — SURVIVAL S(t) UNDER FRAILTY" Hint="diesel · tank_01"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock Text="risk now, conditional on survival — no static shelf-life printed at intake"
+                         DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
+                         Foreground="{StaticResource TextFaintBrush}" />
+              <charts:LineChart x:Name="SurvivalChart" Margin="16,8" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Grid.Column="2" Grid.Row="1" Background="{StaticResource BgDeepBrush}">
+        <controls:PanelBox Title="6) EVENT INTENSITY λ(t) — SPOILAGE / WK" Hint="from event log"
+                           HeaderBackground="{StaticResource BgBarBrush}" HeaderPadding="10,6">
+          <controls:PanelBox.InnerContent>
+            <DockPanel Margin="10,8">
+              <TextBlock Text="survivability is a view over the log — no new storage notion"
+                         DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
+                         Foreground="{StaticResource TextFaintBrush}" />
+              <charts:LineChart x:Name="IntensityChart" Margin="16,8" />
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+        </controls:PanelBox>
+      </Border>
+    </Grid>
+  </DockPanel>
+</UserControl>

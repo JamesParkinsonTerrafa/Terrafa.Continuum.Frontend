@@ -1,0 +1,23 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Styles.Resources>
+    <ResourceDictionary>
+      <FontFamily x:Key="TerminalFont">Verdana, Tahoma</FontFamily>
+    </ResourceDictionary>
+  </Styles.Resources>
+
+  <Style Selector="TextBlock">
+    <Setter Property="FontFamily" Value="{StaticResource TerminalFont}" />
+  </Style>
+
+  <Style Selector="TextBlock.tag">
+    <Setter Property="FontSize" Value="9" />
+    <Setter Property="LetterSpacing" Value="1" />
+  </Style>
+
+  <Style Selector="TextBlock.sectionTitle">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="LetterSpacing" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource AmberBrush}" />
+  </Style>
+</Styles>

@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Terrafa.Continuum.Frontend.Controls.PanelBox"
+             x:Name="Root">
+  <DockPanel>
+    <Border DockPanel.Dock="Top"
+            Background="{Binding HeaderBackground, ElementName=Root}"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="0,0,0,1"
+            Padding="{Binding HeaderPadding, ElementName=Root}">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Right" FontSize="11"
+                   Text="{Binding Hint, ElementName=Root}"
+                   Foreground="{Binding HintForeground, ElementName=Root}"
+                   IsVisible="{Binding HasHint, ElementName=Root}"
+                   VerticalAlignment="Center" />
+        <TextBlock FontSize="11" LetterSpacing="1"
+                   Text="{Binding Title, ElementName=Root}"
+                   Foreground="{StaticResource AmberBrush}"
+                   VerticalAlignment="Center" />
+      </DockPanel>
+    </Border>
+    <Border DockPanel.Dock="Bottom"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="0,1,0,0"
+            Padding="{Binding FooterPadding, ElementName=Root}"
+            IsVisible="{Binding HasFooter, ElementName=Root}">
+      <ContentControl Content="{Binding FooterContent, ElementName=Root}" />
+    </Border>
+    <ContentControl Content="{Binding InnerContent, ElementName=Root}" />
+  </DockPanel>
+</UserControl>

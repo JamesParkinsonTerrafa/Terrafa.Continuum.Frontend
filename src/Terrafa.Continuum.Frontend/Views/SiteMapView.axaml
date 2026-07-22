@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             xmlns:charts="using:Terrafa.Continuum.Frontend.Controls.Charts"
+             x:Class="Terrafa.Continuum.Frontend.Views.SiteMapView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <DockPanel>
+    <controls:TerminalTopBar DockPanel.Dock="Top"
+                             CommandText="MAP &lt;GO&gt;"
+                             SubtitleText="SITE ALPHA · PHYSICAL EMBEDDING">
+      <controls:TerminalTopBar.RightContent>
+        <controls:FeedLiveBadge x:Name="FeedBadge" />
+      </controls:TerminalTopBar.RightContent>
+    </controls:TerminalTopBar>
+
+    <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="4"
+                               HintText="adjacency runs visualisation — location-related fields pull out directly" />
+
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+      <controls:TerminalStatusBar.LeftContent>
+        <StackPanel Orientation="Horizontal" Spacing="18">
+          <TextBlock Text="ZONES = ADJACENCY META-DESCRIPTORS" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock Text="FIGURES PINNED FROM DASH" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </StackPanel>
+      </controls:TerminalStatusBar.LeftContent>
+      <controls:TerminalStatusBar.RightContent>
+        <TextBlock Text="DROP A REAL SITE IMAGE ONTO THE CANVAS TO REPLACE PLACEHOLDER" FontSize="10"
+                   Foreground="{StaticResource TextFaintBrush}" />
+      </controls:TerminalStatusBar.RightContent>
+    </controls:TerminalStatusBar>
+
+    <Border DockPanel.Dock="Left" Width="300"
+            Background="{StaticResource BgPanelBrush}"
+            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+      <DockPanel>
+        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0" Padding="12,10">
+          <TextBlock Text="Zones map to adjacency meta-descriptors — two tanks can touch in space without either owning the other."
+                     FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </Border>
+        <StackPanel>
+          <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <TextBlock Classes="sectionTitle" Text="LAYERS" />
+          </Border>
+          <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <StackPanel x:Name="LayerRows" Spacing="6" />
+          </Border>
+          <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <TextBlock Classes="sectionTitle" Text="UNPLACED MEASURES · DRAG ONTO PLAN" />
+          </Border>
+          <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <WrapPanel x:Name="UnplacedChips" />
+          </Border>
+          <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <TextBlock Classes="sectionTitle" Text="SELECTED ZONE — TANK_01" />
+          </Border>
+          <StackPanel Margin="12,8" Spacing="8">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="level · temp · spoilage" FontSize="10"
+                         Foreground="{StaticResource CyanBrush}" />
+              <TextBlock Text="bound leaves" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+            </DockPanel>
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="curve over range — edit ▸" FontSize="10"
+                         Foreground="{StaticResource TextBrightBrush}" />
+              <TextBlock Text="precision σ" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+            </DockPanel>
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="0 · separate field, never conflated" FontSize="10"
+                         Foreground="{StaticResource TextBrightBrush}" />
+              <TextBlock Text="bias β" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+            </DockPanel>
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="Type A — learned from stream" FontSize="10"
+                         Foreground="{StaticResource TextBrightBrush}" />
+              <TextBlock Text="σ source" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+            </DockPanel>
+            <Border BorderBrush="{StaticResource GridFaintBrush}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+              <TextBlock Text="Precision averages out as σ/√n; bias survives any averaging. The editor keeps σ and β as two fields by construction."
+                         FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextFaintBrush}" />
+            </Border>
+          </StackPanel>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Panel>
+      <Border Margin="24" BorderBrush="{StaticResource BorderMidBrush}" BorderThickness="1"
+              Background="{StaticResource BgChartBrush}">
+        <TextBlock Text="CLIENT FACILITY IMAGE — drop satellite photo / site plan (PNG, GeoTIFF)"
+                   FontSize="13" Foreground="{StaticResource TextGhostBrush}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Border>
+
+      <Canvas>
+        <charts:EdgeLayer x:Name="FlowEdge" Canvas.Left="0" Canvas.Top="0" Width="1259" Height="886" />
+
+        <Border Canvas.Left="470" Canvas.Top="300" Width="220" Height="160"
+                BorderBrush="{StaticResource CyanBrush}" BorderThickness="1.5"
+                Background="{StaticResource CyanZoneFillBrush}"
+                RenderTransformOrigin="50%,50%">
+          <Border.RenderTransform>
+            <RotateTransform Angle="-7" />
+          </Border.RenderTransform>
+          <TextBlock Text="TANK_01" FontSize="10" Foreground="{StaticResource CyanSoftBrush}"
+                     Background="{StaticResource ZoneLabelBackdropBrush}" Padding="6,1"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6,4" />
+        </Border>
+
+        <Border Canvas.Left="730" Canvas.Top="250" Width="220" Height="160"
+                BorderBrush="{StaticResource CyanBrush}" BorderThickness="1.5"
+                Background="{StaticResource CyanZoneFillBrush}"
+                RenderTransformOrigin="50%,50%">
+          <Border.RenderTransform>
+            <RotateTransform Angle="-7" />
+          </Border.RenderTransform>
+          <TextBlock Text="TANK_02" FontSize="10" Foreground="{StaticResource CyanSoftBrush}"
+                     Background="{StaticResource ZoneLabelBackdropBrush}" Padding="6,1"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6,4" />
+        </Border>
+
+        <Border Canvas.Left="120" Canvas.Top="560" Width="280" Height="120"
+                BorderBrush="{StaticResource AmberBrush}" BorderThickness="1.5"
+                Background="{StaticResource AmberFillBrush}"
+                RenderTransformOrigin="50%,50%">
+          <Border.RenderTransform>
+            <RotateTransform Angle="3" />
+          </Border.RenderTransform>
+          <TextBlock Text="BERTH · METER" FontSize="10" Foreground="{StaticResource AmberPaleBrush}"
+                     Background="{StaticResource ZoneLabelBackdropBrush}" Padding="6,1"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6,4" />
+        </Border>
+
+        <controls:NodeCard x:Name="Tank01Fig" Canvas.Left="475" Canvas.Top="480" Width="230"
+                           Variant="Figure" TagText="FIG · TANK_01 LEVEL" ValueSize="15"
+                           FillOverride="{StaticResource PinnedCardFillBrush}" />
+        <controls:NodeCard x:Name="Tank02Fig" Canvas.Left="735" Canvas.Top="430" Width="230"
+                           Variant="Figure" TagText="FIG · TANK_02 LEVEL" ValueSize="15"
+                           FillOverride="{StaticResource PinnedCardFillBrush}" />
+        <controls:NodeCard x:Name="BerthFlowFig" Canvas.Left="130" Canvas.Top="700" Width="270"
+                           Variant="Transfer" TagText="FIG · BERTH FLOW" TagRight="Σ aniso"
+                           ValueSize="15" FillOverride="{StaticResource PinnedCardFillBrush}" />
+
+        <Border Canvas.Left="150" Canvas.Top="530"
+                Background="{StaticResource CanvasNoteBackdropBrush}" BorderBrush="{StaticResource PurpleBrush}"
+                BorderThickness="1" Padding="8,3">
+          <TextBlock Text="flow berth→tank_01 · UNDER-DETERMINED (L4) — drawn provisional"
+                     FontSize="9" Foreground="{StaticResource PurpleBrush}" />
+        </Border>
+      </Canvas>
+    </Panel>
+  </DockPanel>
+</UserControl>
