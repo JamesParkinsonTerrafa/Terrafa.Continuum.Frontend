@@ -58,6 +58,8 @@ public partial class DbTreeView : UserControl
         Edges.Edges = BuildEdges(snapshot.Tree);
         BuildEventLog(snapshot);
         BuildLegend();
+
+        NoiseOverlay.Attach(this);
     }
 
     private void BuildTreeNodes(DataTreeNode tree)

@@ -217,6 +217,8 @@ public class NodeCard : UserControl
         extraHost.IsVisible = ExtraContent is not null;
     }
 
+    public static IBrush AccentFor(NodeCardVariant variant) => ResolveStyle(variant).Accent;
+
     private sealed record CardStyle(
         IBrush Accent,
         IBrush Fill,

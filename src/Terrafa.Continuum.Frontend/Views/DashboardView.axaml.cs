@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Controls.Charts;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
@@ -27,6 +28,8 @@ public partial class DashboardView : UserControl
         ConfigureWealthChart(snapshot);
         ConfigureSurvivalChart(snapshot);
         ConfigureIntensityChart(snapshot);
+
+        NoiseOverlay.Attach(this);
     }
 
     private static ColumnDefinitions PositionColumns() => new("1.5*,1.2*,0.7*,0.8*");

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Controls.Charts;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
@@ -53,6 +54,8 @@ public partial class SiteMapView : UserControl
                 ArrowAtEnd = true
             }
         ];
+
+        NoiseOverlay.Attach(this);
     }
 
     private void BuildLayerRows()

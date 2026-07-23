@@ -1,10 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
-             xmlns:charts="using:Terrafa.Continuum.Frontend.Controls.Charts"
+             xmlns:diagram="using:Terrafa.Continuum.Frontend.Controls.Diagram"
              x:Class="Terrafa.Continuum.Frontend.Views.NetworkView"
              Width="1560" Height="980"
              Background="{StaticResource BgDeepBrush}">
+  <Panel>
   <DockPanel>
     <controls:TerminalTopBar DockPanel.Dock="Top"
                              CommandText="NETW &lt;GO&gt;"
@@ -59,7 +60,7 @@
     <Border DockPanel.Dock="Left" Width="272"
             Background="{StaticResource BgPanelBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-      <controls:PanelBox Title="DB MEASURES · SELECT TO PLACE">
+      <controls:PanelBox Title="DB MEASURES · DRAG ONTO CANVAS">
         <controls:PanelBox.InnerContent>
           <StackPanel x:Name="MeasureList" Margin="12,10" Spacing="4" />
         </controls:PanelBox.InnerContent>
@@ -71,69 +72,26 @@
       </controls:PanelBox>
     </Border>
 
-    <Border>
-      <Border.Background>
-        <RadialGradientBrush Center="50%,40%" GradientOrigin="50%,40%" RadiusX="70%" RadiusY="70%">
-          <GradientStop Color="{StaticResource CanvasGlowInnerColor}" Offset="0" />
-          <GradientStop Color="{StaticResource CanvasGlowOuterColor}" Offset="1" />
-        </RadialGradientBrush>
-      </Border.Background>
-      <Canvas>
-        <charts:EdgeLayer x:Name="Edges" Canvas.Left="0" Canvas.Top="0" Width="1287" Height="832" />
+    <Panel>
+      <Border>
+        <Border.Background>
+          <RadialGradientBrush Center="50%,40%" GradientOrigin="50%,40%" RadiusX="70%" RadiusY="70%">
+            <GradientStop Color="{StaticResource CanvasGlowInnerColor}" Offset="0" />
+            <GradientStop Color="{StaticResource CanvasGlowOuterColor}" Offset="1" />
+          </RadialGradientBrush>
+        </Border.Background>
+      </Border>
 
-        <controls:NodeCard x:Name="Leaf1Card" Canvas.Left="70" Canvas.Top="118" Width="220"
-                           Variant="Measure" TagText="MEASURE · LEAF" />
-        <controls:NodeCard x:Name="Leaf2Card" Canvas.Left="70" Canvas.Top="258" Width="220"
-                           Variant="Measure" TagText="MEASURE · LEAF" />
-        <controls:NodeCard x:Name="Leaf3Card" Canvas.Left="70" Canvas.Top="418" Width="220"
-                           Variant="Measure" TagText="MEASURE · LEAF" />
-        <controls:NodeCard x:Name="Leaf4Card" Canvas.Left="70" Canvas.Top="558" Width="220"
-                           Variant="Measure" TagText="MEASURE · LEAF" />
+      <diagram:DiagramCanvas x:Name="Diagram" />
 
-        <controls:NodeCard Canvas.Left="450" Canvas.Top="172" Width="250"
-                           Variant="Transfer" TagText="TRANSFER · T1" TagRight="dμ/dν"
-                           Title="sum(level_01, level_02)" TitleSize="12">
-          <controls:NodeCard.ExtraContent>
-            <TextBlock FontSize="9" LineHeight="14" Foreground="{StaticResource TextMutedBrush}">
-              <Run Text="ν ≪ μ " /><Run Text="✓" Foreground="{StaticResource GreenBrush}" />
-              <Run Text=" · C¹ (linear) " /><Run Text="✓" Foreground="{StaticResource GreenBrush}" />
-              <LineBreak />
-              <Run Text="σ_out = √(J Σ Jᵀ) — exact" />
-            </TextBlock>
-          </controls:NodeCard.ExtraContent>
-        </controls:NodeCard>
-
-        <controls:NodeCard Canvas.Left="450" Canvas.Top="468" Width="250"
-                           Variant="Transfer" TagText="TRANSFER · T2" TagRight="dμ/dν"
-                           Title="hazard λ₀(t)·exp(θᵀx)" TitleSize="12">
-          <controls:NodeCard.ExtraContent>
-            <TextBlock FontSize="9" LineHeight="14" Foreground="{StaticResource TextMutedBrush}">
-              <Run Text="ν ≪ μ " /><Run Text="✓" Foreground="{StaticResource GreenBrush}" />
-              <Run Text=" · " /><Run Text="NONLINEAR" Foreground="{StaticResource RedBrush}" />
-              <Run Text=" — linearisation refused" />
-              <LineBreak />
-              <Run Text="⚠ branch auto-switched to MONTE-CARLO σ" Foreground="{StaticResource AmberBrush}" />
-            </TextBlock>
-          </controls:NodeCard.ExtraContent>
-        </controls:NodeCard>
-
-        <controls:NodeCard x:Name="FigInventoryCard" Canvas.Left="866" Canvas.Top="190" Width="270"
-                           Variant="Figure" TagText="DASHBOARD FIG"
-                           Title="fig.total_inventory" ValueSize="16"
-                           Note="σ composed up the tree · pinned to DASH &amp; MAP" />
-
-        <controls:NodeCard x:Name="FigExpiryCard" Canvas.Left="866" Canvas.Top="472" Width="270"
-                           Variant="Provisional" TagText="DASHBOARD FIG · PROVISIONAL" TagRight="L4"
-                           Title="fig.expiry_risk" ValueSize="16"
-                           Note="⚠ under-determined — frailty Z not identifiable from these leaves. Drawn provisional, not asserted. Add prior or leaf to pin down." />
-
-        <Border Canvas.Right="16" Canvas.Top="14"
-                Background="{StaticResource CanvasPanelBackdropBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-                Padding="12,8">
-          <StackPanel Spacing="5" x:Name="LegendPanel" />
-        </Border>
-      </Canvas>
-    </Border>
+      <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,16,0"
+              Background="{StaticResource CanvasPanelBackdropBrush}"
+              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+              Padding="12,8" IsHitTestVisible="False">
+        <StackPanel Spacing="5" x:Name="LegendPanel" />
+      </Border>
+    </Panel>
   </DockPanel>
+  <Canvas x:Name="GhostLayer" IsHitTestVisible="False" />
+  </Panel>
 </UserControl>

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Controls.Charts;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
@@ -24,6 +25,8 @@ public partial class TransferFunctionView : UserControl
         ConfigureStageArrows();
         ConfigureStageCharts();
         ConfigureResultChart();
+
+        NoiseOverlay.Attach(this);
     }
 
     private void ConfigureStageArrows()
