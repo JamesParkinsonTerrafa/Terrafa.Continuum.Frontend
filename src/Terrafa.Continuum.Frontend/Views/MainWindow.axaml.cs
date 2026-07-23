@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
 
@@ -21,8 +22,15 @@ public partial class MainWindow : Window
         BuildScreens();
         SwitchTo(0);
         ThemeManager.Changed += RebuildScreens;
-        Closed += (_, _) => ThemeManager.Changed -= RebuildScreens;
+        SettingsFlyout.ToggleRequested += ToggleSettings;
+        Closed += (_, _) =>
+        {
+            ThemeManager.Changed -= RebuildScreens;
+            SettingsFlyout.ToggleRequested -= ToggleSettings;
+        };
     }
+
+    private void ToggleSettings() => Settings.Toggle();
 
     private void BuildScreens()
     {

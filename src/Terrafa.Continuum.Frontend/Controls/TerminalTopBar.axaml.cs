@@ -1,7 +1,5 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Media;
-using Terrafa.Continuum.Frontend.Themes;
 
 namespace Terrafa.Continuum.Frontend.Controls;
 
@@ -19,12 +17,11 @@ public partial class TerminalTopBar : UserControl
     public TerminalTopBar()
     {
         InitializeComponent();
-        ThemeToggle.PointerPressed += (_, _) => ThemeManager.Toggle();
-        var activeLabel = ThemeManager.IsLight ? LightLabel : DarkLabel;
-        var inactiveLabel = ThemeManager.IsLight ? DarkLabel : LightLabel;
-        activeLabel.Foreground = Palette.Amber;
-        activeLabel.FontWeight = FontWeight.Bold;
-        inactiveLabel.Foreground = Palette.TextFaint;
+        SettingsButton.PointerPressed += (_, e) =>
+        {
+            SettingsFlyout.RequestToggle();
+            e.Handled = true;
+        };
     }
 
     public string CommandText

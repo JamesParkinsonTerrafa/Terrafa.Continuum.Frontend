@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Controls.Diagram;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
@@ -27,6 +29,53 @@ public static class SnapshotRunner
         ThemeManager.SetLight(true);
         CaptureAllViews(outputDir, snapshot, "-light");
         ThemeManager.SetLight(false);
+        CaptureSettingsProbe(outputDir);
+    }
+
+    private static void CaptureSettingsProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var topBar = window.GetVisualDescendants().OfType<TerminalTopBar>().First();
+        var button = topBar.SettingsButton;
+        var buttonPoint = button.TranslatePoint(
+            new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(buttonPoint, MouseButton.Left);
+        window.MouseUp(buttonPoint, MouseButton.Left);
+        Pump();
+
+        var flyout = window.Settings;
+        var grainRow = flyout.GrainToggleRow;
+        var grainPoint = grainRow.TranslatePoint(
+            new Point(grainRow.Bounds.Width / 2, grainRow.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(grainPoint, MouseButton.Left);
+        window.MouseUp(grainPoint, MouseButton.Left);
+        Pump();
+
+        flyout.IntensitySlider.Value = 24;
+        flyout.SlopeSlider.Value = 0.8;
+        flyout.WarpSlider.Value = 34;
+        NoiseOverlay.RebuildNow();
+        Pump();
+
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine("snapshot 0-settings: no frame captured");
+        }
+        else
+        {
+            frame.Save(Path.Combine(outputDir, "0-settings.png"));
+            Console.WriteLine("snapshot 0-settings: saved");
+        }
+        window.Close();
     }
 
     private static void CaptureInteractionProbe(string outputDir)
