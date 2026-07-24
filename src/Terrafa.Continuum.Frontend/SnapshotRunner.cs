@@ -26,6 +26,7 @@ public static class SnapshotRunner
 
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
+        CaptureTransferFunctionProbe(outputDir);
         ThemeManager.SetLight(true);
         CaptureAllViews(outputDir, snapshot, "-light");
         ThemeManager.SetLight(false);
@@ -150,6 +151,87 @@ public static class SnapshotRunner
         {
             frame.Save(Path.Combine(outputDir, "1-netw-interact.png"));
             Console.WriteLine("snapshot 1-netw-interact: saved");
+        }
+        window.Close();
+    }
+
+    private static void CaptureTransferFunctionProbe(string outputDir)
+    {
+        var view = new TransferFunctionView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        Point Center(Visual visual) =>
+            visual.TranslatePoint(new Point(visual.Bounds.Width / 2, visual.Bounds.Height / 2), window)!.Value;
+
+        void Click(Point point)
+        {
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+        }
+
+        Border LibraryEntry(string name)
+        {
+            var entry = view.LibraryList.Children.OfType<Border>()
+                .First(candidate => candidate.GetVisualDescendants().OfType<TextBlock>()
+                    .Any(text => text.Text?.StartsWith($"{name}:") == true));
+            entry.BringIntoView();
+            Pump();
+            return entry;
+        }
+
+        void OpenCreateFunctionMenu()
+        {
+            var libraryPoint = Center(view.LibraryList);
+            window.MouseDown(libraryPoint, MouseButton.Right);
+            window.MouseUp(libraryPoint, MouseButton.Right);
+            Pump();
+            var createItem = view.Overlay.GetVisualDescendants().OfType<TextBlock>()
+                .First(text => text.Text == "CREATE FUNCTION");
+            Click(Center(createItem));
+        }
+
+        OpenCreateFunctionMenu();
+        Console.WriteLine($"tfn probe: blank stack has {view.StageRows.Count} stages");
+
+        Click(Center(LibraryEntry("exp")));
+        Click(Center(LibraryEntry("sum")));
+        Console.WriteLine($"tfn probe: after adds, {view.StageRows.Count} stages");
+
+        var secondRow = view.StageRows[1];
+        var reorderStart = Center(secondRow);
+        var reorderEnd = new Point(reorderStart.X, reorderStart.Y - 110);
+        window.MouseDown(reorderStart, MouseButton.Left);
+        window.MouseMove(new Point(reorderStart.X, reorderStart.Y - 55));
+        window.MouseMove(reorderEnd);
+        window.MouseUp(reorderEnd, MouseButton.Left);
+        Pump();
+        Console.WriteLine($"tfn probe: after reorder, {view.StackFooter.Text}");
+
+        Click(Center(view.SaveButton));
+        Console.WriteLine($"tfn probe: library entries after save = {view.LibraryList.Children.Count}");
+
+        OpenCreateFunctionMenu();
+        Click(Center(LibraryEntry("fn_1")));
+        Console.WriteLine($"tfn probe: after composite add, {view.StackFooter.Text}");
+
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine("snapshot 2-tfn-interact: no frame captured");
+        }
+        else
+        {
+            frame.Save(Path.Combine(outputDir, "2-tfn-interact.png"));
+            Console.WriteLine("snapshot 2-tfn-interact: saved");
         }
         window.Close();
     }

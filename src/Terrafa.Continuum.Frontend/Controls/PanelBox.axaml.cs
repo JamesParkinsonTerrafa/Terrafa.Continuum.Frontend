@@ -31,6 +31,9 @@ public partial class PanelBox : UserControl
     public static readonly StyledProperty<object?> FooterContentProperty =
         AvaloniaProperty.Register<PanelBox, object?>(nameof(FooterContent));
 
+    public static readonly StyledProperty<object?> HeaderRightContentProperty =
+        AvaloniaProperty.Register<PanelBox, object?>(nameof(HeaderRightContent));
+
     public PanelBox() => InitializeComponent();
 
     public string Title
@@ -81,9 +84,17 @@ public partial class PanelBox : UserControl
         set => SetValue(FooterContentProperty, value);
     }
 
+    public object? HeaderRightContent
+    {
+        get => GetValue(HeaderRightContentProperty);
+        set => SetValue(HeaderRightContentProperty, value);
+    }
+
     public bool HasHint => Hint.Length > 0;
 
     public bool HasFooter => FooterContent is not null;
+
+    public bool HasHeaderRight => HeaderRightContent is not null;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -92,6 +103,8 @@ public partial class PanelBox : UserControl
             RaisePropertyChanged(HasHintProperty, !HasHint, HasHint);
         if (change.Property == FooterContentProperty)
             RaisePropertyChanged(HasFooterProperty, !HasFooter, HasFooter);
+        if (change.Property == HeaderRightContentProperty)
+            RaisePropertyChanged(HasHeaderRightProperty, !HasHeaderRight, HasHeaderRight);
     }
 
     public static readonly DirectProperty<PanelBox, bool> HasHintProperty =
@@ -99,4 +112,7 @@ public partial class PanelBox : UserControl
 
     public static readonly DirectProperty<PanelBox, bool> HasFooterProperty =
         AvaloniaProperty.RegisterDirect<PanelBox, bool>(nameof(HasFooter), panel => panel.HasFooter);
+
+    public static readonly DirectProperty<PanelBox, bool> HasHeaderRightProperty =
+        AvaloniaProperty.RegisterDirect<PanelBox, bool>(nameof(HasHeaderRight), panel => panel.HasHeaderRight);
 }

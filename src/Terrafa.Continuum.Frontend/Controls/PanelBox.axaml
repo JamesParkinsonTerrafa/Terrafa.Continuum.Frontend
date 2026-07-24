@@ -9,6 +9,11 @@
             BorderThickness="0,0,0,1"
             Padding="{Binding HeaderPadding, ElementName=Root}">
       <DockPanel>
+        <ContentControl DockPanel.Dock="Right"
+                        Content="{Binding HeaderRightContent, ElementName=Root}"
+                        IsVisible="{Binding HasHeaderRight, ElementName=Root}"
+                        VerticalAlignment="Center"
+                        Margin="10,0,0,0" />
         <TextBlock DockPanel.Dock="Right" FontSize="11"
                    Text="{Binding Hint, ElementName=Root}"
                    Foreground="{Binding HintForeground, ElementName=Root}"
