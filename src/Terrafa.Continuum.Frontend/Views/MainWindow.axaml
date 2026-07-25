@@ -11,6 +11,7 @@
     <Panel Width="1560" Height="980">
       <ContentControl x:Name="ViewHost" />
       <controls:SettingsFlyout x:Name="Settings" />
+      <controls:ContactDialog x:Name="Contact" />
     </Panel>
   </Viewbox>
 </Window>

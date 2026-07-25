@@ -159,7 +159,7 @@ public class DiagramCanvas : Border
 
     private PortMarker AttachPort(DiagramNode node, PortSide side)
     {
-        var port = new PortMarker(side, NodeCard.AccentFor(node.Card.Variant))
+        var port = new PortMarker(side, node.Card.Variant)
         {
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = side == PortSide.Left ? HorizontalAlignment.Left : HorizontalAlignment.Right,

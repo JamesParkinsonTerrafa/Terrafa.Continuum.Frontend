@@ -16,17 +16,22 @@ public class SettingsFlyout : Panel
     internal Border PanelBorder { get; }
     internal Border GrainToggleRow { get; }
     internal Border ButtonToggleRow { get; }
+    internal Border AppearanceToggleRow { get; }
     internal Slider IntensitySlider { get; }
     internal Slider SlopeSlider { get; }
     internal Slider WarpSlider { get; }
     internal Slider GrainSlider { get; }
     internal Slider IdleEmbossSlider { get; }
     internal Slider CornerRadiusSlider { get; }
+    internal Slider SaturationSlider { get; }
+    internal Slider NodeCornerRadiusSlider { get; }
 
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
+    private readonly StackPanel appearanceBody;
     private readonly TextBlock grainArrow;
     private readonly TextBlock buttonArrow;
+    private readonly TextBlock appearanceArrow;
     private readonly TextBlock darkLabel;
     private readonly TextBlock lightLabel;
     private readonly TextBlock hintsOnLabel;
@@ -51,9 +56,24 @@ public class SettingsFlyout : Panel
         hintsOffLabel = BuildToggleLabel("OFF");
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
+        appearanceArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
-        grainBody = new StackPanel { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
-        buttonBody = new StackPanel { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
+        grainBody = BuildSectionBody();
+        buttonBody = BuildSectionBody();
+        appearanceBody = BuildSectionBody();
+
+        SaturationSlider = AddSliderRow(appearanceBody, "SATURATION", 0, 1, 0.05,
+            AppearanceSettings.NodeSaturation, "0.00", AppearanceSettings.SetNodeSaturation);
+        NodeCornerRadiusSlider = AddSliderRow(appearanceBody, "CORNER RADIUS", 0, AppearanceSettings.MaxCornerRadius, 1,
+            AppearanceSettings.NodeCornerRadius, "0", AppearanceSettings.SetNodeCornerRadius);
+        appearanceBody.Children.Add(new TextBlock
+        {
+            Text = "applies to the input, function and output boxes",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
 
         IdleEmbossSlider = AddSliderRow(buttonBody, "UNSELECTED DEPTH", 0, 1, 0.05,
             ButtonSettings.IdleEmbossStrength, "0.00", ButtonSettings.SetIdleEmbossStrength);
@@ -86,6 +106,7 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
+        AppearanceToggleRow = BuildSectionRow("APPEARANCE", appearanceArrow, appearanceBody);
         ButtonToggleRow = BuildSectionRow("BUTTON UI", buttonArrow, buttonBody);
         GrainToggleRow = BuildSectionRow("GRAIN EFFECTS", grainArrow, grainBody);
 
@@ -93,6 +114,8 @@ public class SettingsFlyout : Panel
         column.Children.Add(BuildHeaderRow());
         column.Children.Add(BuildThemeRow());
         column.Children.Add(BuildHintsRow());
+        column.Children.Add(AppearanceToggleRow);
+        column.Children.Add(appearanceBody);
         column.Children.Add(ButtonToggleRow);
         column.Children.Add(buttonBody);
         column.Children.Add(GrainToggleRow);
@@ -216,6 +239,9 @@ public class SettingsFlyout : Panel
         };
         return row;
     }
+
+    private static StackPanel BuildSectionBody() =>
+        new() { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
 
     private static Border BuildSectionRow(string label, TextBlock arrow, StackPanel body)
     {

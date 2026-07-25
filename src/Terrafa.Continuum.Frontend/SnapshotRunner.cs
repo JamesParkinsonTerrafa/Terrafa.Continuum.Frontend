@@ -34,6 +34,38 @@ public static class SnapshotRunner
         CaptureAllViews(outputDir, snapshot, "-dark");
         ThemeManager.SetLight(true);
         CaptureSettingsProbe(outputDir);
+        CaptureContactProbe(outputDir);
+    }
+
+    private static void CaptureContactProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var brand = window.GetVisualDescendants().OfType<TerminalTopBar>().First().BrandButton;
+        var brandPoint = brand.TranslatePoint(
+            new Point(brand.Bounds.Width / 2, brand.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(brandPoint, MouseButton.Left);
+        window.MouseUp(brandPoint, MouseButton.Left);
+        Pump();
+
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine("snapshot 0-contact: no frame captured");
+        }
+        else
+        {
+            frame.Save(Path.Combine(outputDir, "0-contact.png"));
+            Console.WriteLine("snapshot 0-contact: saved");
+        }
+        window.Close();
     }
 
     private static void CaptureSettingsProbe(string outputDir)
@@ -66,9 +98,12 @@ public static class SnapshotRunner
             Pump();
         }
 
+        ExpandSection(flyout.AppearanceToggleRow);
         ExpandSection(flyout.ButtonToggleRow);
         ExpandSection(flyout.GrainToggleRow);
 
+        flyout.SaturationSlider.Value = AppearanceSettings.NodeSaturation;
+        flyout.NodeCornerRadiusSlider.Value = AppearanceSettings.NodeCornerRadius;
         flyout.IdleEmbossSlider.Value = ButtonSettings.IdleEmbossStrength;
         flyout.CornerRadiusSlider.Value = ButtonSettings.CornerRadius;
         flyout.IntensitySlider.Value = 24;

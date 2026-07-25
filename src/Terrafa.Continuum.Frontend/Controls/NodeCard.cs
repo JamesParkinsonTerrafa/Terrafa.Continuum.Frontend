@@ -170,6 +170,19 @@ public class NodeCard : UserControl
         set => SetValue(FillOverrideProperty, value);
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        AppearanceSettings.Changed += UpdateVisuals;
+        UpdateVisuals();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        AppearanceSettings.Changed -= UpdateVisuals;
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -187,37 +200,40 @@ public class NodeCard : UserControl
     private void UpdateVisuals()
     {
         var style = ResolveStyle(Variant);
-        frame.Stroke = style.Accent;
-        frame.Fill = FillOverride ?? style.Fill;
+        frame.RadiusX = AppearanceSettings.NodeCornerRadius;
+        frame.RadiusY = AppearanceSettings.NodeCornerRadius;
+        frame.Stroke = AppearanceSettings.Toned(style.Accent);
+        frame.Fill = FillOverride ?? AppearanceSettings.Toned(style.Fill);
         frame.StrokeDashArray = style.Dashed ? [4, 3] : null;
 
         tagBlock.Text = TagText;
-        tagBlock.Foreground = style.TagBrush;
+        tagBlock.Foreground = AppearanceSettings.Toned(style.TagBrush);
         tagRightBlock.Text = TagRight;
-        tagRightBlock.Foreground = style.TagRightBrush;
+        tagRightBlock.Foreground = AppearanceSettings.Toned(style.TagRightBrush);
         tagRightBlock.IsVisible = TagRight.Length > 0;
 
         titleBlock.Text = Title;
         titleBlock.FontSize = TitleSize;
-        titleBlock.Foreground = style.TitleBrush;
+        titleBlock.Foreground = AppearanceSettings.Toned(style.TitleBrush);
         titleBlock.IsVisible = Title.Length > 0;
 
         valueMainRun.Text = ValueMain;
         valueBlock.FontSize = ValueSize;
         valueAccentRun.Text = ValueAccent;
-        valueAccentRun.Foreground = style.Accent;
+        valueAccentRun.Foreground = AppearanceSettings.Toned(style.Accent);
         valueAccentRun.FontSize = Math.Max(ValueSize - 3, 9);
         valueBlock.IsVisible = ValueMain.Length > 0;
 
         noteBlock.Text = Note;
-        noteBlock.Foreground = style.NoteBrush;
+        noteBlock.Foreground = AppearanceSettings.Toned(style.NoteBrush);
         noteBlock.IsVisible = Note.Length > 0;
 
         extraHost.Content = ExtraContent;
         extraHost.IsVisible = ExtraContent is not null;
     }
 
-    public static IBrush AccentFor(NodeCardVariant variant) => ResolveStyle(variant).Accent;
+    public static IBrush AccentFor(NodeCardVariant variant) =>
+        AppearanceSettings.Toned(ResolveStyle(variant).Accent);
 
     private sealed record CardStyle(
         IBrush Accent,

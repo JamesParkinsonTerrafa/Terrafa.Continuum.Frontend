@@ -18,13 +18,13 @@ public class PortMarker : Control
     public const double Bulge = 7;
 
     private readonly PortSide side;
-    private readonly IBrush accent;
+    private readonly NodeCardVariant variant;
     private bool isHot;
 
-    public PortMarker(PortSide side, IBrush accent)
+    public PortMarker(PortSide side, NodeCardVariant variant)
     {
         this.side = side;
-        this.accent = accent;
+        this.variant = variant;
         Width = MarkerWidth;
         Height = MarkerHeight;
         ClipToBounds = true;
@@ -41,6 +41,7 @@ public class PortMarker : Control
     public override void Render(DrawingContext context)
     {
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
+        var accent = NodeCard.AccentFor(variant);
         var center = new Point(side == PortSide.Right ? 0 : MarkerWidth, MarkerHeight / 2);
         context.DrawEllipse(isHot ? accent : Palette.BgField, new Pen(accent, 1), center, Bulge, Bulge);
     }
