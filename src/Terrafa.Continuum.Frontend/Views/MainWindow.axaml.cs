@@ -23,14 +23,22 @@ public partial class MainWindow : Window
         SwitchTo(0);
         ThemeManager.Changed += RebuildScreens;
         SettingsFlyout.ToggleRequested += ToggleSettings;
+        ContactDialog.ShowRequested += ShowContact;
         Closed += (_, _) =>
         {
             ThemeManager.Changed -= RebuildScreens;
             SettingsFlyout.ToggleRequested -= ToggleSettings;
+            ContactDialog.ShowRequested -= ShowContact;
         };
     }
 
     private void ToggleSettings() => Settings.Toggle();
+
+    private void ShowContact()
+    {
+        Settings.Hide();
+        Contact.Show();
+    }
 
     private void BuildScreens()
     {

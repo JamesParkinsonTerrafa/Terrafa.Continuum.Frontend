@@ -81,6 +81,7 @@ public static class Palette
             brush.Color = light ? lightColor : dark;
         }
         WriteColorResources(light);
+        AppearanceSettings.RefreshTonedBrushes();
     }
 
     private static void WriteColorResources(bool light)

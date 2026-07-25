@@ -22,6 +22,11 @@ public partial class TerminalTopBar : UserControl
             SettingsFlyout.RequestToggle();
             e.Handled = true;
         };
+        BrandButton.PointerPressed += (_, e) =>
+        {
+            ContactDialog.RequestShow();
+            e.Handled = true;
+        };
     }
 
     public string CommandText

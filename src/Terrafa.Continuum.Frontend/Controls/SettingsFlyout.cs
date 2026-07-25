@@ -15,13 +15,16 @@ public class SettingsFlyout : Panel
 
     internal Border PanelBorder { get; }
     internal Border GrainToggleRow { get; }
+    internal Border AppearanceToggleRow { get; }
     internal Slider IntensitySlider { get; }
     internal Slider SlopeSlider { get; }
     internal Slider WarpSlider { get; }
     internal Slider GrainSlider { get; }
+    internal Slider SaturationSlider { get; }
+    internal Slider CornerRadiusSlider { get; }
 
     private readonly StackPanel grainBody;
-    private readonly TextBlock grainArrow;
+    private readonly StackPanel appearanceBody;
     private readonly TextBlock darkLabel;
     private readonly TextBlock lightLabel;
     private readonly TextBlock waveValue;
@@ -40,18 +43,31 @@ public class SettingsFlyout : Panel
 
         darkLabel = BuildThemeLabel("DARK");
         lightLabel = BuildThemeLabel("LIGHT");
-        grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
-        grainBody = new StackPanel { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
+        grainBody = BuildSectionBody();
+        appearanceBody = BuildSectionBody();
 
-        IntensitySlider = AddSliderRow("INTENSITY", 0, GrainSettings.MaxIntensity, 1,
+        SaturationSlider = AddSliderRow(appearanceBody, "SATURATION", 0, 1, 0.05,
+            AppearanceSettings.NodeSaturation, "0.00", AppearanceSettings.SetNodeSaturation);
+        CornerRadiusSlider = AddSliderRow(appearanceBody, "CORNER RADIUS", 0, AppearanceSettings.MaxCornerRadius, 1,
+            AppearanceSettings.NodeCornerRadius, "0", AppearanceSettings.SetNodeCornerRadius);
+        appearanceBody.Children.Add(new TextBlock
+        {
+            Text = "applies to the input, function and output boxes",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
+        IntensitySlider = AddSliderRow(grainBody, "INTENSITY", 0, GrainSettings.MaxIntensity, 1,
             GrainSettings.Intensity, "0", GrainSettings.SetIntensity);
         AddWavelengthRow();
-        SlopeSlider = AddSliderRow("TV SLOPE", 0, 1.5, 0.05,
+        SlopeSlider = AddSliderRow(grainBody, "TV SLOPE", 0, 1.5, 0.05,
             GrainSettings.SpectralSlope, "0.00", GrainSettings.SetSpectralSlope);
-        WarpSlider = AddSliderRow("WARP", 0, 100, 1,
+        WarpSlider = AddSliderRow(grainBody, "WARP", 0, 100, 1,
             GrainSettings.WarpStrength, "0", GrainSettings.SetWarpStrength);
-        GrainSlider = AddSliderRow("FINE GRAIN", 0, 8, 0.5,
+        GrainSlider = AddSliderRow(grainBody, "FINE GRAIN", 0, 8, 0.5,
             GrainSettings.FineGrain, "0.0", GrainSettings.SetFineGrain);
         grainBody.Children.Add(new TextBlock
         {
@@ -62,11 +78,14 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
-        GrainToggleRow = BuildGrainToggleRow();
+        AppearanceToggleRow = BuildSectionToggleRow("APPEARANCE", appearanceBody);
+        GrainToggleRow = BuildSectionToggleRow("GRAIN EFFECTS", grainBody);
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
         column.Children.Add(BuildThemeRow());
+        column.Children.Add(AppearanceToggleRow);
+        column.Children.Add(appearanceBody);
         column.Children.Add(GrainToggleRow);
         column.Children.Add(grainBody);
 
@@ -175,14 +194,18 @@ public class SettingsFlyout : Panel
         return row;
     }
 
-    private Border BuildGrainToggleRow()
+    private static StackPanel BuildSectionBody() =>
+        new() { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
+
+    private static Border BuildSectionToggleRow(string label, StackPanel body)
     {
+        var arrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         var content = new DockPanel();
-        DockPanel.SetDock(grainArrow, Dock.Right);
-        content.Children.Add(grainArrow);
+        DockPanel.SetDock(arrow, Dock.Right);
+        content.Children.Add(arrow);
         content.Children.Add(new TextBlock
         {
-            Text = "GRAIN EFFECTS",
+            Text = label,
             FontSize = 10,
             LetterSpacing = 1,
             Foreground = Palette.TextSub
@@ -192,8 +215,8 @@ public class SettingsFlyout : Panel
         row.Cursor = new Cursor(StandardCursorType.Hand);
         row.PointerPressed += (_, e) =>
         {
-            grainBody.IsVisible = !grainBody.IsVisible;
-            grainArrow.Text = grainBody.IsVisible ? "▾" : "▸";
+            body.IsVisible = !body.IsVisible;
+            arrow.Text = body.IsVisible ? "▾" : "▸";
             e.Handled = true;
         };
         return row;
@@ -236,7 +259,7 @@ public class SettingsFlyout : Panel
 
     private static string WavelengthLabel() => $"◂ {GrainSettings.BaseWavelength} px ▸";
 
-    private Slider AddSliderRow(string label, double min, double max, double step,
+    private static Slider AddSliderRow(StackPanel host, string label, double min, double max, double step,
         double initial, string format, Action<double> apply)
     {
         var readout = new TextBlock
@@ -286,7 +309,7 @@ public class SettingsFlyout : Panel
         var rowStack = new StackPanel();
         rowStack.Children.Add(header);
         rowStack.Children.Add(slider);
-        grainBody.Children.Add(rowStack);
+        host.Children.Add(rowStack);
         return slider;
     }
 

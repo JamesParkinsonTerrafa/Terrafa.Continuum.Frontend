@@ -358,9 +358,9 @@ public partial class NetworkView : UserControl
         {
             Width = 10,
             Height = 10,
-            Stroke = stroke,
+            Stroke = AppearanceSettings.Toned(stroke),
             StrokeThickness = 1,
-            Fill = fill ?? Brushes.Transparent,
+            Fill = fill is null ? Brushes.Transparent : AppearanceSettings.Toned(fill),
             StrokeDashArray = dashed ? [2, 2] : null,
             VerticalAlignment = VerticalAlignment.Center
         };

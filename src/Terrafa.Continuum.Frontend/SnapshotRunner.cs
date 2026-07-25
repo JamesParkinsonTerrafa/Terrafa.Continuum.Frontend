@@ -31,6 +31,38 @@ public static class SnapshotRunner
         CaptureAllViews(outputDir, snapshot, "-light");
         ThemeManager.SetLight(false);
         CaptureSettingsProbe(outputDir);
+        CaptureContactProbe(outputDir);
+    }
+
+    private static void CaptureContactProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var brand = window.GetVisualDescendants().OfType<TerminalTopBar>().First().BrandButton;
+        var brandPoint = brand.TranslatePoint(
+            new Point(brand.Bounds.Width / 2, brand.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(brandPoint, MouseButton.Left);
+        window.MouseUp(brandPoint, MouseButton.Left);
+        Pump();
+
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine("snapshot 0-contact: no frame captured");
+        }
+        else
+        {
+            frame.Save(Path.Combine(outputDir, "0-contact.png"));
+            Console.WriteLine("snapshot 0-contact: saved");
+        }
+        window.Close();
     }
 
     private static void CaptureSettingsProbe(string outputDir)
@@ -53,12 +85,14 @@ public static class SnapshotRunner
         Pump();
 
         var flyout = window.Settings;
-        var grainRow = flyout.GrainToggleRow;
-        var grainPoint = grainRow.TranslatePoint(
-            new Point(grainRow.Bounds.Width / 2, grainRow.Bounds.Height / 2), window)!.Value;
-        window.MouseDown(grainPoint, MouseButton.Left);
-        window.MouseUp(grainPoint, MouseButton.Left);
-        Pump();
+        foreach (var section in new[] { flyout.AppearanceToggleRow, flyout.GrainToggleRow })
+        {
+            var sectionPoint = section.TranslatePoint(
+                new Point(section.Bounds.Width / 2, section.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(sectionPoint, MouseButton.Left);
+            window.MouseUp(sectionPoint, MouseButton.Left);
+            Pump();
+        }
 
         flyout.IntensitySlider.Value = 24;
         flyout.SlopeSlider.Value = 0.8;

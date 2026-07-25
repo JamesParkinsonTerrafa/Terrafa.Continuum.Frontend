@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
              x:Class="Terrafa.Continuum.Frontend.Controls.TerminalTopBar"
              x:Name="Root"
              Height="36">
@@ -12,8 +13,10 @@
               Background="{StaticResource BgFieldBrush}" Padding="8,3"
               VerticalAlignment="Center" Cursor="Hand">
         <StackPanel Orientation="Horizontal" Spacing="6">
-          <TextBlock Text="⚙" FontSize="10" Foreground="{StaticResource AmberBrush}" />
+          <controls:SpurGearIcon Fill="{DynamicResource TextMutedBrush}"
+                                 VerticalAlignment="Center" />
           <TextBlock Text="SETTINGS" FontSize="9" LetterSpacing="1"
+                     VerticalAlignment="Center"
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </Border>
@@ -21,8 +24,8 @@
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
       <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-        <TextBlock Text="TERRAFA" FontSize="12" FontWeight="Bold" LetterSpacing="2"
-                   Foreground="{StaticResource AmberBrush}" />
+        <TextBlock x:Name="BrandButton" Text="TERRAFA" FontSize="12" FontWeight="Bold" LetterSpacing="2"
+                   Cursor="Hand" Foreground="{StaticResource AmberBrush}" />
         <TextBlock Text="CONTINUUM CORE" FontSize="12" LetterSpacing="1"
                    Foreground="{StaticResource TextMutedBrush}" />
         <TextBlock Text="│" FontSize="12" Foreground="{StaticResource TextGhostBrush}" />
