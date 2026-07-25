@@ -11,10 +11,11 @@
                              SubtitleText="SCHEMA · CONTRACT v1.4">
       <controls:TerminalTopBar.RightContent>
         <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-          <Border Background="{StaticResource AmberBrush}" Padding="12,4">
+          <controls:SquircleBorder Classes="emboss-key" Background="{StaticResource AmberBrush}"
+                                   Padding="12,5">
             <TextBlock Text="↻ REFRESH SCHEMA &lt;GO&gt;" FontSize="11" FontWeight="Bold"
                        Foreground="Black" />
-          </Border>
+          </controls:SquircleBorder>
           <TextBlock Text="last 14:02:11" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
                      VerticalAlignment="Center" />
         </StackPanel>
@@ -25,7 +26,8 @@
                                HintText="SCHEMA Δ since last refresh: +2 leaves (tank_03.level, tank_03.temp) · 0 moved · contract unchanged"
                                HintBrush="{StaticResource GreenBrush}" />
 
-    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom"
+                                IsVisible="{DynamicResource HintsVisible}">
       <controls:TerminalStatusBar.LeftContent>
         <StackPanel Orientation="Horizontal" Spacing="18">
           <TextBlock Text="STORAGE: STRUCTURED JSON / PARQUET" FontSize="10"
@@ -51,7 +53,8 @@
           <StackPanel Spacing="6">
             <TextBlock Text="Each event touches a bounded region of the tree — never the whole model."
                        FontSize="10" LineHeight="16" TextWrapping="Wrap"
-                       Foreground="{StaticResource TextMutedBrush}" />
+                       Foreground="{StaticResource TextMutedBrush}"
+                       IsVisible="{DynamicResource HintsVisible}" />
             <TextBlock Text="REPLAY TEST ✓  state = fold(events) · verified in CI 14:00 UTC"
                        FontSize="10" Foreground="{StaticResource GreenBrush}" />
           </StackPanel>

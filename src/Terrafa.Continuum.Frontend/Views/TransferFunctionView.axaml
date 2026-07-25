@@ -18,9 +18,10 @@
       </controls:TerminalTopBar>
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="1"
-                                 HintText="click a library function to append it · drag it into the stack to insert · drag stages vertically to reorder" />
+                                 HintText="drag a library function into the stack to insert · right-click for options · drag stages vertically to reorder" />
 
-      <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+      <controls:TerminalStatusBar DockPanel.Dock="Bottom"
+                                  IsVisible="{DynamicResource HintsVisible}">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
             <TextBlock Text="COMPOSITION = ORDERED PRIMITIVE CHAIN" FontSize="10"
@@ -40,43 +41,56 @@
       <Border x:Name="LibraryPanel" DockPanel.Dock="Left" Width="250"
               Background="{StaticResource BgPanelBrush}"
               BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-        <controls:PanelBox Title="FUNCTION LIBRARY">
+        <controls:PanelBox Title="FUNCTION LIBRARY" FooterHeight="54">
           <controls:PanelBox.InnerContent>
             <ScrollViewer>
               <StackPanel x:Name="LibraryList" Margin="12,10" Spacing="10" />
             </ScrollViewer>
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
-            <TextBlock Text="Primitives are fixed — they cannot be edited or deleted. Right-click the library to create a new composite function."
+            <TextBlock Text="Primitives are fixed. Right-click the library to create a composite function."
                        FontSize="10" LineHeight="15" TextWrapping="Wrap"
-                       Foreground="{StaticResource TextFaintBrush}" />
+                       MaxLines="2" TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource TextFaintBrush}"
+                       IsVisible="{DynamicResource HintsVisible}" />
           </controls:PanelBox.FooterContent>
         </controls:PanelBox>
       </Border>
 
-      <Border x:Name="StackColumn" DockPanel.Dock="Left" Width="400"
+      <Border x:Name="StackColumn" DockPanel.Dock="Left" Width="470"
               BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-        <controls:PanelBox x:Name="StackBox" Title="COMPOSITION STACK" Hint="draft: fig.draft_h">
+        <controls:PanelBox x:Name="StackBox" Title="COMPOSITION" FooterHeight="54">
           <controls:PanelBox.HeaderRightContent>
-            <Border x:Name="SaveButton" Background="{StaticResource AmberBrush}"
-                    Padding="10,3" Cursor="Hand">
-              <TextBlock Text="SAVE ▸" FontSize="10" FontWeight="Bold" Foreground="Black" />
-            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <controls:SquircleBorder x:Name="NameField" Classes="emboss-press"
+                                       Background="{StaticResource BgFieldBrush}">
+                <TextBox x:Name="NameBox" Classes="field" Width="150"
+                         Watermark="function name" />
+              </controls:SquircleBorder>
+              <controls:SquircleBorder x:Name="SaveButton" Classes="emboss-key" Padding="12,5"
+                                       Background="{StaticResource AmberBrush}" Cursor="Hand">
+                <TextBlock Text="SAVE ▸" FontSize="10" FontWeight="Bold" Foreground="Black" />
+              </controls:SquircleBorder>
+            </StackPanel>
           </controls:PanelBox.HeaderRightContent>
           <controls:PanelBox.InnerContent>
-            <ScrollViewer>
-              <StackPanel x:Name="StackHost" Margin="18" HorizontalAlignment="Stretch" />
-            </ScrollViewer>
+            <DockPanel>
+              <controls:TerminalTabStrip x:Name="StackTabs" DockPanel.Dock="Top" IsClosable="True" />
+              <ScrollViewer>
+                <StackPanel x:Name="StackHost" Margin="18" HorizontalAlignment="Stretch" />
+              </ScrollViewer>
+            </DockPanel>
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <TextBlock x:Name="StackFooter" FontSize="10" LineHeight="16" TextWrapping="Wrap"
+                       MaxLines="2" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextMutedBrush}" />
           </controls:PanelBox.FooterContent>
         </controls:PanelBox>
       </Border>
 
       <controls:PanelBox x:Name="ResultPanel" Title="RESULT"
-                         Hint="domain x ∈ [0.34, 3.2]">
+                         Hint="domain x ∈ [0.34, 3.2]" FooterHeight="54">
         <controls:PanelBox.InnerContent>
           <charts:LineChart x:Name="ResultChart" Margin="20" />
         </controls:PanelBox.InnerContent>
@@ -87,5 +101,6 @@
       </controls:PanelBox>
     </DockPanel>
     <Canvas x:Name="Overlay" Background="Transparent" IsVisible="False" />
+    <Panel x:Name="DialogHost" Background="{StaticResource ScrimBrush}" IsVisible="False" />
   </Panel>
 </UserControl>

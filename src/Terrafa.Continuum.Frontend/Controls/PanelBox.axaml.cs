@@ -25,6 +25,12 @@ public partial class PanelBox : UserControl
     public static readonly StyledProperty<Thickness> FooterPaddingProperty =
         AvaloniaProperty.Register<PanelBox, Thickness>(nameof(FooterPadding), new Thickness(12, 10));
 
+    public static readonly StyledProperty<double> HeaderHeightProperty =
+        AvaloniaProperty.Register<PanelBox, double>(nameof(HeaderHeight), 40);
+
+    public static readonly StyledProperty<double> FooterHeightProperty =
+        AvaloniaProperty.Register<PanelBox, double>(nameof(FooterHeight), double.NaN);
+
     public static readonly StyledProperty<object?> InnerContentProperty =
         AvaloniaProperty.Register<PanelBox, object?>(nameof(InnerContent));
 
@@ -70,6 +76,18 @@ public partial class PanelBox : UserControl
     {
         get => GetValue(FooterPaddingProperty);
         set => SetValue(FooterPaddingProperty, value);
+    }
+
+    public double HeaderHeight
+    {
+        get => GetValue(HeaderHeightProperty);
+        set => SetValue(HeaderHeightProperty, value);
+    }
+
+    public double FooterHeight
+    {
+        get => GetValue(FooterHeightProperty);
+        set => SetValue(FooterHeightProperty, value);
     }
 
     public object? InnerContent

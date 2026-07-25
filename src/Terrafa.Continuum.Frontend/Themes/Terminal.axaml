@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Terrafa.Continuum.Frontend.Controls">
   <Styles.Resources>
     <ResourceDictionary>
       <FontFamily x:Key="TerminalFont">Verdana, Tahoma</FontFamily>
@@ -15,9 +16,79 @@
     <Setter Property="LetterSpacing" Value="1" />
   </Style>
 
+  <Style Selector="TextBlock.engraved">
+    <Setter Property="Foreground" Value="{DynamicResource EngraveTextBrush}" />
+    <Setter Property="Effect">
+      <DropShadowEffect OffsetX="1" OffsetY="1"
+                        BlurRadius="{DynamicResource EngraveBlurRadius}"
+                        Color="{DynamicResource EngraveHighlightColor}" />
+    </Setter>
+  </Style>
+
   <Style Selector="TextBlock.sectionTitle">
     <Setter Property="FontSize" Value="11" />
     <Setter Property="LetterSpacing" Value="1" />
     <Setter Property="Foreground" Value="{DynamicResource AmberBrush}" />
+  </Style>
+
+  <Style Selector="TextBox.field">
+    <Setter Property="FontFamily" Value="{StaticResource TerminalFont}" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="11,3" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource AmberBrush}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource AmberFillBrush}" />
+    <Setter Property="SelectionForegroundBrush" Value="{DynamicResource TextBrightBrush}" />
+  </Style>
+
+  <Style Selector="TextBox.field /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="TextBox.field:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="TextBox.field:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
+  <Style Selector="TextBox.field:focus">
+    <Setter Property="Foreground" Value="{DynamicResource AmberBrush}" />
+  </Style>
+
+  <Style Selector="controls|SquircleBorder.emboss">
+    <Setter Property="CornerRadius" Value="{DynamicResource EmbossCornerRadius}" />
+    <Setter Property="ShadowStrength" Value="{DynamicResource EmbossIdleStrength}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource EmbossRaisedShadow}" />
+  </Style>
+
+  <Style Selector="controls|SquircleBorder.emboss-key">
+    <Setter Property="CornerRadius" Value="{DynamicResource EmbossCornerRadius}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource EmbossRaisedShadow}" />
+  </Style>
+
+  <Style Selector="controls|SquircleBorder.emboss-press">
+    <Setter Property="CornerRadius" Value="{DynamicResource EmbossCornerRadius}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource EmbossPressedShadow}" />
+  </Style>
+
+  <Style Selector="controls|SquircleBorder.emboss-card">
+    <Setter Property="CornerRadius" Value="18" />
+    <Setter Property="Background" Value="{DynamicResource EmbossSurfaceBrush}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource EmbossCardShadow}" />
+  </Style>
+
+  <Style Selector="controls|SquircleBorder.emboss-inner">
+    <Setter Property="CornerRadius" Value="18" />
+    <Setter Property="Background" Value="{DynamicResource EmbossSurfaceBrush}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource EmbossInnerShadow}" />
   </Style>
 </Styles>

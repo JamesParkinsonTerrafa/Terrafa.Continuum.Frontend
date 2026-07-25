@@ -17,7 +17,8 @@
     <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="4"
                                HintText="adjacency runs visualisation — location-related fields pull out directly" />
 
-    <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+    <controls:TerminalStatusBar DockPanel.Dock="Bottom"
+                                IsVisible="{DynamicResource HintsVisible}">
       <controls:TerminalStatusBar.LeftContent>
         <StackPanel Orientation="Horizontal" Spacing="18">
           <TextBlock Text="ZONES = ADJACENCY META-DESCRIPTORS" FontSize="10"
@@ -37,7 +38,8 @@
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
       <DockPanel>
         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="0,1,0,0" Padding="12,10">
+                BorderThickness="0,1,0,0" Padding="12,10"
+                IsVisible="{DynamicResource HintsVisible}">
           <TextBlock Text="Zones map to adjacency meta-descriptors — two tanks can touch in space without either owning the other."
                      FontSize="10" LineHeight="15" TextWrapping="Wrap"
                      Foreground="{StaticResource TextFaintBrush}" />
@@ -79,7 +81,8 @@
                          Foreground="{StaticResource TextBrightBrush}" />
               <TextBlock Text="σ source" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
             </DockPanel>
-            <Border BorderBrush="{StaticResource GridFaintBrush}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+            <Border BorderBrush="{StaticResource GridFaintBrush}" BorderThickness="0,1,0,0" Padding="0,8,0,0"
+                    IsVisible="{DynamicResource HintsVisible}">
               <TextBlock Text="Precision averages out as σ/√n; bias survives any averaging. The editor keeps σ and β as two fields by construction."
                          FontSize="10" LineHeight="15" TextWrapping="Wrap"
                          Foreground="{StaticResource TextFaintBrush}" />

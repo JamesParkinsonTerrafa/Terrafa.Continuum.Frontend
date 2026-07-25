@@ -27,9 +27,12 @@ public static class SnapshotRunner
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
-        ThemeManager.SetLight(true);
-        CaptureAllViews(outputDir, snapshot, "-light");
+        HintSettings.SetEnabled(false);
+        CaptureAllViews(outputDir, snapshot, "-nohints");
+        HintSettings.SetEnabled(true);
         ThemeManager.SetLight(false);
+        CaptureAllViews(outputDir, snapshot, "-dark");
+        ThemeManager.SetLight(true);
         CaptureSettingsProbe(outputDir);
     }
 
@@ -53,29 +56,28 @@ public static class SnapshotRunner
         Pump();
 
         var flyout = window.Settings;
-        var grainRow = flyout.GrainToggleRow;
-        var grainPoint = grainRow.TranslatePoint(
-            new Point(grainRow.Bounds.Width / 2, grainRow.Bounds.Height / 2), window)!.Value;
-        window.MouseDown(grainPoint, MouseButton.Left);
-        window.MouseUp(grainPoint, MouseButton.Left);
-        Pump();
 
+        void ExpandSection(Border row)
+        {
+            var point = row.TranslatePoint(
+                new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+        }
+
+        ExpandSection(flyout.ButtonToggleRow);
+        ExpandSection(flyout.GrainToggleRow);
+
+        flyout.IdleEmbossSlider.Value = ButtonSettings.IdleEmbossStrength;
+        flyout.CornerRadiusSlider.Value = ButtonSettings.CornerRadius;
         flyout.IntensitySlider.Value = 24;
         flyout.SlopeSlider.Value = 0.8;
         flyout.WarpSlider.Value = 34;
         NoiseOverlay.RebuildNow();
         Pump();
 
-        using var frame = window.CaptureRenderedFrame();
-        if (frame is null)
-        {
-            Console.Error.WriteLine("snapshot 0-settings: no frame captured");
-        }
-        else
-        {
-            frame.Save(Path.Combine(outputDir, "0-settings.png"));
-            Console.WriteLine("snapshot 0-settings: saved");
-        }
+        Capture(window, outputDir, "0-settings");
         window.Close();
     }
 
@@ -142,16 +144,7 @@ public static class SnapshotRunner
         window.MouseUp(menuPoint, MouseButton.Right);
         Pump();
 
-        using var frame = window.CaptureRenderedFrame();
-        if (frame is null)
-        {
-            Console.Error.WriteLine("snapshot 1-netw-interact: no frame captured");
-        }
-        else
-        {
-            frame.Save(Path.Combine(outputDir, "1-netw-interact.png"));
-            Console.WriteLine("snapshot 1-netw-interact: saved");
-        }
+        Capture(window, outputDir, "1-netw-interact");
         window.Close();
     }
 
@@ -188,23 +181,61 @@ public static class SnapshotRunner
             return entry;
         }
 
-        void OpenCreateFunctionMenu()
+        void OpenMenu(Visual over)
         {
-            var libraryPoint = Center(view.LibraryList);
-            window.MouseDown(libraryPoint, MouseButton.Right);
-            window.MouseUp(libraryPoint, MouseButton.Right);
+            var point = Center(over);
+            window.MouseDown(point, MouseButton.Right);
+            window.MouseUp(point, MouseButton.Right);
             Pump();
-            var createItem = view.Overlay.GetVisualDescendants().OfType<TextBlock>()
-                .First(text => text.Text == "CREATE FUNCTION");
-            Click(Center(createItem));
         }
 
-        OpenCreateFunctionMenu();
+        void ClickMenuItem(string label)
+        {
+            var item = view.Overlay.GetVisualDescendants().OfType<TextBlock>()
+                .First(text => text.Text == label);
+            Click(Center(item));
+        }
+
+        void ClickDialogButton(string label)
+        {
+            var button = view.DialogHost.GetVisualDescendants().OfType<TextBlock>()
+                .First(text => text.Text == label);
+            Click(Center(button));
+        }
+
+        string DialogMessage() => string.Join(" | ", view.DialogHost.GetVisualDescendants()
+            .OfType<TextBlock>().Select(text => text.Text));
+
+        void CreateFunctionTab()
+        {
+            OpenMenu(view.LibraryList);
+            ClickMenuItem("CREATE FUNCTION");
+        }
+
+        void TypeName(string name)
+        {
+            view.NameBox.Text = name;
+            Pump();
+        }
+
+        CreateFunctionTab();
         Console.WriteLine($"tfn probe: blank stack has {view.StageRows.Count} stages");
 
         Click(Center(LibraryEntry("exp")));
-        Click(Center(LibraryEntry("sum")));
-        Console.WriteLine($"tfn probe: after adds, {view.StageRows.Count} stages");
+        Console.WriteLine($"tfn probe: left click added {view.StageRows.Count} stages (expected 0)");
+
+        OpenMenu(LibraryEntry("exp"));
+        ClickMenuItem("ADD TO COMPOSITION STACK");
+
+        var dragEntry = LibraryEntry("sum");
+        var dragStart = Center(dragEntry);
+        var dragDrop = Center(view.StackHost);
+        window.MouseDown(dragStart, MouseButton.Left);
+        window.MouseMove(new Point(dragStart.X + 30, dragStart.Y + 10));
+        window.MouseMove(dragDrop);
+        window.MouseUp(dragDrop, MouseButton.Left);
+        Pump();
+        Console.WriteLine($"tfn probe: after menu add + drag, {view.StageRows.Count} stages");
 
         var secondRow = view.StageRows[1];
         var reorderStart = Center(secondRow);
@@ -219,20 +250,31 @@ public static class SnapshotRunner
         Click(Center(view.SaveButton));
         Console.WriteLine($"tfn probe: library entries after save = {view.LibraryList.Children.Count}");
 
-        OpenCreateFunctionMenu();
-        Click(Center(LibraryEntry("fn_1")));
+        CreateFunctionTab();
+        OpenMenu(LibraryEntry("fn_1"));
+        ClickMenuItem("ADD TO COMPOSITION STACK");
         Console.WriteLine($"tfn probe: after composite add, {view.StackFooter.Text}");
 
-        using var frame = window.CaptureRenderedFrame();
-        if (frame is null)
-        {
-            Console.Error.WriteLine("snapshot 2-tfn-interact: no frame captured");
-        }
-        else
-        {
-            frame.Save(Path.Combine(outputDir, "2-tfn-interact.png"));
-            Console.WriteLine("snapshot 2-tfn-interact: saved");
-        }
+        OpenMenu(view.StageRows[0]);
+        Capture(window, outputDir, "2-tfn-interact");
+        ClickMenuItem("REMOVE FROM STACK");
+        Console.WriteLine($"tfn probe: after menu remove, {view.StageRows.Count} stages");
+
+        OpenMenu(LibraryEntry("fn_1"));
+        ClickMenuItem("ADD TO COMPOSITION STACK");
+        TypeName("fn_1");
+        Click(Center(view.SaveButton));
+        Console.WriteLine($"tfn probe: overwrite dialog = {DialogMessage()}");
+        Capture(window, outputDir, "2-tfn-dialog");
+        ClickDialogButton("CANCEL");
+
+        var closeGlyph = view.StackTabs.GetVisualDescendants().OfType<TextBlock>()
+            .Last(text => text.Text == "×");
+        Click(Center(closeGlyph));
+        Console.WriteLine($"tfn probe: close prompt = {DialogMessage()}");
+        ClickDialogButton("DISCARD");
+        Console.WriteLine($"tfn probe: tabs after close = {view.StackTabs.Labels.Count}");
+
         window.Close();
     }
 
@@ -240,6 +282,18 @@ public static class SnapshotRunner
     {
         Dispatcher.UIThread.RunJobs();
         AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+    }
+
+    private static void Capture(Window window, string outputDir, string name)
+    {
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine($"snapshot {name}: no frame captured");
+            return;
+        }
+        frame.Save(Path.Combine(outputDir, $"{name}.png"));
+        Console.WriteLine($"snapshot {name}: saved");
     }
 
     private static void CaptureAllViews(string outputDir, DataSnapshot snapshot, string suffix)
@@ -263,19 +317,9 @@ public static class SnapshotRunner
                 Content = view
             };
             window.Show();
-            Dispatcher.UIThread.RunJobs();
-            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Pump();
 
-            using var frame = window.CaptureRenderedFrame();
-            if (frame is null)
-            {
-                Console.Error.WriteLine($"snapshot {name}{suffix}: no frame captured");
-            }
-            else
-            {
-                frame.Save(Path.Combine(outputDir, $"{name}{suffix}.png"));
-                Console.WriteLine($"snapshot {name}{suffix}: saved");
-            }
+            Capture(window, outputDir, $"{name}{suffix}");
             window.Close();
         }
     }

@@ -11,7 +11,9 @@ public class App : Application
 {
     public override void Initialize()
     {
-        Palette.RegisterResources(Resources);
+        ThemeManager.Initialize(Resources);
+        HintSettings.RegisterResources(Resources);
+        ButtonSettings.RegisterResources(Resources);
         AvaloniaXamlLoader.Load(this);
     }
 

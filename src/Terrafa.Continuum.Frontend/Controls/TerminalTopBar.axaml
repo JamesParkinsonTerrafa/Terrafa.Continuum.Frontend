@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
              x:Class="Terrafa.Continuum.Frontend.Controls.TerminalTopBar"
              x:Name="Root"
              Height="36">
@@ -7,22 +8,21 @@
           BorderBrush="{StaticResource BorderBrush}"
           BorderThickness="0,0,0,1">
     <DockPanel Margin="14,0">
-      <Border x:Name="SettingsButton" DockPanel.Dock="Right" Margin="14,0,0,0"
-              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-              Background="{StaticResource BgFieldBrush}" Padding="8,3"
-              VerticalAlignment="Center" Cursor="Hand">
+      <controls:SquircleBorder x:Name="SettingsButton" Classes="emboss" DockPanel.Dock="Right"
+                               Margin="14,0,0,0" Padding="10,5"
+                               Background="{StaticResource EmbossSurfaceBrush}"
+                               VerticalAlignment="Center" Cursor="Hand">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <TextBlock Text="⚙" FontSize="10" Foreground="{StaticResource AmberBrush}" />
           <TextBlock Text="SETTINGS" FontSize="9" LetterSpacing="1"
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
-      </Border>
+      </controls:SquircleBorder>
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
       <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-        <TextBlock Text="TERRAFA" FontSize="12" FontWeight="Bold" LetterSpacing="2"
-                   Foreground="{StaticResource AmberBrush}" />
+        <TextBlock Classes="engraved" Text="TERRAFA" FontSize="12" FontWeight="Bold" LetterSpacing="2" />
         <TextBlock Text="CONTINUUM CORE" FontSize="12" LetterSpacing="1"
                    Foreground="{StaticResource TextMutedBrush}" />
         <TextBlock Text="│" FontSize="12" Foreground="{StaticResource TextGhostBrush}" />

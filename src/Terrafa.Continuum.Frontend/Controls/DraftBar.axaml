@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
              x:Class="Terrafa.Continuum.Frontend.Controls.DraftBar"
              x:Name="Root"
              Height="54">
@@ -33,10 +34,11 @@
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="12"
                   VerticalAlignment="Center" Margin="12,0,0,0">
         <ContentControl Content="{Binding ChipContent, ElementName=Root}" VerticalAlignment="Center" />
-        <Border Background="{StaticResource AmberBrush}" Padding="12,5">
+        <controls:SquircleBorder Classes="emboss-key" Background="{StaticResource AmberBrush}"
+                                 Padding="14,6">
           <TextBlock Text="{Binding CommitText, ElementName=Root}" FontSize="11"
                      FontWeight="Bold" Foreground="Black" />
-        </Border>
+        </controls:SquircleBorder>
       </StackPanel>
       <Border Background="{StaticResource BgDeepBrush}"
               BorderBrush="{StaticResource BorderMidBrush}"

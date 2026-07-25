@@ -15,15 +15,22 @@ public class SettingsFlyout : Panel
 
     internal Border PanelBorder { get; }
     internal Border GrainToggleRow { get; }
+    internal Border ButtonToggleRow { get; }
     internal Slider IntensitySlider { get; }
     internal Slider SlopeSlider { get; }
     internal Slider WarpSlider { get; }
     internal Slider GrainSlider { get; }
+    internal Slider IdleEmbossSlider { get; }
+    internal Slider CornerRadiusSlider { get; }
 
     private readonly StackPanel grainBody;
+    private readonly StackPanel buttonBody;
     private readonly TextBlock grainArrow;
+    private readonly TextBlock buttonArrow;
     private readonly TextBlock darkLabel;
     private readonly TextBlock lightLabel;
+    private readonly TextBlock hintsOnLabel;
+    private readonly TextBlock hintsOffLabel;
     private readonly TextBlock waveValue;
 
     public SettingsFlyout()
@@ -38,20 +45,37 @@ public class SettingsFlyout : Panel
         };
         Children.Add(backdrop);
 
-        darkLabel = BuildThemeLabel("DARK");
-        lightLabel = BuildThemeLabel("LIGHT");
+        darkLabel = BuildToggleLabel("DARK");
+        lightLabel = BuildToggleLabel("LIGHT");
+        hintsOnLabel = BuildToggleLabel("ON");
+        hintsOffLabel = BuildToggleLabel("OFF");
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
+        buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
         grainBody = new StackPanel { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
+        buttonBody = new StackPanel { Margin = new Thickness(14, 8, 14, 14), Spacing = 8, IsVisible = false };
 
-        IntensitySlider = AddSliderRow("INTENSITY", 0, GrainSettings.MaxIntensity, 1,
+        IdleEmbossSlider = AddSliderRow(buttonBody, "UNSELECTED DEPTH", 0, 1, 0.05,
+            ButtonSettings.IdleEmbossStrength, "0.00", ButtonSettings.SetIdleEmbossStrength);
+        CornerRadiusSlider = AddSliderRow(buttonBody, "CORNER RADIUS", 0, ButtonSettings.MaxCornerRadius, 1,
+            ButtonSettings.CornerRadius, "0", ButtonSettings.SetCornerRadius);
+        buttonBody.Children.Add(new TextBlock
+        {
+            Text = "Depth applies to raised buttons only — the selected tab stays fully pressed.",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
+        IntensitySlider = AddSliderRow(grainBody, "INTENSITY", 0, GrainSettings.MaxIntensity, 1,
             GrainSettings.Intensity, "0", GrainSettings.SetIntensity);
         AddWavelengthRow();
-        SlopeSlider = AddSliderRow("TV SLOPE", 0, 1.5, 0.05,
+        SlopeSlider = AddSliderRow(grainBody, "TV SLOPE", 0, 1.5, 0.05,
             GrainSettings.SpectralSlope, "0.00", GrainSettings.SetSpectralSlope);
-        WarpSlider = AddSliderRow("WARP", 0, 100, 1,
+        WarpSlider = AddSliderRow(grainBody, "WARP", 0, 100, 1,
             GrainSettings.WarpStrength, "0", GrainSettings.SetWarpStrength);
-        GrainSlider = AddSliderRow("FINE GRAIN", 0, 8, 0.5,
+        GrainSlider = AddSliderRow(grainBody, "FINE GRAIN", 0, 8, 0.5,
             GrainSettings.FineGrain, "0.0", GrainSettings.SetFineGrain);
         grainBody.Children.Add(new TextBlock
         {
@@ -62,11 +86,15 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
-        GrainToggleRow = BuildGrainToggleRow();
+        ButtonToggleRow = BuildSectionRow("BUTTON UI", buttonArrow, buttonBody);
+        GrainToggleRow = BuildSectionRow("GRAIN EFFECTS", grainArrow, grainBody);
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
         column.Children.Add(BuildThemeRow());
+        column.Children.Add(BuildHintsRow());
+        column.Children.Add(ButtonToggleRow);
+        column.Children.Add(buttonBody);
         column.Children.Add(GrainToggleRow);
         column.Children.Add(grainBody);
 
@@ -92,26 +120,34 @@ public class SettingsFlyout : Panel
     {
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RefreshThemeLabels;
+        HintSettings.Changed += RefreshHintLabels;
         RefreshThemeLabels();
+        RefreshHintLabels();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         ThemeManager.Changed -= RefreshThemeLabels;
+        HintSettings.Changed -= RefreshHintLabels;
     }
 
-    private static TextBlock BuildThemeLabel(string text) => new()
+    private static TextBlock BuildToggleLabel(string text) => new()
     {
         Text = text,
         FontSize = 9,
         LetterSpacing = 1
     };
 
-    private void RefreshThemeLabels()
+    private void RefreshThemeLabels() =>
+        MarkActive(ThemeManager.IsLight ? lightLabel : darkLabel, ThemeManager.IsLight ? darkLabel : lightLabel);
+
+    private void RefreshHintLabels() =>
+        MarkActive(HintSettings.Enabled ? hintsOnLabel : hintsOffLabel,
+            HintSettings.Enabled ? hintsOffLabel : hintsOnLabel);
+
+    private static void MarkActive(TextBlock active, TextBlock inactive)
     {
-        var active = ThemeManager.IsLight ? lightLabel : darkLabel;
-        var inactive = ThemeManager.IsLight ? darkLabel : lightLabel;
         active.Foreground = Palette.Amber;
         active.FontWeight = FontWeight.Bold;
         inactive.Foreground = Palette.TextFaint;
@@ -147,19 +183,25 @@ public class SettingsFlyout : Panel
         return BuildRow(content, separator: true);
     }
 
-    private Border BuildThemeRow()
+    private Border BuildThemeRow() =>
+        BuildToggleRow("THEME", darkLabel, lightLabel, ThemeManager.Toggle);
+
+    private Border BuildHintsRow() =>
+        BuildToggleRow("HINTS", hintsOnLabel, hintsOffLabel, HintSettings.Toggle);
+
+    private static Border BuildToggleRow(string label, TextBlock first, TextBlock second, Action toggle)
     {
-        var toggle = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        toggle.Children.Add(darkLabel);
-        toggle.Children.Add(new TextBlock { Text = "/", FontSize = 9, Foreground = Palette.TextGhost });
-        toggle.Children.Add(lightLabel);
+        var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        options.Children.Add(first);
+        options.Children.Add(new TextBlock { Text = "/", FontSize = 9, Foreground = Palette.TextGhost });
+        options.Children.Add(second);
 
         var content = new DockPanel();
-        DockPanel.SetDock(toggle, Dock.Right);
-        content.Children.Add(toggle);
+        DockPanel.SetDock(options, Dock.Right);
+        content.Children.Add(options);
         content.Children.Add(new TextBlock
         {
-            Text = "THEME",
+            Text = label,
             FontSize = 10,
             LetterSpacing = 1,
             Foreground = Palette.TextSub
@@ -169,20 +211,20 @@ public class SettingsFlyout : Panel
         row.Cursor = new Cursor(StandardCursorType.Hand);
         row.PointerPressed += (_, e) =>
         {
-            ThemeManager.Toggle();
+            toggle();
             e.Handled = true;
         };
         return row;
     }
 
-    private Border BuildGrainToggleRow()
+    private static Border BuildSectionRow(string label, TextBlock arrow, StackPanel body)
     {
         var content = new DockPanel();
-        DockPanel.SetDock(grainArrow, Dock.Right);
-        content.Children.Add(grainArrow);
+        DockPanel.SetDock(arrow, Dock.Right);
+        content.Children.Add(arrow);
         content.Children.Add(new TextBlock
         {
-            Text = "GRAIN EFFECTS",
+            Text = label,
             FontSize = 10,
             LetterSpacing = 1,
             Foreground = Palette.TextSub
@@ -192,8 +234,8 @@ public class SettingsFlyout : Panel
         row.Cursor = new Cursor(StandardCursorType.Hand);
         row.PointerPressed += (_, e) =>
         {
-            grainBody.IsVisible = !grainBody.IsVisible;
-            grainArrow.Text = grainBody.IsVisible ? "▾" : "▸";
+            body.IsVisible = !body.IsVisible;
+            arrow.Text = body.IsVisible ? "▾" : "▸";
             e.Handled = true;
         };
         return row;
@@ -202,12 +244,11 @@ public class SettingsFlyout : Panel
     private void AddWavelengthRow()
     {
         waveValue.Text = WavelengthLabel();
-        var chip = new Border
+        var chip = new SquircleBorder
         {
-            Background = Palette.BgField,
-            BorderBrush = Palette.Border,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(8, 2),
+            Classes = { "emboss" },
+            Background = Palette.EmbossSurface,
+            Padding = new Thickness(10, 4),
             Cursor = new Cursor(StandardCursorType.Hand),
             Child = waveValue
         };
@@ -236,8 +277,8 @@ public class SettingsFlyout : Panel
 
     private static string WavelengthLabel() => $"◂ {GrainSettings.BaseWavelength} px ▸";
 
-    private Slider AddSliderRow(string label, double min, double max, double step,
-        double initial, string format, Action<double> apply)
+    private static Slider AddSliderRow(StackPanel target, string label, double min, double max,
+        double step, double initial, string format, Action<double> apply)
     {
         var readout = new TextBlock
         {
@@ -286,7 +327,7 @@ public class SettingsFlyout : Panel
         var rowStack = new StackPanel();
         rowStack.Children.Add(header);
         rowStack.Children.Add(slider);
-        grainBody.Children.Add(rowStack);
+        target.Children.Add(rowStack);
         return slider;
     }
 

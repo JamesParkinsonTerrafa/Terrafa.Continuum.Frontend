@@ -4,6 +4,7 @@
              x:Name="Root">
   <DockPanel>
     <Border DockPanel.Dock="Top"
+            Height="{Binding HeaderHeight, ElementName=Root}"
             Background="{Binding HeaderBackground, ElementName=Root}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="0,0,0,1"
@@ -26,11 +27,13 @@
       </DockPanel>
     </Border>
     <Border DockPanel.Dock="Bottom"
+            Height="{Binding FooterHeight, ElementName=Root}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="0,1,0,0"
             Padding="{Binding FooterPadding, ElementName=Root}"
             IsVisible="{Binding HasFooter, ElementName=Root}">
-      <ContentControl Content="{Binding FooterContent, ElementName=Root}" />
+      <ContentControl Content="{Binding FooterContent, ElementName=Root}"
+                      VerticalAlignment="Center" />
     </Border>
     <ContentControl Content="{Binding InnerContent, ElementName=Root}" />
   </DockPanel>

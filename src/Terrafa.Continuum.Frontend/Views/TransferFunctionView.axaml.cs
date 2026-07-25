@@ -19,10 +19,19 @@ public partial class TransferFunctionView : UserControl
     private const double DragThreshold = 6;
     private const double StageArrowX = 182;
 
+    private sealed class FunctionDraft
+    {
+        public required string Name { get; set; }
+        public List<LibraryFunction> Stages { get; } = [];
+        public string? SavedName { get; set; }
+        public bool HasUnsavedChanges { get; set; }
+    }
+
     private readonly FunctionLibrary library = FunctionLibrary.Instance;
-    private readonly List<LibraryFunction> stages = [];
+    private readonly List<FunctionDraft> drafts = [];
     private readonly List<Panel> stageRows = [];
-    private string draftName = "fig.draft_h";
+    private int activeDraftIndex;
+    private bool isSyncingNameBox;
 
     private LibraryFunction? pressedFunction;
     private Point pressOrigin;
@@ -37,6 +46,10 @@ public partial class TransferFunctionView : UserControl
 
     internal IReadOnlyList<Panel> StageRows => stageRows;
 
+    private FunctionDraft ActiveDraft => drafts[activeDraftIndex];
+
+    private List<LibraryFunction> Stages => ActiveDraft.Stages;
+
     public TransferFunctionView() : this(DemoData.CreateSnapshot(), _ => { })
     {
     }
@@ -46,18 +59,35 @@ public partial class TransferFunctionView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        stages.Add(library.Primitives.First(function => function.Name == "square"));
-        stages.Add(library.Primitives.First(function => function.Name == "reciprocal"));
+        var initial = new FunctionDraft { Name = "fig.draft_h" };
+        initial.Stages.Add(library.Primitives.First(function => function.Name == "square"));
+        initial.Stages.Add(library.Primitives.First(function => function.Name == "reciprocal"));
+        drafts.Add(initial);
 
+        StackTabs.TabSelected += SelectDraft;
+        StackTabs.TabCloseRequested += RequestCloseDraft;
+        NameBox.TextChanged += OnNameBoxChanged;
         LibraryPanel.PointerPressed += OnLibraryPanelPressed;
         SaveButton.PointerPressed += OnSavePressed;
         Overlay.PointerPressed += OnOverlayPressed;
+        DialogHost.PointerPressed += OnDialogHostPressed;
 
         RebuildLibrary();
-        RebuildStack();
-        RefreshResult();
+        SyncActiveDraft();
 
         NoiseOverlay.Attach(this);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        HintSettings.Changed += RebuildStack;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        HintSettings.Changed -= RebuildStack;
     }
 
     private void RebuildLibrary()
@@ -117,7 +147,16 @@ public partial class TransferFunctionView : UserControl
 
     private void OnLibraryEntryPressed(LibraryFunction function, Border entry, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(entry).Properties.IsLeftButtonPressed) return;
+        var properties = e.GetCurrentPoint(entry).Properties;
+        if (properties.IsRightButtonPressed)
+        {
+            e.Handled = true;
+            ShowMenu(function.Name, e.GetPosition(this),
+                ("ADD TO COMPOSITION STACK", () => InsertStage(function, Stages.Count)),
+                ("CREATE FUNCTION", BeginNewFunction));
+            return;
+        }
+        if (!properties.IsLeftButtonPressed) return;
         CloseMenu();
         pressedFunction = function;
         pressOrigin = e.GetPosition(this);
@@ -148,11 +187,7 @@ public partial class TransferFunctionView : UserControl
         pressedFunction = null;
         e.Pointer.Capture(null);
         HideDragGhost();
-        if (!libraryDragActive)
-        {
-            InsertStage(function, stages.Count);
-            return;
-        }
+        if (!libraryDragActive) return;
         libraryDragActive = false;
         var columnPosition = e.GetPosition(StackColumn);
         var overStack = columnPosition.X >= 0 && columnPosition.X <= StackColumn.Bounds.Width &&
@@ -172,18 +207,20 @@ public partial class TransferFunctionView : UserControl
 
     private void InsertStage(LibraryFunction function, int index)
     {
-        stages.Insert(Math.Clamp(index, 0, stages.Count), function);
-        OnStagesChanged();
+        Stages.Insert(Math.Clamp(index, 0, Stages.Count), function);
+        OnStagesEdited();
     }
 
     private void RemoveStage(int index)
     {
-        stages.RemoveAt(index);
-        OnStagesChanged();
+        Stages.RemoveAt(index);
+        OnStagesEdited();
     }
 
-    private void OnStagesChanged()
+    private void OnStagesEdited()
     {
+        ActiveDraft.HasUnsavedChanges = true;
+        RebuildTabs();
         RebuildStack();
         RefreshResult();
     }
@@ -202,10 +239,10 @@ public partial class TransferFunctionView : UserControl
             TitleSize = 14
         });
 
-        for (var i = 0; i < stages.Count; i++)
+        for (var i = 0; i < Stages.Count; i++)
         {
             StackHost.Children.Add(CreateArrow());
-            var row = CreateStageRow(stages[i], i);
+            var row = CreateStageRow(Stages[i], i);
             stageRows.Add(row);
             StackHost.Children.Add(row);
         }
@@ -214,19 +251,23 @@ public partial class TransferFunctionView : UserControl
         StackHost.Children.Add(new NodeCard
         {
             Variant = NodeCardVariant.Figure,
-            TagText = $"STAGE {stages.Count + 2} · OUTPUT",
+            TagText = $"STAGE {Stages.Count + 2} · OUTPUT",
             TagRight = "h(x)",
-            Title = $"h(x) = {FunctionLibrary.ComposeFormula(stages, "x")}",
+            Title = $"h(x) = {FunctionLibrary.ComposeFormula(Stages, "x")}",
             TitleSize = 15
         });
 
-        StackFooter.Text = stages.Count == 0
-            ? "stack is empty — click or drag a library function to add the first stage · h(x) = x"
-            : $"stages apply top to bottom: h = {ChainText()} · σ propagation placeholder — variance trace not yet wired";
+        StackFooter.Text = (Stages.Count, HintSettings.Enabled) switch
+        {
+            (0, true) => "stack is empty — drag a library function in, or right-click it to add · h(x) = x",
+            (0, false) => "stack is empty · h(x) = x",
+            (_, true) => $"stages apply top to bottom: h = {ChainText()} · σ propagation placeholder — variance trace not yet wired",
+            (_, false) => $"h = {ChainText()}"
+        };
     }
 
     private string ChainText() =>
-        stages.Count == 0 ? "identity" : string.Join(" ∘ ", Enumerable.Reverse(stages).Select(stage => stage.Name));
+        Stages.Count == 0 ? "identity" : string.Join(" ∘ ", Enumerable.Reverse(Stages).Select(stage => stage.Name));
 
     private static EdgeLayer CreateArrow() => new()
     {
@@ -281,15 +322,23 @@ public partial class TransferFunctionView : UserControl
         };
         row.Children.Add(card);
         row.Children.Add(remove);
-        row.PointerPressed += (_, e) => OnStagePressed(row, e);
+        row.PointerPressed += (_, e) => OnStagePressed(row, function, index, e);
         row.PointerMoved += (_, e) => OnStageMoved(row, e);
         row.PointerReleased += (_, e) => OnStageReleased(row, index, e);
         return row;
     }
 
-    private void OnStagePressed(Panel row, PointerPressedEventArgs e)
+    private void OnStagePressed(Panel row, LibraryFunction function, int index, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(row).Properties.IsLeftButtonPressed) return;
+        var properties = e.GetCurrentPoint(row).Properties;
+        if (properties.IsRightButtonPressed)
+        {
+            e.Handled = true;
+            ShowMenu($"STAGE {index + 2} · {function.Name}", e.GetPosition(this),
+                ("REMOVE FROM STACK", () => RemoveStage(index)));
+            return;
+        }
+        if (!properties.IsLeftButtonPressed) return;
         CloseMenu();
         draggingRow = row;
         stageDragStartY = e.GetPosition(StackHost).Y;
@@ -333,27 +382,64 @@ public partial class TransferFunctionView : UserControl
         }
         if (target != index)
         {
-            var moved = stages[index];
-            stages.RemoveAt(index);
-            stages.Insert(target, moved);
+            var moved = Stages[index];
+            Stages.RemoveAt(index);
+            Stages.Insert(target, moved);
         }
-        OnStagesChanged();
+        OnStagesEdited();
     }
 
     private void OnLibraryPanelPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
-        ShowLibraryMenu(e.GetPosition(this));
+        ShowMenu("FUNCTION LIBRARY", e.GetPosition(this), ("CREATE FUNCTION", BeginNewFunction));
         e.Handled = true;
     }
 
-    private void ShowLibraryMenu(Point at)
+    private void ShowMenu(string header, Point at, params (string Label, Action Action)[] items)
     {
         CloseMenu();
 
+        var stack = new StackPanel();
+        stack.Children.Add(new Border
+        {
+            Padding = new Thickness(12, 7, 12, 5),
+            BorderBrush = Palette.Border,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new TextBlock
+            {
+                Text = header.ToUpperInvariant(),
+                FontSize = 9,
+                LetterSpacing = 1,
+                Foreground = Palette.TextFaint
+            }
+        });
+
+        foreach (var (label, action) in items)
+            stack.Children.Add(CreateMenuItem(label, action));
+
+        var menu = new Border
+        {
+            Background = Palette.BgBar,
+            BorderBrush = Palette.BorderMid,
+            BorderThickness = new Thickness(1),
+            MinWidth = 210,
+            Child = stack
+        };
+        var estimatedHeight = 30 + items.Length * 30;
+        Canvas.SetLeft(menu, Math.Max(0, Math.Min(at.X, Bounds.Width - 220)));
+        Canvas.SetTop(menu, Math.Max(0, Math.Min(at.Y, Bounds.Height - estimatedHeight)));
+        Overlay.Children.Add(menu);
+        Overlay.IsHitTestVisible = true;
+        Overlay.IsVisible = true;
+        openMenu = menu;
+    }
+
+    private Border CreateMenuItem(string label, Action action)
+    {
         var itemText = new TextBlock
         {
-            Text = "CREATE FUNCTION",
+            Text = label,
             FontSize = 10,
             LetterSpacing = 1,
             Foreground = Palette.Text
@@ -379,42 +465,9 @@ public partial class TransferFunctionView : UserControl
         {
             e.Handled = true;
             CloseMenu();
-            BeginNewFunction();
+            action();
         };
-
-        var menu = new Border
-        {
-            Background = Palette.BgBar,
-            BorderBrush = Palette.BorderMid,
-            BorderThickness = new Thickness(1),
-            MinWidth = 190,
-            Child = new StackPanel
-            {
-                Children =
-                {
-                    new Border
-                    {
-                        Padding = new Thickness(12, 7, 12, 5),
-                        BorderBrush = Palette.Border,
-                        BorderThickness = new Thickness(0, 0, 0, 1),
-                        Child = new TextBlock
-                        {
-                            Text = "FUNCTION LIBRARY",
-                            FontSize = 9,
-                            LetterSpacing = 1,
-                            Foreground = Palette.TextFaint
-                        }
-                    },
-                    item
-                }
-            }
-        };
-        Canvas.SetLeft(menu, Math.Max(0, Math.Min(at.X, Bounds.Width - 200)));
-        Canvas.SetTop(menu, Math.Max(0, Math.Min(at.Y, Bounds.Height - 80)));
-        Overlay.Children.Add(menu);
-        Overlay.IsHitTestVisible = true;
-        Overlay.IsVisible = true;
-        openMenu = menu;
+        return item;
     }
 
     private void OnOverlayPressed(object? sender, PointerPressedEventArgs e)
@@ -432,29 +485,234 @@ public partial class TransferFunctionView : UserControl
         if (Overlay.Children.Count == 0) Overlay.IsVisible = false;
     }
 
+    private void ShowDialog(string header, string message, params (string Label, bool IsPrimary, Action Action)[] choices)
+    {
+        CloseMenu();
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 20, 0, 0)
+        };
+        foreach (var (label, isPrimary, action) in choices)
+            buttons.Children.Add(CreateDialogButton(label, isPrimary, action));
+
+        var card = new SquircleBorder
+        {
+            Classes = { "emboss-card" },
+            Padding = new Thickness(24, 20),
+            MinWidth = 360,
+            MaxWidth = 440,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Classes = { "tag" },
+                        Text = header.ToUpperInvariant(),
+                        Foreground = Palette.Amber
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        FontSize = 13,
+                        LineHeight = 19,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 10, 0, 0),
+                        Foreground = Palette.Text
+                    },
+                    buttons
+                }
+            }
+        };
+
+        DialogHost.Children.Clear();
+        DialogHost.Children.Add(card);
+        DialogHost.IsVisible = true;
+    }
+
+    private Control CreateDialogButton(string label, bool isPrimary, Action action)
+    {
+        var text = new TextBlock
+        {
+            Text = label,
+            FontSize = 10,
+            LetterSpacing = 1,
+            FontWeight = isPrimary ? FontWeight.Bold : FontWeight.Normal,
+            Foreground = isPrimary ? Brushes.Black : Palette.TextSub
+        };
+        var key = new SquircleBorder
+        {
+            Classes = { isPrimary ? "emboss-key" : "emboss" },
+            Padding = new Thickness(14, 6),
+            Background = isPrimary ? Palette.Amber : Palette.EmbossSurface,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = text
+        };
+        key.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            CloseDialog();
+            action();
+        };
+        return key;
+    }
+
+    private void OnDialogHostPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source != DialogHost) return;
+        CloseDialog();
+        e.Handled = true;
+    }
+
+    private void CloseDialog()
+    {
+        DialogHost.Children.Clear();
+        DialogHost.IsVisible = false;
+    }
+
     private void BeginNewFunction()
     {
-        stages.Clear();
-        draftName = $"fn_{library.UserFunctions.Count + 1}.draft";
-        StackBox.Hint = $"draft: {draftName} (unsaved)";
-        TopBarStatus.Text = $"editing: {draftName} — blank composition stack";
-        OnStagesChanged();
+        drafts.Add(new FunctionDraft { Name = NextDraftName() });
+        activeDraftIndex = drafts.Count - 1;
+        SyncActiveDraft();
+    }
+
+    private string NextDraftName()
+    {
+        var index = 1;
+        while (library.FindUserFunction($"fn_{index}") is not null ||
+               drafts.Any(draft => draft.Name == $"fn_{index}"))
+            index++;
+        return $"fn_{index}";
+    }
+
+    private void SelectDraft(int index)
+    {
+        if (index == activeDraftIndex || index < 0 || index >= drafts.Count) return;
+        activeDraftIndex = index;
+        SyncActiveDraft();
+    }
+
+    private void SyncActiveDraft()
+    {
+        isSyncingNameBox = true;
+        NameBox.Text = ActiveDraft.Name;
+        isSyncingNameBox = false;
+        SetStatus($"editing: {ActiveDraft.Name}", false);
+        RebuildTabs();
+        RebuildStack();
+        RefreshResult();
+    }
+
+    private void RebuildTabs()
+    {
+        StackTabs.Labels = drafts
+            .Select(draft => draft.HasUnsavedChanges ? $"{draft.Name} ●" : draft.Name)
+            .ToArray();
+        StackTabs.ActiveIndex = activeDraftIndex;
+    }
+
+    private void OnNameBoxChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (isSyncingNameBox) return;
+        var name = NameBox.Text ?? "";
+        if (name == ActiveDraft.Name) return;
+        ActiveDraft.Name = name;
+        ActiveDraft.HasUnsavedChanges = true;
+        SetStatus($"editing: {name}", false);
+        RebuildTabs();
+        UpdateDraftBar();
+    }
+
+    private void RequestCloseDraft(int index)
+    {
+        if (index < 0 || index >= drafts.Count) return;
+        var draft = drafts[index];
+        if (!draft.HasUnsavedChanges)
+        {
+            CloseDraft(draft);
+            return;
+        }
+        ShowDialog("UNSAVED CHANGES", $"Save changes to function {draft.Name}?",
+            ("SAVE", true, () => SaveDraft(draft, () => CloseDraft(draft))),
+            ("DISCARD", false, () => CloseDraft(draft)),
+            ("CANCEL", false, () => { }));
+    }
+
+    private void CloseDraft(FunctionDraft draft)
+    {
+        var index = drafts.IndexOf(draft);
+        if (index < 0) return;
+        drafts.RemoveAt(index);
+        if (drafts.Count == 0) drafts.Add(new FunctionDraft { Name = NextDraftName() });
+        activeDraftIndex = Math.Clamp(activeDraftIndex >= index ? activeDraftIndex - 1 : activeDraftIndex,
+            0, drafts.Count - 1);
+        SyncActiveDraft();
     }
 
     private void OnSavePressed(object? sender, PointerPressedEventArgs e)
     {
         e.Handled = true;
-        if (stages.Count == 0)
+        SaveDraft(ActiveDraft, null);
+    }
+
+    private void SaveDraft(FunctionDraft draft, Action? onSaved)
+    {
+        var name = draft.Name.Trim();
+        if (name.Length == 0)
         {
-            StackBox.Hint = "add at least one stage before saving";
+            SetStatus("name the function before saving", true);
             return;
         }
-        var saved = library.SaveComposite(stages.ToList());
-        draftName = saved.Name;
-        StackBox.Hint = $"saved: {saved.Name}";
-        TopBarStatus.Text = $"saved {saved.Name} → function library";
+        if (library.IsPrimitiveName(name))
+        {
+            SetStatus($"{name} is a primitive — choose another name", true);
+            return;
+        }
+        if (draft.Stages.Count == 0)
+        {
+            SetStatus($"{name} has no stages — add at least one before saving", true);
+            return;
+        }
+        if (library.FindUserFunction(name) is not null && name != draft.SavedName)
+        {
+            ShowDialog("OVERWRITE", $"{name} function already exists. Overwrite?",
+                ("OVERWRITE", true, () => CommitDraft(draft, name, onSaved)),
+                ("CANCEL", false, () => { }));
+            return;
+        }
+        CommitDraft(draft, name, onSaved);
+    }
+
+    private void CommitDraft(FunctionDraft draft, string name, Action? onSaved)
+    {
+        library.SaveComposite(name, draft.Stages);
+        draft.Name = name;
+        draft.SavedName = name;
+        draft.HasUnsavedChanges = false;
         RebuildLibrary();
+        RebuildTabs();
+        if (draft == ActiveDraft)
+        {
+            isSyncingNameBox = true;
+            NameBox.Text = name;
+            isSyncingNameBox = false;
+        }
+        SetStatus($"saved {name} → function library", false);
         UpdateDraftBar();
+        onSaved?.Invoke();
+    }
+
+    private void SetStatus(string text, bool isError)
+    {
+        TopBarStatus.Text = text;
+        TopBarStatus.Foreground = isError ? Palette.Red : Palette.TextMuted;
     }
 
     private void ShowDragGhost(LibraryFunction function)
@@ -497,7 +755,7 @@ public partial class TransferFunctionView : UserControl
 
     private void RefreshResult()
     {
-        double Compose(double x) => FunctionLibrary.ApplyStages(stages, x);
+        double Compose(double x) => FunctionLibrary.ApplyStages(Stages, x);
 
         var trace = FunctionTrace.CreateTrace(Compose, DomainStart, DomainEnd);
         var (yMin, yMax) = FunctionTrace.RobustRange(trace);
@@ -527,7 +785,7 @@ public partial class TransferFunctionView : UserControl
             .Select(segment => new ChartSeries { Points = segment, Stroke = Palette.Amber, Thickness = 2 })
             .ToArray();
 
-        var formula = FunctionLibrary.ComposeFormula(stages, "x");
+        var formula = FunctionLibrary.ComposeFormula(Stages, "x");
         ResultChart.XAxisTitle = "x (normalised tank_01.level)";
         ResultChart.YAxisTitle = $"h(x) = {TrimText(formula, 40)}";
         ResultChart.Refresh();
@@ -542,15 +800,15 @@ public partial class TransferFunctionView : UserControl
 
     private void UpdateDraftBar()
     {
-        Draft.CommandText = $"COMPOSE {ChainText()} -> {draftName} AS h";
+        Draft.CommandText = $"COMPOSE {ChainText()} -> {ActiveDraft.Name} AS h";
         Draft.ChipContent = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 12,
             Children =
             {
-                new Chip { Text = $"STAGES: {stages.Count}", Accent = "cyan" },
-                new Chip { Text = "TRACE ✓", Accent = "green" },
+                new Chip { Text = $"STAGES: {Stages.Count}", Accent = "cyan" },
+                new Chip { Text = ActiveDraft.HasUnsavedChanges ? "UNSAVED" : "SAVED ✓", Accent = ActiveDraft.HasUnsavedChanges ? "amber" : "green" },
                 new Chip { Text = "σ band: placeholder", Accent = "amber" }
             }
         };

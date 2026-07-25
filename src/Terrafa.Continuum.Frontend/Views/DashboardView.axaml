@@ -19,7 +19,8 @@
 
     <controls:TerminalStatusBar DockPanel.Dock="Bottom">
       <controls:TerminalStatusBar.LeftContent>
-        <StackPanel Orientation="Horizontal" Spacing="18">
+        <StackPanel Orientation="Horizontal" Spacing="18"
+                    IsVisible="{DynamicResource HintsVisible}">
           <TextBlock Text="SUPERSET-COMPATIBLE PANEL GRID" FontSize="10"
                      Foreground="{StaticResource TextFaintBrush}" />
           <TextBlock Text="SCORES STREAM PER EVENT" FontSize="10"
@@ -39,7 +40,8 @@
           <controls:PanelBox.InnerContent>
             <DockPanel Margin="10,8">
               <TextBlock x:Name="PositionsFootnote" DockPanel.Dock="Bottom" FontSize="9"
-                         Padding="0,6,0,0" Foreground="{StaticResource TextFaintBrush}" />
+                         Padding="0,6,0,0" Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <StackPanel x:Name="PositionRows" Spacing="0" />
             </DockPanel>
           </controls:PanelBox.InnerContent>
@@ -53,7 +55,8 @@
             <DockPanel Margin="10,8">
               <TextBlock Text="proper score — vague forecasts lose to sharp, correct ones by construction"
                          DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
-                         Foreground="{StaticResource TextFaintBrush}" />
+                         Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <StackPanel x:Name="LeaderboardRows" Spacing="0" />
             </DockPanel>
           </controls:PanelBox.InnerContent>
@@ -67,7 +70,8 @@
             <DockPanel Margin="10,8">
               <TextBlock Text="70% should happen 70% of the time — checkable from data alone"
                          DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
-                         Foreground="{StaticResource TextFaintBrush}" />
+                         Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <charts:LineChart x:Name="CalibrationChart" Margin="30,8" />
             </DockPanel>
           </controls:PanelBox.InnerContent>
@@ -82,7 +86,8 @@
             <DockPanel Margin="10,8">
               <TextBlock Text="anytime-valid — updates per event, cannot be p-hacked by watching"
                          DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
-                         Foreground="{StaticResource TextFaintBrush}" />
+                         Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <charts:LineChart x:Name="WealthChart" Margin="16,8" />
             </DockPanel>
           </controls:PanelBox.InnerContent>
@@ -96,7 +101,8 @@
             <DockPanel Margin="10,8">
               <TextBlock Text="risk now, conditional on survival — no static shelf-life printed at intake"
                          DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
-                         Foreground="{StaticResource TextFaintBrush}" />
+                         Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <charts:LineChart x:Name="SurvivalChart" Margin="16,8" />
             </DockPanel>
           </controls:PanelBox.InnerContent>
@@ -110,7 +116,8 @@
             <DockPanel Margin="10,8">
               <TextBlock Text="survivability is a view over the log — no new storage notion"
                          DockPanel.Dock="Bottom" FontSize="9" Padding="0,6,0,0"
-                         Foreground="{StaticResource TextFaintBrush}" />
+                         Foreground="{StaticResource TextFaintBrush}"
+                         IsVisible="{DynamicResource HintsVisible}" />
               <charts:LineChart x:Name="IntensityChart" Margin="16,8" />
             </DockPanel>
           </controls:PanelBox.InnerContent>

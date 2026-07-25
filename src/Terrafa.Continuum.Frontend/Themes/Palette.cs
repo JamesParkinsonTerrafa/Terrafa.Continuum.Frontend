@@ -7,11 +7,14 @@ public static class Palette
 {
     private static readonly List<(SolidColorBrush Brush, string ResourceKey, Color Dark, Color Light)> ThemedBrushes = [];
     private static readonly List<(string ResourceKey, Color Dark, Color Light)> ThemedColors = [];
+    private static readonly List<(string ResourceKey, double Dark, double Light)> ThemedDoubles = [];
+    private static readonly List<(string ResourceKey, BoxShadows Dark, BoxShadows Light)> ThemedShadows = [];
     private static IResourceDictionary? registeredResources;
 
     public static readonly SolidColorBrush BgDeep = Themed("BgDeepBrush", "#04050A", "#EDF0F4");
     public static readonly SolidColorBrush BgPanel = Themed("BgPanelBrush", "#07080C", "#F8FAFC");
-    public static readonly SolidColorBrush BgBar = Themed("BgBarBrush", "#0A0C10", "#E4E8EE");
+    public static readonly SolidColorBrush BgBar = Themed("BgBarBrush", "#0A0C10", "#EDF3F9");
+    public static readonly SolidColorBrush EmbossSurface = Themed("EmbossSurfaceBrush", "#0A0C10", "#EDF3F9");
     public static readonly SolidColorBrush BgField = Themed("BgFieldBrush", "#11151C", "#DCE1E8");
     public static readonly SolidColorBrush BgChart = Themed("BgChartBrush", "#070A0E", "#F3F6F9");
     public static readonly SolidColorBrush RowSeparator = Themed("RowSeparatorBrush", "#14181F", "#E0E4EA");
@@ -26,6 +29,7 @@ public static class Palette
     public static readonly SolidColorBrush TextBright = Themed("TextBrightBrush", "#E8EDF4", "#14181F");
     public static readonly SolidColorBrush TextStrong = Themed("TextStrongBrush", "#FFFFFF", "#04060B");
     public static readonly SolidColorBrush TabActiveText = Themed("TabActiveTextBrush", "#04050A", "#FFFFFF");
+    public static readonly SolidColorBrush EngraveText = Themed("EngraveTextBrush", "#05070C", "#666666");
     public static readonly SolidColorBrush Amber = Themed("AmberBrush", "#FFAB26", "#B27102");
     public static readonly SolidColorBrush AmberSoft = Themed("AmberSoftBrush", "#FFD9A0", "#7E5304");
     public static readonly SolidColorBrush AmberPale = Themed("AmberPaleBrush", "#FFE9C4", "#64430A");
@@ -56,12 +60,28 @@ public static class Palette
     public static readonly SolidColorBrush PinnedCardFill = Themed("PinnedCardFillBrush", "#E304050A", "#E3F8FAFC");
     public static readonly SolidColorBrush CanvasNoteBackdrop = Themed("CanvasNoteBackdropBrush", "#D904050A", "#D9F8FAFC");
     public static readonly SolidColorBrush CanvasPanelBackdrop = Themed("CanvasPanelBackdropBrush", "#D90A0C10", "#D9E9EDF2");
+    public static readonly SolidColorBrush Scrim = Themed("ScrimBrush", "#A604050A", "#5904050A");
     public static readonly FontFamily Font = new("Verdana, Tahoma");
 
     static Palette()
     {
         ThemedColor("CanvasGlowInnerColor", "#090B12", "#F5F7FA");
         ThemedColor("CanvasGlowOuterColor", "#04050A", "#EDF0F4");
+        ThemedColor("EngraveHighlightColor", "#8C7A8698", "#F0FFFFFF");
+        ThemedDouble("EngraveBlurRadius", 1.5, 0);
+
+        ThemedShadow("EmbossRaisedShadow",
+            "-2 -2 5 0 #14FFFFFF, 3 3 6 -1 #B3000000",
+            "-3 -3 6 0 #FFFFFFFF, 3 3 5 -1 #457496B3");
+        ThemedShadow("EmbossPressedShadow",
+            "inset 3 3 6 0 #E6000000, inset -2 -2 4 0 #1AFFFFFF",
+            "inset 3 3 6 0 #667496B3, inset -2 -2 4 0 #FFFFFFFF");
+        ThemedShadow("EmbossCardShadow",
+            "-5 -5 14 0 #14FFFFFF, 7 7 12 -4 #CC000000",
+            "-7 -7 16 0 #FFFFFFFF, 7 7 10 -4 #457496B3");
+        ThemedShadow("EmbossInnerShadow",
+            "inset 3 3 7 0 #CC000000, inset -4 -4 6 0 #14FFFFFF",
+            "inset 3 3 7 0 #527496B3, inset -4 -4 6 0 #FFFFFFFF");
     }
 
     public static void RegisterResources(IResourceDictionary resources)
@@ -71,7 +91,6 @@ public static class Palette
         {
             resources[resourceKey] = brush;
         }
-        WriteColorResources(light: false);
     }
 
     public static void Apply(bool light)
@@ -80,15 +99,23 @@ public static class Palette
         {
             brush.Color = light ? lightColor : dark;
         }
-        WriteColorResources(light);
+        WriteValueResources(light);
     }
 
-    private static void WriteColorResources(bool light)
+    private static void WriteValueResources(bool light)
     {
         if (registeredResources is null) return;
         foreach (var (resourceKey, dark, lightColor) in ThemedColors)
         {
             registeredResources[resourceKey] = light ? lightColor : dark;
+        }
+        foreach (var (resourceKey, dark, lightValue) in ThemedDoubles)
+        {
+            registeredResources[resourceKey] = light ? lightValue : dark;
+        }
+        foreach (var (resourceKey, dark, lightShadows) in ThemedShadows)
+        {
+            registeredResources[resourceKey] = light ? lightShadows : dark;
         }
     }
 
@@ -103,4 +130,10 @@ public static class Palette
 
     private static void ThemedColor(string resourceKey, string darkHex, string lightHex) =>
         ThemedColors.Add((resourceKey, Color.Parse(darkHex), Color.Parse(lightHex)));
+
+    private static void ThemedDouble(string resourceKey, double dark, double light) =>
+        ThemedDoubles.Add((resourceKey, dark, light));
+
+    private static void ThemedShadow(string resourceKey, string darkSpec, string lightSpec) =>
+        ThemedShadows.Add((resourceKey, BoxShadows.Parse(darkSpec), BoxShadows.Parse(lightSpec)));
 }

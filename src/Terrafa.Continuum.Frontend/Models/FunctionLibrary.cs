@@ -21,7 +21,6 @@ public sealed class FunctionLibrary
     public static FunctionLibrary Instance { get; } = new();
 
     private readonly List<LibraryFunction> userFunctions = [];
-    private int savedCount;
 
     public IReadOnlyList<LibraryFunction> Primitives { get; }
 
@@ -45,10 +44,14 @@ public sealed class FunctionLibrary
         ];
     }
 
-    public LibraryFunction SaveComposite(IReadOnlyList<LibraryFunction> stages)
+    public LibraryFunction? FindUserFunction(string name) =>
+        userFunctions.FirstOrDefault(function => function.Name == name);
+
+    public bool IsPrimitiveName(string name) =>
+        Primitives.Any(function => function.Name == name);
+
+    public LibraryFunction SaveComposite(string name, IReadOnlyList<LibraryFunction> stages)
     {
-        savedCount++;
-        var name = $"fn_{savedCount}";
         var components = stages.ToArray();
         var composite = new LibraryFunction
         {
@@ -59,7 +62,11 @@ public sealed class FunctionLibrary
             IsPrimitive = false,
             Components = components
         };
-        userFunctions.Add(composite);
+        var replacedIndex = userFunctions.FindIndex(function => function.Name == name);
+        if (replacedIndex >= 0)
+            userFunctions[replacedIndex] = composite;
+        else
+            userFunctions.Add(composite);
         return composite;
     }
 
