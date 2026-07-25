@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -25,6 +26,8 @@ public class SettingsFlyout : Panel
     internal Slider CornerRadiusSlider { get; }
     internal Slider SaturationSlider { get; }
     internal Slider NodeCornerRadiusSlider { get; }
+    internal Slider HighlightSaturationSlider { get; }
+    internal Slider HighlightBrightnessSlider { get; }
 
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
@@ -69,6 +72,21 @@ public class SettingsFlyout : Panel
         appearanceBody.Children.Add(new TextBlock
         {
             Text = "applies to the input, function and output boxes",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
+        HighlightSaturationSlider = AddSliderRow(appearanceBody, "HIGHLIGHT SAT", 0,
+            AppearanceSettings.MaxHighlightSaturation, 0.05,
+            AppearanceSettings.HighlightSaturation, "0.00", AppearanceSettings.SetHighlightSaturation);
+        HighlightBrightnessSlider = AddSliderRow(appearanceBody, "HIGHLIGHT BRIGHT",
+            AppearanceSettings.MinHighlightBrightness, AppearanceSettings.MaxHighlightBrightness, 0.05,
+            AppearanceSettings.HighlightBrightness, "0.00", AppearanceSettings.SetHighlightBrightness);
+        appearanceBody.Children.Add(new TextBlock
+        {
+            Text = "applies to the amber — command keys, section titles, accent values",
             FontSize = 9,
             Foreground = Palette.TextFaint,
             TextWrapping = TextWrapping.Wrap,
@@ -129,8 +147,13 @@ public class SettingsFlyout : Panel
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 40, 10, 0),
-            Child = column
+            Margin = new Thickness(0, 40, 10, 10),
+            Child = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = column
+            }
         };
         Children.Add(PanelBorder);
     }

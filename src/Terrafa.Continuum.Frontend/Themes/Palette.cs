@@ -5,11 +5,12 @@ namespace Terrafa.Continuum.Frontend.Themes;
 
 public static class Palette
 {
-    private static readonly List<(SolidColorBrush Brush, string ResourceKey, Color Dark, Color Light)> ThemedBrushes = [];
+    private static readonly List<(SolidColorBrush Brush, string ResourceKey, Color Dark, Color Light, bool Highlight)> ThemedBrushes = [];
     private static readonly List<(string ResourceKey, Color Dark, Color Light)> ThemedColors = [];
     private static readonly List<(string ResourceKey, double Dark, double Light)> ThemedDoubles = [];
     private static readonly List<(string ResourceKey, BoxShadows Dark, BoxShadows Light)> ThemedShadows = [];
     private static IResourceDictionary? registeredResources;
+    private static bool isLight = true;
 
     public static readonly SolidColorBrush BgDeep = Themed("BgDeepBrush", "#04050A", "#EDF0F4");
     public static readonly SolidColorBrush BgPanel = Themed("BgPanelBrush", "#07080C", "#F8FAFC");
@@ -30,11 +31,11 @@ public static class Palette
     public static readonly SolidColorBrush TextStrong = Themed("TextStrongBrush", "#FFFFFF", "#04060B");
     public static readonly SolidColorBrush TabActiveText = Themed("TabActiveTextBrush", "#04050A", "#FFFFFF");
     public static readonly SolidColorBrush EngraveText = Themed("EngraveTextBrush", "#05070C", "#666666");
-    public static readonly SolidColorBrush Amber = Themed("AmberBrush", "#FFAB26", "#B27102");
-    public static readonly SolidColorBrush AmberSoft = Themed("AmberSoftBrush", "#FFD9A0", "#7E5304");
-    public static readonly SolidColorBrush AmberPale = Themed("AmberPaleBrush", "#FFE9C4", "#64430A");
-    public static readonly SolidColorBrush AmberFill = Themed("AmberFillBrush", "#12FFAB26", "#1FB27102");
-    public static readonly SolidColorBrush AmberChipBorder = Themed("AmberChipBorderBrush", "#4A3A1E", "#E0C494");
+    public static readonly SolidColorBrush Amber = Highlight("AmberBrush", "#FFAB26", "#B27102");
+    public static readonly SolidColorBrush AmberSoft = Highlight("AmberSoftBrush", "#FFD9A0", "#7E5304");
+    public static readonly SolidColorBrush AmberPale = Highlight("AmberPaleBrush", "#FFE9C4", "#64430A");
+    public static readonly SolidColorBrush AmberFill = Highlight("AmberFillBrush", "#12FFAB26", "#1FB27102");
+    public static readonly SolidColorBrush AmberChipBorder = Highlight("AmberChipBorderBrush", "#4A3A1E", "#E0C494");
     public static readonly SolidColorBrush Cyan = Themed("CyanBrush", "#4FD4E8", "#077A8F");
     public static readonly SolidColorBrush CyanSoft = Themed("CyanSoftBrush", "#DFF7FB", "#06404C");
     public static readonly SolidColorBrush CyanPale = Themed("CyanPaleBrush", "#E8F6FA", "#0A333D");
@@ -87,7 +88,7 @@ public static class Palette
     public static void RegisterResources(IResourceDictionary resources)
     {
         registeredResources = resources;
-        foreach (var (brush, resourceKey, _, _) in ThemedBrushes)
+        foreach (var (brush, resourceKey, _, _, _) in ThemedBrushes)
         {
             resources[resourceKey] = brush;
         }
@@ -95,11 +96,22 @@ public static class Palette
 
     public static void Apply(bool light)
     {
-        foreach (var (brush, _, dark, lightColor) in ThemedBrushes)
+        isLight = light;
+        foreach (var (brush, _, dark, lightColor, highlight) in ThemedBrushes)
         {
-            brush.Color = light ? lightColor : dark;
+            var color = light ? lightColor : dark;
+            brush.Color = highlight ? AppearanceSettings.Highlighted(color) : color;
         }
         WriteValueResources(light);
+        AppearanceSettings.RefreshTonedBrushes();
+    }
+
+    internal static void RefreshHighlightBrushes()
+    {
+        foreach (var (brush, _, dark, light, highlight) in ThemedBrushes)
+        {
+            if (highlight) brush.Color = AppearanceSettings.Highlighted(isLight ? light : dark);
+        }
         AppearanceSettings.RefreshTonedBrushes();
     }
 
@@ -120,12 +132,19 @@ public static class Palette
         }
     }
 
-    private static SolidColorBrush Themed(string resourceKey, string darkHex, string lightHex)
+    private static SolidColorBrush Themed(string resourceKey, string darkHex, string lightHex) =>
+        Register(resourceKey, darkHex, lightHex, highlight: false);
+
+    /// <summary>Registers a brush that also tracks the highlight saturation and brightness settings.</summary>
+    private static SolidColorBrush Highlight(string resourceKey, string darkHex, string lightHex) =>
+        Register(resourceKey, darkHex, lightHex, highlight: true);
+
+    private static SolidColorBrush Register(string resourceKey, string darkHex, string lightHex, bool highlight)
     {
         var dark = Color.Parse(darkHex);
         var light = Color.Parse(lightHex);
         var brush = new SolidColorBrush(dark);
-        ThemedBrushes.Add((brush, resourceKey, dark, light));
+        ThemedBrushes.Add((brush, resourceKey, dark, light, highlight));
         return brush;
     }
 

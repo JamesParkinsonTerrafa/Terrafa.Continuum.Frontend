@@ -121,6 +121,23 @@ view code. `ThemeManager` owns the current theme and also drives Avalonia's
 
 Light is the default.
 
+### Highlights
+
+The amber family — `AmberBrush` plus its soft, pale, fill and chip-border variants — is registered
+as *highlight* rather than plain themed, so it tracks two further knobs under Settings › APPEARANCE:
+**highlight sat** and **highlight bright**. Both scale the current theme's own colour in HSL —
+saturation against `S`, brightness against `L` — leaving hue and alpha alone, so the five ambers move
+as one family and the translucent fills keep their transparency. At 1.00/1.00 the transform is
+skipped outright and the brushes are byte-for-byte what `Palette.cs` declares.
+
+The shipped default is 0.20 / 1.55 — amber drained most of the way to grey and lifted a step, so it
+separates from body text by tone rather than by shouting. `Palette.cs` still declares the full-strength
+colour: it is the origin the knobs scale from, not what lands on screen.
+
+Only amber is registered this way. Cyan, green, purple and red carry kind, and draining those would
+erase meaning; amber is the one colour spent on emphasis rather than identity, so it is the one worth
+turning down.
+
 ## Structure
 
 - **Rules line up.** Panels sitting side by side share `HeaderHeight` and `FooterHeight` so

@@ -104,6 +104,8 @@ public static class SnapshotRunner
 
         flyout.SaturationSlider.Value = AppearanceSettings.NodeSaturation;
         flyout.NodeCornerRadiusSlider.Value = AppearanceSettings.NodeCornerRadius;
+        flyout.HighlightSaturationSlider.Value = AppearanceSettings.HighlightSaturation;
+        flyout.HighlightBrightnessSlider.Value = AppearanceSettings.HighlightBrightness;
         flyout.IdleEmbossSlider.Value = ButtonSettings.IdleEmbossStrength;
         flyout.CornerRadiusSlider.Value = ButtonSettings.CornerRadius;
         flyout.IntensitySlider.Value = 24;
