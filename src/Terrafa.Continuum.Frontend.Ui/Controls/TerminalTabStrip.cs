@@ -11,7 +11,7 @@ namespace Terrafa.Continuum.Frontend.Controls;
 public class TerminalTabStrip : UserControl
 {
     public static readonly IReadOnlyList<string> NavigationLabels =
-        ["1) NETWORK", "2) TRANSFER FUNCTION", "3) DASHBOARD", "4) DATA TREE", "5) MAP"];
+        ["1) NETWORK", "2) TRANSFER FUNCTION", "3) DASHBOARD", "4) DATA TREE", "5) MAP", "6) DATA SOURCES"];
 
     private const double ClosableLabelMaxWidth = 150;
 

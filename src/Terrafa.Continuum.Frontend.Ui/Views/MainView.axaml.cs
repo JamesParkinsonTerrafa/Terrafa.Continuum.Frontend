@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Terrafa.Continuum.Frontend.Controls;
+using Terrafa.Continuum.Frontend.Models;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
 
@@ -12,19 +13,30 @@ namespace Terrafa.Continuum.Frontend.Views;
 /// </summary>
 public partial class MainView : UserControl
 {
+    private const int ScreenCount = 6;
+
     private readonly IDataFeed feed;
-    private readonly List<UserControl> screens = [];
+    private readonly IDatasetCatalog catalog;
+    private readonly Dictionary<int, UserControl> screens = [];
     private int activeIndex;
 
     public MainView() : this(new StaticDataFeed())
     {
     }
 
-    public MainView(IDataFeed feed)
+    public MainView(IDataFeed feed) : this(feed, StubDatasetCatalog.Instance)
+    {
+    }
+
+    public MainView(IDataFeed feed, IDatasetCatalog catalog)
     {
         this.feed = feed;
+        this.catalog = catalog;
         InitializeComponent();
-        BuildScreens();
+
+        // Warm the catalogue while the first screen builds — DATA SOURCES then opens populated.
+        _ = catalog.GetAvailableDatasetsAsync();
+
         SwitchTo(0);
         AddHandler(
             Avalonia.Input.InputElement.PointerPressedEvent,
@@ -41,6 +53,7 @@ public partial class MainView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RebuildScreens;
+        Workspace.Instance.Changed += InvalidateInactiveScreens;
         SettingsFlyout.ToggleRequested += ToggleSettings;
         ContactDialog.ShowRequested += ShowContact;
     }
@@ -48,6 +61,7 @@ public partial class MainView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ThemeManager.Changed -= RebuildScreens;
+        Workspace.Instance.Changed -= InvalidateInactiveScreens;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
         ContactDialog.ShowRequested -= ShowContact;
         base.OnDetachedFromVisualTree(e);
@@ -61,27 +75,42 @@ public partial class MainView : UserControl
         Contact.Show();
     }
 
-    private void BuildScreens()
+    private UserControl CreateScreen(int index)
     {
-        screens.Clear();
         var snapshot = feed.Current;
-        screens.Add(new NetworkView(snapshot, SwitchTo));
-        screens.Add(new TransferFunctionView(snapshot, SwitchTo));
-        screens.Add(new DashboardView(snapshot, SwitchTo));
-        screens.Add(new DbTreeView(snapshot, SwitchTo));
-        screens.Add(new SiteMapView(snapshot, SwitchTo));
+        return index switch
+        {
+            0 => new NetworkView(snapshot, SwitchTo),
+            1 => new TransferFunctionView(snapshot, SwitchTo),
+            2 => new DashboardView(snapshot, SwitchTo),
+            3 => new DbTreeView(snapshot, SwitchTo),
+            4 => new SiteMapView(snapshot, SwitchTo),
+            _ => new DataSourcesView(snapshot, SwitchTo, catalog)
+        };
     }
 
     private void RebuildScreens()
     {
-        BuildScreens();
+        screens.Clear();
         SwitchTo(activeIndex);
+    }
+
+    /// <summary>A mount or link changes what every other screen shows — drop them so they rebuild on entry.</summary>
+    private void InvalidateInactiveScreens()
+    {
+        foreach (var index in screens.Keys.Where(index => index != activeIndex).ToList())
+            screens.Remove(index);
     }
 
     private void SwitchTo(int index)
     {
-        if (index < 0 || index >= screens.Count) return;
+        if (index < 0 || index >= ScreenCount) return;
+        if (!screens.TryGetValue(index, out var screen))
+        {
+            screen = CreateScreen(index);
+            screens[index] = screen;
+        }
         activeIndex = index;
-        ViewHost.Content = screens[index];
+        ViewHost.Content = screen;
     }
 }

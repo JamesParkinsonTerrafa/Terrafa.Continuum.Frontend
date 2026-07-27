@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Controls.Diagram;
+using Terrafa.Continuum.Frontend.Models;
 using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
 using Terrafa.Continuum.Frontend.Views;
@@ -40,6 +41,119 @@ public static class SnapshotRunner
         ThemeManager.SetLight(true);
         CaptureSettingsProbe(outputDir);
         CaptureContactProbe(outputDir);
+
+        // Mount a second dataset last — it mutates the shared workspace the earlier captures rely on.
+        CaptureDataSourcesProbe(outputDir, snapshot);
+        CaptureTreeLinkProbe(outputDir, snapshot);
+    }
+
+    private static void CaptureDataSourcesProbe(string outputDir, DataSnapshot snapshot)
+    {
+        var view = new DataSourcesView(snapshot, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        Point Center(Visual visual) =>
+            visual.TranslatePoint(new Point(visual.Bounds.Width / 2, visual.Bounds.Height / 2), window)!.Value;
+
+        view.SearchBox.Text = "brnt";
+        Pump();
+        Console.WriteLine($"data probe: fuzzy 'brnt' → {view.CatalogueList.Children.Count} rows, " +
+                          $"hint '{view.CataloguePanel.Hint}'");
+        view.SearchBox.Text = "";
+        Pump();
+
+        var datasetRow = RowContaining(view.CatalogueList, "ICE_BRENT");
+        var rowPoint = Center(datasetRow);
+        window.MouseDown(rowPoint, MouseButton.Left);
+        window.MouseUp(rowPoint, MouseButton.Left);
+        window.MouseDown(rowPoint, MouseButton.Left);
+        window.MouseUp(rowPoint, MouseButton.Left);
+        Pump();
+        Console.WriteLine($"data probe: preview rows = {view.PreviewRows.Children.Count}");
+
+        var schemaRoot = RowContaining(view.PreviewRows, "ICE_BRENT /");
+        var schemaPoint = Center(schemaRoot);
+        window.MouseDown(schemaPoint, MouseButton.Right);
+        window.MouseUp(schemaPoint, MouseButton.Right);
+        Pump();
+
+        ClickText(window, view.MenuLayer, "ADD TO TREE");
+        Console.WriteLine($"data probe: dialog open = {view.Dialog.IsVisible}");
+        ClickText(window, view.Dialog, "ADD <GO>");
+        Console.WriteLine($"data probe: subtrees mounted = {Workspace.Instance.Subtrees.Count}");
+
+        Save(window, outputDir, "6-data-interact");
+        window.Close();
+    }
+
+    private static void CaptureTreeLinkProbe(string outputDir, DataSnapshot snapshot)
+    {
+        var view = new DbTreeView(snapshot, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var card = window.GetVisualDescendants().OfType<NodeCard>().First(node => node.Title == "m1_settle");
+        // The embedded fonts lay the tree out taller than the viewport, so this card sits below
+        // the fold — clicking its untranslated position would hit the status bar instead.
+        card.BringIntoView();
+        Pump();
+        var cardPoint = card.TranslatePoint(new Point(card.Bounds.Width / 2, 12), window)!.Value;
+        window.MouseDown(cardPoint, MouseButton.Right);
+        window.MouseUp(cardPoint, MouseButton.Right);
+        Pump();
+
+        ClickText(window, view.MenuLayer, "LINK TO…");
+        ClickText(window, view.Dialog, "SITE_ALPHA.tank_farm.tank_01.grade @ intake", startsWith: true);
+        ClickText(window, view.Dialog, "LINK <GO>");
+        Console.WriteLine($"tree probe: links = {Workspace.Instance.Links.Count}");
+
+        Save(window, outputDir, "4-tree-interact");
+        window.Close();
+    }
+
+    private static Border RowContaining(Panel host, string text) =>
+        host.Children.OfType<Border>().First(row =>
+            row.GetVisualDescendants().OfType<TextBlock>().Any(block => block.Text == text));
+
+    private static void ClickText(Window window, Visual host, string text, bool startsWith = false)
+    {
+        var block = host.GetVisualDescendants().OfType<TextBlock>()
+            .First(candidate => startsWith
+                ? candidate.Text?.StartsWith(text, StringComparison.Ordinal) == true
+                : candidate.Text == text);
+        block.BringIntoView();
+        Pump();
+        var point = block.TranslatePoint(new Point(block.Bounds.Width / 2, block.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Pump();
+    }
+
+    private static void Save(Window window, string outputDir, string name)
+    {
+        using var frame = window.CaptureRenderedFrame();
+        if (frame is null)
+        {
+            Console.Error.WriteLine($"snapshot {name}: no frame captured");
+            return;
+        }
+        frame.Save(Path.Combine(outputDir, $"{name}.png"));
+        Console.WriteLine($"snapshot {name}: saved");
     }
 
     private static void CaptureContactProbe(string outputDir)
@@ -486,7 +600,8 @@ public static class SnapshotRunner
             ("2-tfn", new TransferFunctionView(snapshot, _ => { })),
             ("3-dash", new DashboardView(snapshot, _ => { })),
             ("4-tree", new DbTreeView(snapshot, _ => { })),
-            ("5-map", new SiteMapView(snapshot, _ => { }))
+            ("5-map", new SiteMapView(snapshot, _ => { })),
+            ("6-data", new DataSourcesView(snapshot, _ => { }))
         };
 
         foreach (var (name, view) in views)
