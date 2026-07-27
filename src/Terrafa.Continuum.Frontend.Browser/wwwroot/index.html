@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TERRAFA · CONTINUUM CORE</title>
+  <meta name="color-scheme" content="light dark" />
+  <style>
+    /* BgDeep, so the page behind the canvas matches the plate rather than flashing white
+       while several megabytes of runtime download. */
+    :root { --bg-deep: #EDF0F4; }
+    @media (prefers-color-scheme: dark) { :root { --bg-deep: #04050A; } }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-deep);
+    }
+
+    #out {
+      width: 100vw;
+      height: 100vh;
+      /* The app is one fixed 1560x980 plate scaled to fit, so it letterboxes rather than
+         reflows. Touch panning would only fight the canvas. */
+      touch-action: none;
+    }
+
+    #boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-deep);
+      color: #7A8899;
+      font: 500 11px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      transition: opacity 240ms ease;
+    }
+
+    #boot[hidden] { display: none; }
+    #boot.done { opacity: 0; }
+  </style>
+</head>
+<body>
+  <div id="out"></div>
+  <div id="boot">Loading continuum core</div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Every view, control and theme lives here so both heads — desktop and browser —
+       render from one assembly. Nothing in this project may reference a windowing
+       backend: the browser head has no Win32/X11/macOS platform to bind to, and a
+       stray P/Invoke would only surface as a failure during WASM AOT compilation. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Terrafa.Continuum.Frontend</RootNamespace>
+    <AssemblyName>Terrafa.Continuum.Frontend.Ui</AssemblyName>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Embedded so text renders identically on every head. The desktop build used to
+         ask for Verdana and silently got whatever fontconfig chose on Linux. -->
+    <AvaloniaResource Include="Assets/Fonts/*.otf" />
+    <AvaloniaResource Include="Assets/Fonts/*.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- SnapshotRunner drives the real controls to render its PNGs. It lives in the
+         desktop head, so it needs the internals it used to share an assembly with —
+         granted here rather than widening a dozen members to public for one caller. -->
+    <InternalsVisibleTo Include="Terrafa.Continuum.Frontend" />
+  </ItemGroup>
+</Project>

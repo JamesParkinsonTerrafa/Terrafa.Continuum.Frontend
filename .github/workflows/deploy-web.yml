@@ -1,0 +1,76 @@
+name: Deploy web
+
+# Kept separate from release.yml rather than bolted on as a job: the browser head is
+# continuously deployed and has no version tag, so it should be re-runnable on its own
+# without cutting a desktop release, and a failure here should not fail one.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/Terrafa.Continuum.Frontend.Browser/**"
+      - "src/Terrafa.Continuum.Frontend.Ui/**"
+      - "tools/deploy-web.sh"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # the OIDC token exchanged for the deploy role
+  contents: read
+
+# A newer commit supersedes a queued deploy, but nothing is cancelled in flight: stopping
+# between the upload and the prune would leave the bucket half written.
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  deploy:
+    name: Publish and deploy
+    runs-on: ubuntu-latest
+    # AOT compiling the whole runtime is the slow part, several minutes on a cold runner.
+    # This is a ceiling to fail a hung job against, not a target.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # RunAOTCompilation needs the emscripten toolchain, which ships only in this
+      # workload. Without it publish silently falls back to the interpreter and the grain
+      # overlay stalls on load -- the exact thing the csproj turns AOT on to avoid.
+      - name: Install wasm-tools
+        run: dotnet workload install wasm-tools
+
+      # The same check release.yml runs, and it bites harder here: the browser head has no
+      # system font stack to fall back on, so an uncovered glyph ships as a tofu box.
+      - name: Check glyph coverage
+        run: python3 tools/check-glyphs.py
+
+      # No long-lived keys. The role trusts this repository and branch only; infra/github.tf
+      # creates it, or point the secret at one you already have.
+      - name: Assume deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Passed in rather than read from terraform state, which CI does not have. The role
+      # is scoped to exactly this bucket and distribution, so a wrong value here fails
+      # closed rather than writing somewhere it should not.
+      - name: Deploy
+        env:
+          BUCKET: ${{ vars.WEB_BUCKET }}
+          DISTRIBUTION: ${{ vars.WEB_DISTRIBUTION_ID }}
+          URL: ${{ vars.WEB_URL }}
+        run: tools/deploy-web.sh
+
+      - name: Summarise
+        if: success()
+        run: echo "Deployed ${{ vars.WEB_URL || vars.WEB_BUCKET }}" >> "$GITHUB_STEP_SUMMARY"

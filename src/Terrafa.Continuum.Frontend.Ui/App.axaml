@@ -4,6 +4,6 @@
              RequestedThemeVariant="Light">
   <Application.Styles>
     <FluentTheme />
-    <StyleInclude Source="avares://Terrafa.Continuum.Frontend/Themes/Terminal.axaml" />
+    <StyleInclude Source="avares://Terrafa.Continuum.Frontend.Ui/Themes/Terminal.axaml" />
   </Application.Styles>
 </Application>

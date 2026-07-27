@@ -4,3 +4,12 @@ obj/
 .DS_Store
 publish/
 dist/
+
+# Terraform. The lock file is deliberately not ignored: it pins provider hashes and
+# belongs in the repo.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example

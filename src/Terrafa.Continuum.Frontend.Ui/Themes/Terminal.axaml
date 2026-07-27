@@ -3,7 +3,7 @@
         xmlns:controls="using:Terrafa.Continuum.Frontend.Controls">
   <Styles.Resources>
     <ResourceDictionary>
-      <FontFamily x:Key="TerminalFont">Verdana, Tahoma</FontFamily>
+      <FontFamily x:Key="TerminalFont">avares://Terrafa.Continuum.Frontend.Ui/Assets/Fonts#Bergoom</FontFamily>
     </ResourceDictionary>
   </Styles.Resources>
 

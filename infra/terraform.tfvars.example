@@ -1,0 +1,41 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+
+# Where the bucket lives. Viewers never touch it directly, so this is really just
+# "closest to whoever deploys".
+region = "eu-west-2"
+
+# Serve from the generated *.cloudfront.net name by leaving these unset, or point a real
+# domain at it by setting both. The zone must already exist and already be delegated --
+# certificate validation writes into it and will sit pending until the NS records resolve.
+# domain_name     = "continuum.terrafa.io"
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"
+
+# PriceClass_100 is North America + Europe. PriceClass_All roughly doubles the per-GB rate.
+price_class = "PriceClass_100"
+
+# Put the app behind HTTP basic auth. Empty serves it to anyone who can reach it.
+# One shared credential, so changing it signs everyone out at once. Good enough to gate a
+# stakeholder demo; not a secret store -- the value is readable by anyone with CloudFront
+# read access on the account.
+# demo_username = "terrafa"
+# demo_password = "change-me"
+
+# Leave empty and the app is served to the whole internet. List anything and the
+# distribution switches to default-deny, with WAF admitting only these.
+#
+# List both address families: the distribution is dual-stack and a browser with working
+# IPv6 prefers it, so a v4-only list 403s the people it was meant to admit. Use the /64
+# for a residential IPv6 line rather than the single address, which rotates daily.
+# allowed_cidrs = [
+#   "203.0.113.4/32",
+#   "2001:db8:1234:5678::/64",
+# ]
+
+# Creates the OIDC role .github/workflows/deploy-web.yml assumes, scoped to this
+# repository and github_branch alone. Leave unset if you only ever deploy by hand.
+# Set github_oidc_provider_arn as well if the account already has a GitHub provider.
+# github_repository = "terrafa/continuum-frontend"
+
+tags = {
+  Project = "terrafa-continuum"
+}

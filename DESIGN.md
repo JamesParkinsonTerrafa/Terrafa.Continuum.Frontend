@@ -147,6 +147,12 @@ turning down.
   footnotes) is bound to `HintsVisible` and collapses from Settings. Data, alerts, and
   readouts are not hints and always stay. Where a status bar is entirely hints, the whole bar
   collapses rather than leaving an empty strip.
+- **Overlays are anchored to what they describe.** On the map, pins and zones hold normalized
+  image coordinates, never screen ones. Swap the client's photo, or fit a portrait one into a
+  landscape frame, and every figure is still over the same piece of ground. The card keeps its
+  pixel size and its offset from the anchor, because a readout that scaled with the photo would
+  stop being readable.
 - **Snapshots are the review surface.** `--snapshot <dir>` renders every view headlessly in
-  both themes plus a hints-off set. Check visual work there rather than by eye on a running
-  window.
+  both themes plus a hints-off set, and drives the interactive surfaces — including a rail drag
+  onto the plan and a client upload — into frames of their own. Check visual work there rather
+  than by eye on a running window.

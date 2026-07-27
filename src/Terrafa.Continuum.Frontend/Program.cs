@@ -1,4 +1,5 @@
 using Avalonia;
+using Terrafa.Continuum.Frontend.Themes;
 
 namespace Terrafa.Continuum.Frontend;
 
@@ -19,5 +20,6 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(AppFonts.Options)
             .LogToTrace();
 }

@@ -62,7 +62,7 @@ public static class Palette
     public static readonly SolidColorBrush CanvasNoteBackdrop = Themed("CanvasNoteBackdropBrush", "#D904050A", "#D9F8FAFC");
     public static readonly SolidColorBrush CanvasPanelBackdrop = Themed("CanvasPanelBackdropBrush", "#D90A0C10", "#D9E9EDF2");
     public static readonly SolidColorBrush Scrim = Themed("ScrimBrush", "#A604050A", "#5904050A");
-    public static readonly FontFamily Font = new("Verdana, Tahoma");
+    public static readonly FontFamily Font = AppFonts.Primary;
 
     static Palette()
     {

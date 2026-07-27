@@ -275,7 +275,7 @@ public partial class NetworkView : UserControl
         var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
         extra.Inlines =
         [
-            new Run("ν ≪ μ "),
+            new Run("ν ≪ µ "),
             new Run("✓") { Foreground = Palette.Green },
             new Run(" · C¹ (linear) "),
             new Run("✓") { Foreground = Palette.Green },
@@ -286,7 +286,7 @@ public partial class NetworkView : UserControl
         {
             Variant = NodeCardVariant.Transfer,
             TagText = "TRANSFER · T1",
-            TagRight = "dμ/dν",
+            TagRight = "dν/dµ",
             Title = "sum(level_01, level_02)",
             TitleSize = 12,
             Width = 250,
@@ -299,7 +299,7 @@ public partial class NetworkView : UserControl
         var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
         extra.Inlines =
         [
-            new Run("ν ≪ μ "),
+            new Run("ν ≪ µ "),
             new Run("✓") { Foreground = Palette.Green },
             new Run(" · "),
             new Run("NONLINEAR") { Foreground = Palette.Red },
@@ -311,7 +311,7 @@ public partial class NetworkView : UserControl
         {
             Variant = NodeCardVariant.Transfer,
             TagText = "TRANSFER · T2",
-            TagRight = "dμ/dν",
+            TagRight = "dν/dµ",
             Title = "hazard λ₀(t)·exp(θᵀx)",
             TitleSize = 12,
             Width = 250,
@@ -347,7 +347,7 @@ public partial class NetworkView : UserControl
     private void BuildLegend()
     {
         LegendPanel.Children.Add(LegendRow(Palette.Cyan, Palette.CyanFill, false, "MEASURE — leaf, emission p(y|x)"));
-        LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, false, "TRANSFER — density dμ/dν"));
+        LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, false, "TRANSFER — density dν/dµ"));
         LegendPanel.Children.Add(LegendRow(Palette.Green, Palette.GreenFill, false, "FIGURE — projection E[X|𝒢]"));
         LegendPanel.Children.Add(LegendRow(Palette.Purple, null, true, "PROVISIONAL — under-determined"));
     }

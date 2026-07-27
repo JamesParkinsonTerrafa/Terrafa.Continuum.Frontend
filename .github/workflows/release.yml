@@ -31,6 +31,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The browser head has no system font stack to fall back on, so a character no
+      # embedded font covers ships as a tofu box. Cheap to check, invisible until users see it.
+      - name: Check glyph coverage
+        run: python3 tools/check-glyphs.py
+
       - name: Bump patch
         id: next
         run: |

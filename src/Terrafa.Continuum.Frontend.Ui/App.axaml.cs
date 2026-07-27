@@ -19,10 +19,16 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        IDataFeed feed = new StaticDataFeed();
+        switch (ApplicationLifetime)
         {
-            IDataFeed feed = new StaticDataFeed();
-            desktop.MainWindow = new MainWindow(feed);
+            case IClassicDesktopStyleApplicationLifetime desktop:
+                desktop.MainWindow = new MainWindow(feed);
+                break;
+            // The browser has no windows, only a root control on the page.
+            case ISingleViewApplicationLifetime singleView:
+                singleView.MainView = new MainView(feed);
+                break;
         }
         base.OnFrameworkInitializationCompleted();
     }

@@ -1,4 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- Desktop head. Assembly name, target framework and project path are unchanged so
+       the release workflow, packaging scripts and install scripts keep working. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,10 +12,13 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.18" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.18" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.18" />
+    <!-- Drives the snapshot switch, which renders the views to PNG without a display.
+         Desktop only: it needs a headless windowing platform and writes to disk. -->
     <PackageReference Include="Avalonia.Headless" Version="11.3.18" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Terrafa.Continuum.Frontend.Ui/Terrafa.Continuum.Frontend.Ui.csproj" />
   </ItemGroup>
 </Project>

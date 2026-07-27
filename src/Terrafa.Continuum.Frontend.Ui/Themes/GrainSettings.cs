@@ -6,11 +6,11 @@ public static class GrainSettings
 
     public static readonly int[] BaseWavelengthOptions = [128, 256, 512];
 
-    public static double Intensity { get; private set; } = 2;
+    public static double Intensity { get; private set; } = 4;
     public static int BaseWavelength { get; private set; } = 512;
     public static double SpectralSlope { get; private set; } = 0.0;
-    public static double WarpStrength { get; private set; } = 51;
-    public static double FineGrain { get; private set; } = 3.0;
+    public static double WarpStrength { get; private set; } = 100;
+    public static double FineGrain { get; private set; } = 8.0;
 
     public static event Action? IntensityChanged;
     public static event Action? FieldChanged;

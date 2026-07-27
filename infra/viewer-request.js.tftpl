@@ -1,0 +1,70 @@
+// Rendered by cloudfront.tf via templatefile(). Two jobs, in one function because
+// CloudFront permits exactly one viewer-request function per cache behaviour -- adding
+// auth alongside the encoding rewrite was never an option, so they merge.
+//
+// Order matters: authenticate first, rewrite second. An unauthenticated request should
+// never reach the point of being told which encoding it would have got.
+
+// Empty when demo_password is unset, which disables the check entirely and leaves this a
+// pure encoding rewrite. The value is baked in at apply time and is visible to anyone with
+// CloudFront read access on the account -- fine for gating a demo, not a way to hold a
+// secret that matters.
+var EXPECTED = '${expected_auth}';
+
+function unauthorized() {
+  return {
+    statusCode: 401,
+    statusDescription: 'Unauthorized',
+    headers: {
+      // Prompts the browser's native sign-in dialog. Once entered, the browser attaches
+      // the header to every subsequent same-origin request on its own, which is what lets
+      // the runtime fetch _framework without the loader knowing anything about auth.
+      'www-authenticate': { value: 'Basic realm="Terrafa Continuum", charset="UTF-8"' },
+      'cache-control': { value: 'no-store' }
+    }
+  };
+}
+
+function handler(event) {
+  var request = event.request;
+  var headers = request.headers;
+
+  if (EXPECTED !== '') {
+    var auth = headers.authorization;
+    if (!auth || auth.value !== EXPECTED) {
+      return unauthorized();
+    }
+  }
+
+  var uri = request.uri;
+
+  // Normalise the directory request here rather than leaning on the distribution's
+  // default root object: that substitution and this function are both "before the cache
+  // lookup", and the load path should not depend on which of them AWS runs first.
+  if (uri.charAt(uri.length - 1) === '/') {
+    uri = uri + 'index.html';
+  }
+
+  // Point the request at the pre-compressed sibling that `dotnet publish` already wrote.
+  // CloudFront's own Compress cannot carry this payload: it skips anything over
+  // 10,000,000 bytes and dotnet.native.wasm is 30 MB after AOT, and it only compresses a
+  // fixed list of content types which excludes the application/octet-stream the ICU .dat
+  // files are served as. Between them that is 33 of the 41 MB a cold visitor downloads.
+  // Serving the published .br instead takes the bundle to 9.1 MB.
+  //
+  // The rewritten URI becomes the cache key, so brotli, gzip and identity viewers each get
+  // their own edge object without Accept-Encoding being in the cache policy at all.
+  var accept = headers['accept-encoding'];
+
+  if (accept) {
+    var value = accept.value;
+    if (value.indexOf('br') !== -1) {
+      uri = uri + '.br';
+    } else if (value.indexOf('gzip') !== -1) {
+      uri = uri + '.gz';
+    }
+  }
+
+  request.uri = uri;
+  return request;
+}

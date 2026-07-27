@@ -53,7 +53,7 @@
       <controls:DraftBar.ChipContent>
         <StackPanel Orientation="Horizontal" Spacing="12">
           <controls:Chip Text="PARSE ✓" Accent="green" />
-          <controls:Chip Text="ν ≪ μ ✓" Accent="green" />
+          <controls:Chip Text="ν ≪ µ ✓" Accent="green" />
           <controls:Chip Text="C¹ ✓ linear" Accent="green" />
           <controls:Chip Text="σ_out 152 bbl" Accent="cyan" />
         </StackPanel>

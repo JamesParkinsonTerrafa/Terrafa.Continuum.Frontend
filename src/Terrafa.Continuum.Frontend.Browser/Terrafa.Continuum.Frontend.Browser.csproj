@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- Browser head. Deliberately a separate project rather than a second target framework
+       on the desktop one: multi-targeting would force every release runner to install the
+       wasm-tools workload, and `dotnet publish` without an explicit -f would stop working.
+
+       The WebAssembly SDK is what emits wwwroot/_framework; plain Microsoft.NET.Sdk with a
+       -browser target framework quietly produces an ordinary .NET app instead. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Terrafa.Continuum.Frontend.Browser</RootNamespace>
+    <AssemblyName>Terrafa.Continuum.Frontend.Browser</AssemblyName>
+    <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <!-- The grain overlay builds a 1560x980 texture pixel by pixel in managed code. Under
+         the interpreter that stalls visibly on load and on every grain settings change. -->
+    <RunAOTCompilation>true</RunAOTCompilation>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Browser" Version="11.3.18" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- DataTreeBuilder walks the model types with reflection, so nothing statically
+         references those properties and the trimmer strips them: the measures tree came
+         back missing two thirds of its rows, with no error anywhere. Root the whole UI
+         assembly rather than annotate each model — it is ~350 KB of code against a 6 MB
+         runtime, and it closes the entire class of bug instead of the one instance. -->
+    <TrimmerRootAssembly Include="Terrafa.Continuum.Frontend.Ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Terrafa.Continuum.Frontend.Ui/Terrafa.Continuum.Frontend.Ui.csproj" />
+  </ItemGroup>
+</Project>

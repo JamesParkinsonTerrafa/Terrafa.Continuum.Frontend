@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Terrafa.Continuum.Frontend.Controls;
@@ -18,6 +20,7 @@ public static class SnapshotRunner
     {
         AppBuilder.Configure<App>()
             .UseSkia()
+            .With(AppFonts.Options)
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .SetupWithoutStarting();
 
@@ -27,6 +30,8 @@ public static class SnapshotRunner
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
+        CaptureMapProbe(outputDir);
+        CaptureMapUploadProbe(outputDir);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -313,6 +318,146 @@ public static class SnapshotRunner
         Console.WriteLine($"tfn probe: tabs after close = {view.StackTabs.Labels.Count}");
 
         window.Close();
+    }
+
+    /// <summary>Drags a dashboard figure out of the rail onto the plan, moves it, and opens the
+    /// pin menu — the whole point of the map screen, so it gets a frame of its own.</summary>
+    private static void CaptureMapProbe(string outputDir)
+    {
+        var view = new SiteMapView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        Point Centre(Visual visual) =>
+            visual.TranslatePoint(new Point(visual.Bounds.Width / 2, visual.Bounds.Height / 2), window)!.Value;
+
+        void Drag(Point from, Point to)
+        {
+            window.MouseDown(from, MouseButton.Left);
+            window.MouseMove(new Point((from.X + to.X) / 2, (from.Y + to.Y) / 2));
+            window.MouseMove(to);
+            window.MouseUp(to, MouseButton.Left);
+            Pump();
+        }
+
+        void Click(Point point)
+        {
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+        }
+
+        var zoneLayerRow = view.LayerRows.Children.OfType<Border>().ElementAt(1);
+        Click(Centre(zoneLayerRow));
+        Console.WriteLine($"map probe: zone layer after toggle = {view.Plan.ShowZones} (expected False)");
+        Click(Centre(zoneLayerRow));
+
+        var railRow = view.CatalogueList.Children.OfType<Border>()
+            .First(shell => shell.GetVisualDescendants().OfType<TextBlock>()
+                .Any(text => text.Text == "fig.diesel_en590"));
+        railRow.BringIntoView();
+        Pump();
+
+        var dropPoint = new Point(1160, 790);
+        Drag(Centre(railRow), dropPoint);
+        Console.WriteLine($"map probe: {view.Plan.Pins.Count} pins after rail drop (expected 4)");
+
+        var dropped = view.Plan.Pins[^1];
+        Console.WriteLine($"map probe: dropped pin anchored at {dropped.Anchor}");
+
+        Drag(Centre(dropped.Card), new Point(1210, 700));
+        Console.WriteLine($"map probe: after drag, anchor {dropped.Anchor}, selected {view.Plan.Selected?.Id}");
+
+        var menuPoint = Centre(dropped.Card);
+        window.MouseDown(menuPoint, MouseButton.Right);
+        window.MouseUp(menuPoint, MouseButton.Right);
+        Pump();
+
+        Capture(window, outputDir, "5-map-interact");
+        window.Close();
+    }
+
+    /// <summary>Pushes a file through the same path the picker and the drop target use, then
+    /// checks the pins are still on the same piece of ground after the image underneath changed
+    /// shape — portrait here, against the landscape placeholder.</summary>
+    private static void CaptureMapUploadProbe(string outputDir)
+    {
+        var view = new SiteMapView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var before = view.Plan.Pins.Select(pin => pin.Anchor).ToArray();
+        var path = Path.Combine(Path.GetTempPath(), "terrafa-client-photo.png");
+        WriteClientPhoto(path);
+
+        var file = Await(window.StorageProvider.TryGetFileFromPathAsync(new Uri(path)));
+        if (file is null)
+        {
+            Console.Error.WriteLine("snapshot 5-map-upload: no file from the storage provider");
+            window.Close();
+            return;
+        }
+
+        Await(view.LoadImageAsync(file));
+        Pump();
+
+        var after = view.Plan.Pins.Select(pin => pin.Anchor).ToArray();
+        Console.WriteLine($"map probe: anchors held across upload = {before.SequenceEqual(after)}");
+        Console.WriteLine($"map probe: plan rect fitted to {view.Plan.PlanRect}");
+
+        Capture(window, outputDir, "5-map-upload");
+        window.Close();
+    }
+
+    /// <summary>A stand-in for the client's own photo — portrait, and obviously not the plan.</summary>
+    private static void WriteClientPhoto(string path)
+    {
+        using var target = new RenderTargetBitmap(new PixelSize(1200, 1500));
+        using (var context = target.CreateDrawingContext())
+        {
+            context.FillRectangle(new SolidColorBrush(Color.Parse("#5A6B4A")), new Rect(0, 0, 1200, 1500));
+            var road = new SolidColorBrush(Color.Parse("#CFC4A8"));
+            for (var x = 150.0; x < 1200; x += 300) context.FillRectangle(road, new Rect(x, 0, 26, 1500));
+            for (var y = 200.0; y < 1500; y += 320) context.FillRectangle(road, new Rect(0, y, 1200, 26));
+            context.FillRectangle(new SolidColorBrush(Color.Parse("#8E8E8A")), new Rect(210, 430, 620, 520));
+            context.FillRectangle(new SolidColorBrush(Color.Parse("#3B4A53")), new Rect(0, 1180, 1200, 320));
+        }
+        target.Save(path);
+    }
+
+    private static T? Await<T>(Task<T?> task) where T : class
+    {
+        WaitFor(task);
+        return task.IsCompleted ? task.GetAwaiter().GetResult() : null;
+    }
+
+    private static void Await(Task task)
+    {
+        WaitFor(task);
+        if (task.IsCompleted) task.GetAwaiter().GetResult();
+    }
+
+    private static void WaitFor(Task task)
+    {
+        for (var attempt = 0; attempt < 400 && !task.IsCompleted; attempt++)
+        {
+            Pump();
+            Thread.Sleep(5);
+        }
     }
 
     private static void Pump()
