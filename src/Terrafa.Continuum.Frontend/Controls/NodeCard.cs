@@ -53,6 +53,9 @@ public class NodeCard : UserControl
     public static readonly StyledProperty<IBrush?> FillOverrideProperty =
         AvaloniaProperty.Register<NodeCard, IBrush?>(nameof(FillOverride));
 
+    public static readonly StyledProperty<IBrush?> AccentOverrideProperty =
+        AvaloniaProperty.Register<NodeCard, IBrush?>(nameof(AccentOverride));
+
     private readonly Rectangle frame;
     private readonly TextBlock tagBlock;
     private readonly TextBlock tagRightBlock;
@@ -170,6 +173,13 @@ public class NodeCard : UserControl
         set => SetValue(FillOverrideProperty, value);
     }
 
+    /// <summary>Recolours the card without changing its variant — used to tint by mounted subtree.</summary>
+    public IBrush? AccentOverride
+    {
+        get => GetValue(AccentOverrideProperty);
+        set => SetValue(AccentOverrideProperty, value);
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -191,7 +201,7 @@ public class NodeCard : UserControl
             change.Property == ValueMainProperty || change.Property == ValueAccentProperty ||
             change.Property == NoteProperty || change.Property == TitleSizeProperty ||
             change.Property == ValueSizeProperty || change.Property == ExtraContentProperty ||
-            change.Property == FillOverrideProperty)
+            change.Property == FillOverrideProperty || change.Property == AccentOverrideProperty)
         {
             UpdateVisuals();
         }
@@ -200,14 +210,16 @@ public class NodeCard : UserControl
     private void UpdateVisuals()
     {
         var style = ResolveStyle(Variant);
+        var accent = AccentOverride ?? style.Accent;
         frame.RadiusX = AppearanceSettings.NodeCornerRadius;
         frame.RadiusY = AppearanceSettings.NodeCornerRadius;
-        frame.Stroke = AppearanceSettings.Toned(style.Accent);
+        frame.Stroke = AppearanceSettings.Toned(accent);
         frame.Fill = FillOverride ?? AppearanceSettings.Toned(style.Fill);
         frame.StrokeDashArray = style.Dashed ? [4, 3] : null;
 
         tagBlock.Text = TagText;
-        tagBlock.Foreground = AppearanceSettings.Toned(style.TagBrush);
+        tagBlock.Foreground = AppearanceSettings.Toned(
+            ReferenceEquals(style.TagBrush, style.Accent) ? accent : style.TagBrush);
         tagRightBlock.Text = TagRight;
         tagRightBlock.Foreground = AppearanceSettings.Toned(style.TagRightBrush);
         tagRightBlock.IsVisible = TagRight.Length > 0;
@@ -220,7 +232,7 @@ public class NodeCard : UserControl
         valueMainRun.Text = ValueMain;
         valueBlock.FontSize = ValueSize;
         valueAccentRun.Text = ValueAccent;
-        valueAccentRun.Foreground = AppearanceSettings.Toned(style.Accent);
+        valueAccentRun.Foreground = AppearanceSettings.Toned(accent);
         valueAccentRun.FontSize = Math.Max(ValueSize - 3, 9);
         valueBlock.IsVisible = ValueMain.Length > 0;
 

@@ -10,7 +10,7 @@ namespace Terrafa.Continuum.Frontend.Controls;
 public class TerminalTabStrip : UserControl
 {
     private static readonly string[] TabLabels =
-        ["1) NETWORK", "2) TRANSFER FUNCTION", "3) DASHBOARD", "4) DATA TREE", "5) MAP"];
+        ["1) NETWORK", "2) TRANSFER FUNCTION", "3) DASHBOARD", "4) DATA TREE", "5) MAP", "6) DATA SOURCES"];
 
     public static readonly StyledProperty<int> ActiveIndexProperty =
         AvaloniaProperty.Register<TerminalTabStrip, int>(nameof(ActiveIndex));

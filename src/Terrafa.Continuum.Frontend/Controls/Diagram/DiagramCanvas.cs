@@ -334,67 +334,9 @@ public class DiagramCanvas : Border
         if (items.Count == 0) return;
 
         menuLayer.Children.Clear();
-        var stack = new StackPanel();
         var header = node.Card.Title.Length > 0 ? node.Card.Title : node.Card.TagText;
-        stack.Children.Add(new Border
-        {
-            Padding = new Thickness(12, 7, 12, 5),
-            BorderBrush = Palette.Border,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = new TextBlock
-            {
-                Text = header.ToUpperInvariant(),
-                FontSize = 9,
-                LetterSpacing = 1,
-                Foreground = Palette.TextFaint
-            }
-        });
-
-        foreach (var (label, action) in items)
-        {
-            var itemText = new TextBlock
-            {
-                Text = label,
-                FontSize = 10,
-                LetterSpacing = 1,
-                Foreground = Palette.Text
-            };
-            var item = new Border
-            {
-                Padding = new Thickness(12, 7),
-                Background = Brushes.Transparent,
-                Cursor = new Cursor(StandardCursorType.Hand),
-                Child = itemText
-            };
-            var itemAction = action;
-            item.PointerEntered += (_, _) =>
-            {
-                item.Background = Palette.BgField;
-                itemText.Foreground = Palette.Amber;
-            };
-            item.PointerExited += (_, _) =>
-            {
-                item.Background = Brushes.Transparent;
-                itemText.Foreground = Palette.Text;
-            };
-            item.PointerPressed += (_, e) =>
-            {
-                e.Handled = true;
-                CloseMenu();
-                itemAction();
-            };
-            stack.Children.Add(item);
-        }
-
-        var menu = new Border
-        {
-            Background = Palette.BgBar,
-            BorderBrush = Palette.BorderMid,
-            BorderThickness = new Thickness(1),
-            MinWidth = 190,
-            Child = stack
-        };
-        var estimatedHeight = 30 + items.Count * 30;
+        var menu = TerminalMenu.Build(header, items, CloseMenu);
+        var estimatedHeight = TerminalMenu.HeaderHeight + items.Count * TerminalMenu.RowHeight;
         Canvas.SetLeft(menu, Math.Max(0, Math.Min(viewportPoint.X, Bounds.Width - 200)));
         Canvas.SetTop(menu, Math.Max(0, Math.Min(viewportPoint.Y, Bounds.Height - estimatedHeight)));
         menuLayer.Children.Add(menu);

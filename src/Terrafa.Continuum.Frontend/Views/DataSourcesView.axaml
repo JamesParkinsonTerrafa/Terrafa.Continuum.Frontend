@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             x:Class="Terrafa.Continuum.Frontend.Views.DataSourcesView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <UserControl.Styles>
+    <Style Selector="TextBox.search">
+      <Setter Property="FontFamily" Value="{StaticResource TerminalFont}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Foreground" Value="{StaticResource TextBrightBrush}" />
+      <Setter Property="CaretBrush" Value="{StaticResource AmberBrush}" />
+    </Style>
+    <Style Selector="TextBox.search /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource BgFieldBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="TextBox.search:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{StaticResource BorderMidBrush}" />
+    </Style>
+    <Style Selector="TextBox.search:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{StaticResource AmberBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <DockPanel>
+      <controls:TerminalTopBar DockPanel.Dock="Top"
+                               CommandText="DATA &lt;GO&gt;"
+                               SubtitleText="SOURCE CATALOGUE">
+        <controls:TerminalTopBar.RightContent>
+          <controls:FeedLiveBadge x:Name="FeedBadge" />
+        </controls:TerminalTopBar.RightContent>
+      </controls:TerminalTopBar>
+
+      <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="5"
+                                 HintText="a dataset mounts as its own subtree — containment never crosses datasets, only equality &amp; adjacency do" />
+
+      <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+        <controls:TerminalStatusBar.LeftContent>
+          <StackPanel Orientation="Horizontal" Spacing="18">
+            <TextBlock x:Name="SyncText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+            <TextBlock Text="MOUNTS ARE EVENTS — APPEND-ONLY, REVERSIBLE BY REPLAY" FontSize="10"
+                       Foreground="{StaticResource TextFaintBrush}" />
+          </StackPanel>
+        </controls:TerminalStatusBar.LeftContent>
+        <controls:TerminalStatusBar.RightContent>
+          <TextBlock Text="NO DATASET IS EVER RE-SHAPED TO FIT ANOTHER" FontSize="10"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </controls:TerminalStatusBar.RightContent>
+      </controls:TerminalStatusBar>
+
+      <Border DockPanel.Dock="Left" Width="300"
+              Background="{StaticResource BgPanelBrush}"
+              BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+        <controls:PanelBox x:Name="CataloguePanel" Title="CATALOGUE">
+          <controls:PanelBox.InnerContent>
+            <DockPanel>
+              <Border DockPanel.Dock="Top" Padding="10,10,10,8"
+                      BorderBrush="{StaticResource RowSeparatorBrush}" BorderThickness="0,0,0,1">
+                <TextBox x:Name="SearchBox" Classes="search" Watermark="search datasets…" />
+              </Border>
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="CatalogueList" Margin="0,4,0,10" />
+              </ScrollViewer>
+            </DockPanel>
+          </controls:PanelBox.InnerContent>
+          <controls:PanelBox.FooterContent>
+            <TextBlock Text="Folders are topics, not containment. A dataset's own tree is fixed by contract — mounting adds it beside yours, never inside it."
+                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextFaintBrush}" />
+          </controls:PanelBox.FooterContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border DockPanel.Dock="Right" Width="320"
+              Background="{StaticResource BgPanelBrush}"
+              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+        <controls:PanelBox Title="MOUNTED SUBTREES" Hint="workspace 𝒢">
+          <controls:PanelBox.InnerContent>
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <StackPanel x:Name="MountedList" Margin="0,4,0,10" />
+            </ScrollViewer>
+          </controls:PanelBox.InnerContent>
+          <controls:PanelBox.FooterContent>
+            <StackPanel Spacing="6">
+              <TextBlock x:Name="MountedSummary" FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextMutedBrush}" />
+              <TextBlock Text="Every mount enlarges 𝒢 — figures downstream re-sharpen on commit."
+                         FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextFaintBrush}" />
+            </StackPanel>
+          </controls:PanelBox.FooterContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border>
+        <Border.Background>
+          <RadialGradientBrush Center="45%,30%" GradientOrigin="45%,30%" RadiusX="75%" RadiusY="75%">
+            <GradientStop Color="{StaticResource CanvasGlowInnerColor}" Offset="0" />
+            <GradientStop Color="{StaticResource CanvasGlowOuterColor}" Offset="1" />
+          </RadialGradientBrush>
+        </Border.Background>
+        <DockPanel>
+          <Border DockPanel.Dock="Top" x:Name="PreviewHeaderHost" Padding="16,12"
+                  BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" />
+          <controls:PanelBox x:Name="PreviewPanel" Title="SUBTREE PREVIEW"
+                             Hint="right-click a node to add it — parents include everything beneath">
+            <controls:PanelBox.InnerContent>
+              <ScrollViewer>
+                <StackPanel x:Name="PreviewRows" Margin="0,2,0,12" />
+              </ScrollViewer>
+            </controls:PanelBox.InnerContent>
+          </controls:PanelBox>
+        </DockPanel>
+      </Border>
+    </DockPanel>
+
+    <controls:ContextMenuLayer x:Name="MenuLayer" />
+    <controls:OverlayDialog x:Name="Dialog" />
+  </Panel>
+</UserControl>
