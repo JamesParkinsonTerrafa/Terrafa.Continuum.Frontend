@@ -17,6 +17,7 @@ public partial class DataSourcesView : UserControl
     private const double RowIndent = 14;
 
     private readonly IDatasetCatalog catalog;
+    private readonly AuthSession session = AuthSession.Instance;
     private readonly Workspace workspace = Workspace.Instance;
     private readonly HashSet<string> collapsedTopics = [];
 
@@ -25,6 +26,13 @@ public partial class DataSourcesView : UserControl
     private string query = "";
     private string? selectedDataset;
     private DatasetSchema? preview;
+
+    /// <summary>Why the catalogue is empty or short, when it is. Null when nothing is wrong.</summary>
+    private string? catalogueMessage;
+
+    /// <summary>The dataset the preview is showing or loading — not the merely selected one.</summary>
+    private string? openDataset;
+    private string? previewMessage;
 
     public DataSourcesView() : this(DemoData.CreateSnapshot(), _ => { })
     {
@@ -42,7 +50,7 @@ public partial class DataSourcesView : UserControl
         Tabs.TabSelected += navigate;
 
         FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
-        SyncText.Text = $"CATALOGUE SYNCED {snapshot.AsOf:HH:mm:ss}";
+        SyncText.Text = $"CATALOGUE READING {Source}";
 
         SearchBox.PropertyChanged += (_, e) =>
         {
@@ -51,6 +59,7 @@ public partial class DataSourcesView : UserControl
             RebuildCatalogue();
         };
 
+        RebuildConnect();
         RenderPreview();
         RebuildMounted();
         LoadCatalogue();
@@ -58,18 +67,201 @@ public partial class DataSourcesView : UserControl
         NoiseOverlay.Attach(this);
     }
 
+    /// <summary>True when the rows came from the real service rather than the built-in demo data.</summary>
+    private bool IsLive => catalog switch
+    {
+        SessionDatasetCatalog session => session.IsLive,
+        HttpDatasetCatalog => true,
+        _ => false
+    };
+
+    /// <summary>Databases the catalogue could not read, whichever catalogue is in force.</summary>
+    private IReadOnlyList<string> Warnings => catalog switch
+    {
+        SessionDatasetCatalog session => session.Warnings,
+        HttpDatasetCatalog http => http.Warnings,
+        _ => []
+    };
+
+    /// <summary>Which service the screen is reading from, for the status line.</summary>
+    private string Source => IsLive ? DataFeedOptions.DisplayHost.ToUpperInvariant() : "DEMO DATA";
+
+    // ── connect / session bar ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The one control on this screen that is about the session rather than the data: an invitation
+    /// to connect while the catalogue is demo data, and who is connected once it is not.
+    /// </summary>
+    private void RebuildConnect() =>
+        ConnectHost.Child = session.IsSignedIn ? ConnectedBar() : ConnectButton();
+
+    private Control ConnectButton()
+    {
+        var label = new TextBlock
+        {
+            Text = "CONNECT REAL DATA",
+            FontSize = 11,
+            LetterSpacing = 1,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.Black,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        var button = new Border
+        {
+            Padding = new Thickness(12, 7),
+            Background = Palette.Amber,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = label
+        };
+        button.PointerEntered += (_, _) => button.Background = Palette.AmberSoft;
+        button.PointerExited += (_, _) => button.Background = Palette.Amber;
+        button.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            ConnectDataFlow.Show(Dialog, session, OnSignedIn);
+        };
+        return button;
+    }
+
+    private Control ConnectedBar()
+    {
+        var marker = new Ellipse
+        {
+            Width = 7,
+            Height = 7,
+            Fill = Palette.Cyan,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var who = new TextBlock
+        {
+            Text = session.Username ?? "connected",
+            FontSize = 11,
+            Foreground = Palette.Text,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var signOut = new TextBlock
+        {
+            Text = "SIGN OUT",
+            FontSize = 9,
+            LetterSpacing = 1,
+            Foreground = Palette.TextGhost,
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        signOut.PointerEntered += (_, _) => signOut.Foreground = Palette.Red;
+        signOut.PointerExited += (_, _) => signOut.Foreground = Palette.TextGhost;
+        signOut.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            session.SignOut();
+            OnSessionSwitched();
+        };
+
+        var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        left.Children.Add(marker);
+        left.Children.Add(who);
+
+        var row = new DockPanel();
+        DockPanel.SetDock(signOut, Dock.Right);
+        row.Children.Add(signOut);
+        row.Children.Add(left);
+
+        return new Border
+        {
+            Padding = new Thickness(10, 7),
+            Background = Palette.BgField,
+            BorderBrush = Palette.Border,
+            BorderThickness = new Thickness(1),
+            Child = row
+        };
+    }
+
+    private void OnSignedIn() => OnSessionSwitched();
+
+    /// <summary>
+    /// Signing in or out replaces the entire catalogue, so nothing selected against the old one
+    /// survives — the open preview least of all, since its paths belong to datasets that are no
+    /// longer listed.
+    /// </summary>
+    private void OnSessionSwitched()
+    {
+        catalogue = new Dictionary<string, IReadOnlyList<string>>();
+        catalogueMessage = null;
+        previewMessage = null;
+        preview = null;
+        openDataset = null;
+        selectedDataset = null;
+
+        SyncText.Text = $"CATALOGUE READING {Source}";
+        RebuildConnect();
+        RenderPreview();
+        RebuildMounted();
+        RebuildCatalogue();
+        LoadCatalogue();
+    }
+
     /// <summary>Fired at construction — the catalogue call is the screen's only startup dependency.</summary>
     private async void LoadCatalogue()
     {
-        catalogue = await catalog.GetAvailableDatasetsAsync();
+        try
+        {
+            catalogue = await catalog.GetAvailableDatasetsAsync();
+
+            // A listing can succeed and still be short: the service answers 502 only when every
+            // database failed, so a partial failure arrives as a 200 and has to be said out loud.
+            var warnings = Warnings;
+            catalogueMessage = warnings.Count == 0
+                ? null
+                : $"{warnings.Count} database(s) could not be read — {string.Join("; ", warnings)}";
+        }
+        catch (Exception ex)
+        {
+            catalogue = new Dictionary<string, IReadOnlyList<string>>();
+            catalogueMessage = Describe(ex);
+            SyncText.Text = $"CATALOGUE UNREACHABLE · {Source}";
+        }
         RebuildCatalogue();
     }
 
+    /// <summary>
+    /// Opens a dataset in two passes: the schema, which is a catalog lookup and lands quickly, and
+    /// then its values, which come from a query that can take seconds. Each render is guarded on
+    /// the dataset still being the open one, so a slow response cannot overwrite a newer preview.
+    /// </summary>
     private async void OpenSchema(string dataset)
     {
-        preview = await catalog.GetSchemaAsync(dataset);
-        RenderPreview();
+        openDataset = dataset;
+        previewMessage = null;
+
+        try
+        {
+            var schema = await catalog.GetSchemaAsync(dataset);
+            if (openDataset != dataset) return;
+            preview = schema;
+            RenderPreview();
+
+            var sampled = await catalog.GetSampleAsync(dataset);
+            if (openDataset != dataset) return;
+            preview = sampled;
+            RenderPreview();
+        }
+        catch (Exception ex)
+        {
+            if (openDataset != dataset) return;
+            // The structure may already be on screen from the first pass; keep it and report that
+            // the values are what failed, rather than throwing the schema away too.
+            previewMessage = Describe(ex);
+            RenderPreview();
+        }
     }
+
+    /// <summary>
+    /// A DataFeedException already reads as a sentence — the service writes specific messages and
+    /// the client passes them through. Anything else is unexpected, so it is named as such.
+    /// </summary>
+    private static string Describe(Exception ex) =>
+        ex is DataFeedException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
 
     // ── catalogue rail ───────────────────────────────────────────────────────
 
@@ -98,15 +290,32 @@ public partial class DataSourcesView : UserControl
             ? Plural(hits, "hit", "hits")
             : Plural(total, "dataset", "datasets");
 
+        // A partial failure still lists something, so the note goes below the rows rather than
+        // instead of them.
+        if (catalogueMessage is not null && CatalogueList.Children.Count != 0)
+            CatalogueList.Children.Add(Note(catalogueMessage));
+
         if (CatalogueList.Children.Count != 0) return;
-        CatalogueList.Children.Add(new TextBlock
-        {
-            Text = catalogue.Count == 0 ? "loading catalogue…" : "no dataset matches that search",
-            FontSize = 11,
-            Margin = new Thickness(14, 12),
-            Foreground = Palette.TextFaint
-        });
+        CatalogueList.Children.Add(catalogueMessage is not null
+            ? Note(catalogueMessage)
+            : new TextBlock
+            {
+                Text = catalogue.Count == 0 ? "loading catalogue…" : "no dataset matches that search",
+                FontSize = 11,
+                Margin = new Thickness(14, 12),
+                Foreground = Palette.TextFaint
+            });
     }
+
+    private static Control Note(string text) => new TextBlock
+    {
+        Text = text,
+        FontSize = 10,
+        LineHeight = 15,
+        Margin = new Thickness(14, 12),
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = Palette.Red
+    };
 
     private List<string> Rank(IReadOnlyList<string> datasets)
     {
@@ -257,17 +466,20 @@ public partial class DataSourcesView : UserControl
         if (preview is null)
         {
             PreviewPanel.Hint = "";
-            PreviewRows.Children.Add(new TextBlock
-            {
-                Text = "double-click a dataset in the catalogue to fetch its schema",
-                FontSize = 11,
-                Margin = new Thickness(16, 16),
-                Foreground = Palette.TextFaint
-            });
+            PreviewRows.Children.Add(previewMessage is not null
+                ? Note(previewMessage)
+                : new TextBlock
+                {
+                    Text = "double-click a dataset in the catalogue to fetch its schema",
+                    FontSize = 11,
+                    Margin = new Thickness(16, 16),
+                    Foreground = Palette.TextFaint
+                });
             return;
         }
 
         PreviewPanel.Hint = "right-click a node to add it — parents include everything beneath";
+        if (previewMessage is not null) PreviewRows.Children.Add(Note(previewMessage));
         PreviewRows.Children.Add(PreviewColumnHeader());
         AppendPreviewRow(preview.Root, 0);
     }
@@ -303,7 +515,7 @@ public partial class DataSourcesView : UserControl
         };
         var topic = new TextBlock
         {
-            Text = $"· {StubDatasetCatalog.TopicOf(schema.Dataset).ToLowerInvariant()}",
+            Text = $"· {TopicOf(schema.Dataset).ToLowerInvariant()}",
             FontSize = 12,
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
@@ -460,6 +672,13 @@ public partial class DataSourcesView : UserControl
 
     private static string Plural(int count, string singular, string plural) =>
         $"{count} {(count == 1 ? singular : plural)}";
+
+    /// <summary>
+    /// Read back out of the loaded catalogue rather than asked of the service, so it says the
+    /// same thing whichever catalogue is behind it.
+    /// </summary>
+    private string TopicOf(string dataset) =>
+        catalogue.FirstOrDefault(entry => entry.Value.Contains(dataset)).Key ?? "uncategorised";
 
     // ── add to tree ──────────────────────────────────────────────────────────
 

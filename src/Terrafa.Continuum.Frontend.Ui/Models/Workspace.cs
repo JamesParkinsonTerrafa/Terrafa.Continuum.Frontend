@@ -212,6 +212,19 @@ public sealed class Workspace
         return copy;
     }
 
+    /// <summary>
+    /// Empties the workspace, optionally re-seeding the demo mount. Called when the session
+    /// changes: a subtree mounted from the demo catalogue must not outlive it, or the tree and
+    /// network screens keep drawing leaves whose dataset is no longer listed anywhere.
+    /// </summary>
+    public void Reset(bool seedDemo)
+    {
+        subtrees.Clear();
+        links.Clear();
+        if (seedDemo) SeedDefaultMount();
+        Changed?.Invoke();
+    }
+
     /// <summary>The site the operator owns is mounted up front — every other dataset is opt-in.</summary>
     private void SeedDefaultMount() => Mount(StubDatasetCatalog.SiteAlpha, StubDatasetCatalog.SiteAlpha.Root);
 }

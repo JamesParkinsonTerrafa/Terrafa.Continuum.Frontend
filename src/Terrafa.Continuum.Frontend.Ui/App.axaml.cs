@@ -20,14 +20,19 @@ public class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         IDataFeed feed = new StaticDataFeed();
+
+        // Demo data until someone signs in on the DATA SOURCES screen, the real service after.
+        // The object is the same either way, so nothing downstream has to know which is in force.
+        IDatasetCatalog catalog = new SessionDatasetCatalog();
+
         switch (ApplicationLifetime)
         {
             case IClassicDesktopStyleApplicationLifetime desktop:
-                desktop.MainWindow = new MainWindow(feed);
+                desktop.MainWindow = new MainWindow(feed, catalog);
                 break;
             // The browser has no windows, only a root control on the page.
             case ISingleViewApplicationLifetime singleView:
-                singleView.MainView = new MainView(feed);
+                singleView.MainView = new MainView(feed, catalog);
                 break;
         }
         base.OnFrameworkInitializationCompleted();

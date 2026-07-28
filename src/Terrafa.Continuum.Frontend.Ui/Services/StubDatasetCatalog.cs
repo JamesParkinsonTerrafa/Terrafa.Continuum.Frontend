@@ -40,8 +40,8 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
         return Task.FromResult(schema);
     }
 
-    public static string TopicOf(string dataset) =>
-        Catalogue.FirstOrDefault(entry => entry.Value.Contains(dataset)).Key ?? "UNCATEGORISED";
+    /// <summary>Stub readings are baked into the schema, so there is nothing extra to fetch.</summary>
+    public Task<DatasetSchema> GetSampleAsync(string dataset) => GetSchemaAsync(dataset);
 
     private static DatasetSchema BuildSchema(string dataset) => dataset switch
     {

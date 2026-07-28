@@ -35,7 +35,7 @@ public partial class MainView : UserControl
         InitializeComponent();
 
         // Warm the catalogue while the first screen builds — DATA SOURCES then opens populated.
-        _ = catalog.GetAvailableDatasetsAsync();
+        _ = WarmCatalogue();
 
         SwitchTo(0);
         AddHandler(
@@ -54,6 +54,7 @@ public partial class MainView : UserControl
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RebuildScreens;
         Workspace.Instance.Changed += InvalidateInactiveScreens;
+        AuthSession.Instance.Changed += OnSessionChanged;
         SettingsFlyout.ToggleRequested += ToggleSettings;
         ContactDialog.ShowRequested += ShowContact;
     }
@@ -62,9 +63,36 @@ public partial class MainView : UserControl
     {
         ThemeManager.Changed -= RebuildScreens;
         Workspace.Instance.Changed -= InvalidateInactiveScreens;
+        AuthSession.Instance.Changed -= OnSessionChanged;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
         ContactDialog.ShowRequested -= ShowContact;
         base.OnDetachedFromVisualTree(e);
+    }
+
+    /// <summary>
+    /// Signing in or out swaps the whole catalogue underneath the app, so the workspace is emptied
+    /// with it — a subtree mounted from the demo catalogue is meaningless against a real one, and
+    /// vice versa. Resetting raises Workspace.Changed, which drops the screens that are not on
+    /// show; the DATA SOURCES screen refreshes itself, since that is where the change was made.
+    /// </summary>
+    private void OnSessionChanged() =>
+        Workspace.Instance.Reset(seedDemo: !AuthSession.Instance.IsSignedIn);
+
+    /// <summary>
+    /// Prefetch only. A failure is deliberately dropped here: DataSourcesView makes the same call
+    /// and reports it on screen, and leaving it unobserved on a discarded task would instead
+    /// surface as an UnobservedTaskException from the finaliser thread.
+    /// </summary>
+    private async Task WarmCatalogue()
+    {
+        try
+        {
+            await catalog.GetAvailableDatasetsAsync();
+        }
+        catch (Exception)
+        {
+            // Reported by the screen that needs it.
+        }
     }
 
     private void ToggleSettings() => Settings.Toggle();

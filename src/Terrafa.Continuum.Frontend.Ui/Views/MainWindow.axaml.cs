@@ -16,10 +16,16 @@ public partial class MainWindow : Window
     {
     }
 
-    public MainWindow(IDataFeed feed)
+    // Leaves the catalogue on the stub — the constructor SnapshotRunner uses, where a render must
+    // not depend on a service being reachable.
+    public MainWindow(IDataFeed feed) : this(feed, StubDatasetCatalog.Instance)
+    {
+    }
+
+    public MainWindow(IDataFeed feed, IDatasetCatalog catalog)
     {
         InitializeComponent();
-        root = new MainView(feed);
+        root = new MainView(feed, catalog);
         Content = root;
     }
 

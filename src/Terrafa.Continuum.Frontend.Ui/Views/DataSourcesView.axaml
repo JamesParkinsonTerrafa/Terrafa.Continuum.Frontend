@@ -61,6 +61,7 @@
         <controls:PanelBox x:Name="CataloguePanel" Title="CATALOGUE">
           <controls:PanelBox.InnerContent>
             <DockPanel>
+              <Border DockPanel.Dock="Top" x:Name="ConnectHost" Padding="10,10,10,0" />
               <Border DockPanel.Dock="Top" Padding="10,10,10,8"
                       BorderBrush="{StaticResource RowSeparatorBrush}" BorderThickness="0,0,0,1">
                 <TextBox x:Name="SearchBox" Classes="search" Watermark="search datasets…" />
