@@ -9,6 +9,12 @@ locals {
   github_ci   = var.github_repository != "" ? 1 : 0
   create_oidc = var.github_repository != "" && var.github_oidc_provider_arn == "" ? 1 : 0
 
+  # github_subjects wins when set, because a repository issuing immutable subject claims
+  # cannot be described by owner/name at all -- see the variable for what that looks like.
+  github_subjects = length(var.github_subjects) > 0 ? var.github_subjects : [
+    "repo:${var.github_repository}:ref:refs/heads/${var.github_branch}",
+  ]
+
   # one() yields null for the not-created case, which coalesce then skips.
   github_oidc_arn = coalesce(
     var.github_oidc_provider_arn,
@@ -56,7 +62,7 @@ data "aws_iam_policy_document" "github_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/${var.github_branch}"]
+      values   = local.github_subjects
     }
   }
 }

@@ -124,6 +124,22 @@ variable "github_branch" {
   default     = "main"
 }
 
+variable "github_subjects" {
+  description = <<-EOT
+    OIDC subject claims allowed to assume the deploy role, replacing the one built from
+    github_repository and github_branch. Set this when GitHub issues *immutable* subjects
+    for the repository: the owner and repository then carry their numeric IDs, so the
+    default `repo:owner/name:ref:...` never matches and every run fails with "Not
+    authorized to perform sts:AssumeRoleWithWebIdentity" — which names no claim and reads
+    like a missing permission rather than a mismatched string.
+
+    The IDs survive a rename, which is the point of them. To read the prefix:
+    `gh api repos/OWNER/NAME/actions/oidc/customization/sub`.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "github_oidc_provider_arn" {
   description = <<-EOT
     Existing GitHub OIDC provider to reuse. An account can hold only one per URL, so set

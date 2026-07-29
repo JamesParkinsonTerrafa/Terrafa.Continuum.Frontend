@@ -11,6 +11,94 @@ An Avalonia app with two heads over one UI project:
 The two deploy independently and on different triggers. Neither waits on the other, and a
 failure in one does not hold up the other.
 
+## Zero to running
+
+Every step, in order, for an account and a checkout with none of this done. Steps 1–3 are the
+frontend's own infrastructure; steps 4–6 are the backend it reads from, and live in
+[`Terrafa.Continuum.Core.DataFeed`](https://github.com/JamesParkinsonTerrafa/Terrafa.Continuum.Core.DataFeed).
+Each step says how to tell it worked, because most of these fail silently.
+
+**1. Stand up the hosting.** Creates the bucket, the distribution, the certificate and the
+GitHub deploy role. `infra/terraform.tfvars` is gitignored, so copy the example and set `region`
+at minimum:
+
+```bash
+cp infra/terraform.tfvars.example infra/terraform.tfvars
+```
+
+Set `github_repository` to `owner/name` to get the CI deploy role. Two settings alongside it are
+easy to miss, and each fails in a way that does not name itself:
+
+- `github_oidc_provider_arn` — an account can hold only one provider per URL, so if anything else
+  in the account already made one, leaving this empty fails the apply with `EntityAlreadyExists`.
+- `github_subjects` — **GitHub issues immutable subject claims for these repositories**, meaning
+  the owner and repository carry their numeric IDs
+  (`repo:owner@306613510/name@1309267104:ref:refs/heads/main`). The default `repo:owner/name:...`
+  subject then never matches and every run dies at the assume step with `Not authorized to perform
+  sts:AssumeRoleWithWebIdentity` — which names no claim and reads like a missing permission rather
+  than a mismatched string. Read the real prefix with:
+
+```bash
+gh api repos/OWNER/NAME/actions/oidc/customization/sub
+```
+
+```bash
+terraform -chdir=infra init && terraform -chdir=infra apply
+```
+
+**2. Publish the CI values.** The stack prints everything the deploy workflow needs, already
+labelled with whether each is a variable or a secret:
+
+```bash
+terraform -chdir=infra output github_actions_config
+```
+
+Each key names its own kind. `AWS_REGION`, `WEB_BUCKET`, `WEB_DISTRIBUTION_ID` and `WEB_URL` are
+Actions **variables**; `AWS_DEPLOY_ROLE_ARN` is a **secret**. The workflow reads them by kind, so
+setting a variable as a secret or the reverse leaves it reading empty — which surfaces one step
+later as `Input required and not supplied: aws-region`. Setting them straight from the output
+avoids getting that wrong:
+
+```bash
+terraform -chdir=infra output -json github_actions_config | jq -r 'to_entries[] | select(.key | startswith("variable ")) | [(.key | sub("^variable ";"")), .value] | @tsv' | while IFS=$'\t' read -r name value; do gh variable set "$name" --body "$value"; done
+```
+
+```bash
+gh secret set AWS_DEPLOY_ROLE_ARN --body "$(terraform -chdir=infra output -raw deploy_role_arn)"
+```
+
+**3. Deploy the browser head.** Either push to `main`, or run it by hand:
+
+```bash
+gh workflow run "Deploy web" && gh run watch
+```
+
+**4. Deploy the data feed.** Follow that repo's own *Deploying from nothing* — bootstrap stack,
+GitHub `production` environment, five Actions variables, then `gh workflow run deploy`. It applies
+Lambda, API Gateway and Cognito. Its main stack is applied **by the pipeline**, not from your
+machine: a developer IAM user typically lacks `apigateway:GET` and `logs:ListTagsForResource`, so a
+local `terraform plan` fails on refresh before it reaches an apply.
+
+**5. Create a user.** Self sign-up is off. Both commands are needed — see
+[Creating a user](#creating-a-user) for why, and for the paste hazard that silently leaves the
+account unusable.
+
+**6. Point the app at it.** Region, user pool, app client and the API address are compiled into
+[`AuthOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/AuthOptions.cs) and
+[`DataFeedOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/DataFeedOptions.cs) — see
+[The deployed values](#the-deployed-values). Then confirm the whole chain end to end, which needs
+no credentials:
+
+```bash
+dotnet test
+```
+
+Two things are still outstanding on a fresh stand-up and neither is done by any command above:
+`cors_allow_origins` in the DataFeed stack must list the CloudFront origin, or the browser head
+signs in and then fails every data call on preflight; and `api_required_scopes` must be `[]`,
+because no `InitiateAuth` token can carry a custom scope. Both are covered in
+[Still outstanding on the AWS side](#still-outstanding-on-the-aws-side).
+
 ## Prerequisites
 
 - **.NET 10 SDK** — both heads target `net10.0`.
