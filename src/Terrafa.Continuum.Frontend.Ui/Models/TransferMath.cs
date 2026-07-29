@@ -104,7 +104,7 @@ public static class TransferMath
         var joined = string.Join(", ", labels);
         if (joined.Length == 0) joined = "…";
         var inner = $"{Verb(combiner)}({joined})";
-        var formula = stage is null ? inner : stage.FormatApplied(inner);
+        var formula = stage is null ? inner : stage.FormatApplied([inner]);
         return formula.Length > 34 ? formula[..33] + "…" : formula;
     }
 
@@ -162,20 +162,20 @@ public static class TransferMath
     /// </summary>
     private static Step Apply(LibraryFunction stage, Step input)
     {
-        var value = stage.Apply(input.Value);
+        var value = stage.ApplyUnary(input.Value);
         if (double.IsNaN(input.Sigma) || input.Sigma <= 0)
             return new Step(value, double.NaN, IsAffine(stage, input.Value, StepSize(input.Value)));
 
         if (IsAffine(stage, input.Value, StepSize(input.Value)))
         {
             var h = StepSize(input.Value);
-            var slope = (stage.Apply(input.Value + h) - stage.Apply(input.Value - h)) / (2 * h);
+            var slope = (stage.ApplyUnary(input.Value + h) - stage.ApplyUnary(input.Value - h)) / (2 * h);
             return new Step(value, Math.Abs(slope) * input.Sigma, true);
         }
 
         var offset = SigmaPointSpread * input.Sigma;
-        var low = stage.Apply(input.Value - offset);
-        var high = stage.Apply(input.Value + offset);
+        var low = stage.ApplyUnary(input.Value - offset);
+        var high = stage.ApplyUnary(input.Value + offset);
         var mean = CentreWeight * value + WingWeight * (low + high);
         var variance = CentreWeight * Square(value - mean) +
                        WingWeight * (Square(low - mean) + Square(high - mean));
@@ -185,9 +185,9 @@ public static class TransferMath
     /// <summary>Affine iff the second difference vanishes — checked at the scale of the reading.</summary>
     private static bool IsAffine(LibraryFunction stage, double value, double h)
     {
-        var curvature = stage.Apply(value + h) + stage.Apply(value - h) - 2 * stage.Apply(value);
+        var curvature = stage.ApplyUnary(value + h) + stage.ApplyUnary(value - h) - 2 * stage.ApplyUnary(value);
         if (double.IsNaN(curvature)) return false;
-        var scale = Math.Max(Math.Abs(stage.Apply(value)), 1e-9);
+        var scale = Math.Max(Math.Abs(stage.ApplyUnary(value)), 1e-9);
         return Math.Abs(curvature) <= scale * 1e-9;
     }
 

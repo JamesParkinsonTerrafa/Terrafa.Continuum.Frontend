@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -17,38 +18,38 @@ public partial class TransferFunctionView : UserControl
     private const double DomainStart = 0.34;
     private const double DomainEnd = 3.2;
     private const double DragThreshold = 6;
-    private const double StageArrowX = 182;
 
     private sealed class FunctionDraft
     {
         public required string Name { get; set; }
-        public List<LibraryFunction> Stages { get; } = [];
+        public CompositionNode Root { get; set; } = new VariableNode();
         public string? SavedName { get; set; }
         public bool HasUnsavedChanges { get; set; }
     }
 
+    private sealed record TreeRow(Panel Row, CompositionNode Node, FunctionNode? Parent, int Index);
+
     private readonly FunctionLibrary library = FunctionLibrary.Instance;
     private readonly List<FunctionDraft> drafts = [];
-    private readonly List<Panel> stageRows = [];
+    private readonly List<TreeRow> treeRows = [];
+    private readonly List<(FunctionNode Node, NodeCard Card)> functionCards = [];
+    private NodeCard? outputCard;
+    private Panel? outputRow;
     private int activeDraftIndex;
     private bool isSyncingNameBox;
 
+    private readonly HashSet<string> collapsedGroups = [.. FunctionLibrary.PlannedGroups];
     private LibraryFunction? pressedFunction;
     private Point pressOrigin;
     private bool libraryDragActive;
     private Border? dragGhost;
     private Border? openMenu;
 
-    private Panel? draggingRow;
-    private double stageDragStartY;
-    private bool stageDragMoved;
-    private TranslateTransform? draggingTransform;
+    internal IReadOnlyList<Panel> NodeRows => treeRows.Select(entry => entry.Row).ToArray();
 
-    internal IReadOnlyList<Panel> StageRows => stageRows;
+    internal string RootFormula => ActiveDraft.Root.Formula("x");
 
     private FunctionDraft ActiveDraft => drafts[activeDraftIndex];
-
-    private List<LibraryFunction> Stages => ActiveDraft.Stages;
 
     public TransferFunctionView() : this(DemoData.CreateSnapshot(), _ => { })
     {
@@ -60,8 +61,9 @@ public partial class TransferFunctionView : UserControl
         Tabs.TabSelected += navigate;
 
         var initial = new FunctionDraft { Name = "fig.draft_h" };
-        initial.Stages.Add(library.Primitives.First(function => function.Name == "square"));
-        initial.Stages.Add(library.Primitives.First(function => function.Name == "reciprocal"));
+        var square = library.Find("square")!;
+        var reciprocal = library.Find("reciprocal")!;
+        initial.Root = new FunctionNode(reciprocal, [new FunctionNode(square, [new VariableNode()])]);
         drafts.Add(initial);
 
         StackTabs.TabSelected += SelectDraft;
@@ -81,22 +83,95 @@ public partial class TransferFunctionView : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        HintSettings.Changed += RebuildStack;
+        HintSettings.Changed += RebuildTree;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        HintSettings.Changed -= RebuildStack;
+        HintSettings.Changed -= RebuildTree;
     }
 
     private void RebuildLibrary()
     {
         LibraryList.Children.Clear();
-        foreach (var function in library.Primitives)
+        foreach (var group in FunctionLibrary.PrimitiveGroups)
+            AddLibraryGroup(group, library.PrimitivesInGroup(group));
+        foreach (var group in FunctionLibrary.PlannedGroups)
+            AddLibraryGroup(group, []);
+        if (library.UserFunctions.Count > 0)
+            AddLibraryGroup(FunctionLibrary.CompositesGroup, library.UserFunctions);
+    }
+
+    private void AddLibraryGroup(string group, IReadOnlyList<LibraryFunction> functions)
+    {
+        var collapsed = collapsedGroups.Contains(group);
+        LibraryList.Children.Add(CreateGroupHeader(group, functions.Count, collapsed));
+        if (collapsed) return;
+
+        if (functions.Count == 0)
+        {
+            LibraryList.Children.Add(new TextBlock
+            {
+                Text = "no functions yet",
+                FontSize = 10,
+                Margin = new Thickness(17, 0, 0, 0),
+                Foreground = Palette.TextGhost
+            });
+            return;
+        }
+
+        foreach (var function in functions)
             LibraryList.Children.Add(CreateLibraryEntry(function));
-        foreach (var function in library.UserFunctions)
-            LibraryList.Children.Add(CreateLibraryEntry(function));
+    }
+
+    private Control CreateGroupHeader(string group, int count, bool collapsed)
+    {
+        var caret = new TextBlock
+        {
+            Text = collapsed ? "▸" : "▾",
+            FontSize = 10,
+            Foreground = Palette.TextMuted,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var label = new TextBlock
+        {
+            Text = group,
+            FontSize = 10,
+            LetterSpacing = 1,
+            Foreground = Palette.TextSub,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var countBlock = new TextBlock
+        {
+            Text = $"({count})",
+            FontSize = 10,
+            Foreground = Palette.TextGhost,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        row.Children.Add(caret);
+        row.Children.Add(label);
+        row.Children.Add(countBlock);
+
+        var shell = new Border
+        {
+            Padding = new Thickness(2, 3),
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = row
+        };
+        shell.PointerEntered += (_, _) => shell.Background = Palette.BgField;
+        shell.PointerExited += (_, _) => shell.Background = Brushes.Transparent;
+        shell.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(shell).Properties.IsLeftButtonPressed) return;
+            e.Handled = true;
+            if (!collapsedGroups.Remove(group)) collapsedGroups.Add(group);
+            RebuildLibrary();
+        };
+        return shell;
     }
 
     private Border CreateLibraryEntry(LibraryFunction function)
@@ -104,9 +179,20 @@ public partial class TransferFunctionView : UserControl
         var tag = new TextBlock
         {
             Classes = { "tag" },
-            Text = function.IsPrimitive ? "PRIMITIVE" : "COMPOSITE · USER",
+            Text = function.IsPrimitive ? $"PRIMITIVE · {function.ArityLabel}" : $"COMPOSITE · {function.ArityLabel}",
             Foreground = function.IsPrimitive ? Palette.TextMuted : Palette.Purple
         };
+        var signature = new TextBlock
+        {
+            Classes = { "tag" },
+            Text = function.SignatureText,
+            Foreground = Palette.TextFaint
+        };
+        var tagRow = new DockPanel();
+        DockPanel.SetDock(signature, Dock.Right);
+        tagRow.Children.Add(signature);
+        tagRow.Children.Add(tag);
+
         var formula = new TextBlock
         {
             Text = $"{function.Name}: {function.DisplayFormula}",
@@ -114,7 +200,7 @@ public partial class TransferFunctionView : UserControl
             Margin = new Thickness(0, 2, 0, 0),
             Foreground = function.IsPrimitive ? Palette.TextMuted : Palette.PurpleSoft
         };
-        var body = new StackPanel { Children = { tag, formula } };
+        var body = new StackPanel { Children = { tagRow, formula } };
         if (function.Note.Length > 0)
         {
             body.Children.Add(new TextBlock
@@ -152,7 +238,7 @@ public partial class TransferFunctionView : UserControl
         {
             e.Handled = true;
             ShowMenu(function.Name, e.GetPosition(this),
-                ("ADD TO COMPOSITION STACK", () => InsertStage(function, Stages.Count)),
+                ("APPLY TO OUTPUT", () => WrapNode(null, 0, function)),
                 ("CREATE FUNCTION", BeginNewFunction));
             return;
         }
@@ -193,201 +279,312 @@ public partial class TransferFunctionView : UserControl
         var overStack = columnPosition.X >= 0 && columnPosition.X <= StackColumn.Bounds.Width &&
                         columnPosition.Y >= 0 && columnPosition.Y <= StackColumn.Bounds.Height;
         if (!overStack) return;
-        InsertStage(function, InsertIndexFor(e.GetPosition(StackHost).Y));
+        var target = RowAt(e.GetPosition(StackHost));
+        if (target is null)
+            WrapNode(null, 0, function);
+        else
+            WrapNode(target.Parent, target.Index, function);
     }
 
-    private int InsertIndexFor(double y)
+    private TreeRow? RowAt(Point point)
     {
-        var index = 0;
-        foreach (var row in stageRows)
-            if (row.Bounds.Center.Y < y)
-                index++;
-        return index;
+        TreeRow? nearest = null;
+        var nearestDistance = double.MaxValue;
+        foreach (var entry in treeRows)
+        {
+            if (entry.Row.Bounds.Contains(point)) return entry;
+            var distance = Math.Abs(entry.Row.Bounds.Center.Y - point.Y);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = entry;
+            }
+        }
+        if (outputRow is not null && point.Y <= outputRow.Bounds.Bottom) return null;
+        return nearest;
     }
 
-    private void InsertStage(LibraryFunction function, int index)
+    private CompositionNode NodeAt(FunctionNode? parent, int index) =>
+        parent is null ? ActiveDraft.Root : parent.Arguments[index];
+
+    private void WrapNode(FunctionNode? parent, int index, LibraryFunction function) =>
+        ReplaceNode(parent, index, FunctionNode.Create(function, NodeAt(parent, index)));
+
+    private void ReplaceNode(FunctionNode? parent, int index, CompositionNode replacement)
     {
-        Stages.Insert(Math.Clamp(index, 0, Stages.Count), function);
-        OnStagesEdited();
+        if (parent is null)
+            ActiveDraft.Root = replacement;
+        else
+            parent.Arguments[index] = replacement;
+        OnTreeEdited();
     }
 
-    private void RemoveStage(int index)
-    {
-        Stages.RemoveAt(index);
-        OnStagesEdited();
-    }
-
-    private void OnStagesEdited()
+    private void OnTreeEdited()
     {
         ActiveDraft.HasUnsavedChanges = true;
         RebuildTabs();
-        RebuildStack();
+        RebuildTree();
         RefreshResult();
     }
 
-    private void RebuildStack()
+    private void RebuildTree()
     {
         StackHost.Children.Clear();
-        stageRows.Clear();
+        treeRows.Clear();
+        functionCards.Clear();
 
-        StackHost.Children.Add(new NodeCard
-        {
-            Variant = NodeCardVariant.Measure,
-            TagText = "STAGE 1 · INPUT",
-            TagRight = "x",
-            Title = "measure x · tank_01.level (norm.)",
-            TitleSize = 14
-        });
-
-        for (var i = 0; i < Stages.Count; i++)
-        {
-            StackHost.Children.Add(CreateArrow());
-            var row = CreateStageRow(Stages[i], i);
-            stageRows.Add(row);
-            StackHost.Children.Add(row);
-        }
-
-        StackHost.Children.Add(CreateArrow());
-        StackHost.Children.Add(new NodeCard
+        outputCard = new NodeCard
         {
             Variant = NodeCardVariant.Figure,
-            TagText = $"STAGE {Stages.Count + 2} · OUTPUT",
-            TagRight = "h(x)",
-            Title = $"h(x) = {FunctionLibrary.ComposeFormula(Stages, "x")}",
-            TitleSize = 15
-        });
-
-        StackFooter.Text = (Stages.Count, HintSettings.Enabled) switch
-        {
-            (0, true) => "stack is empty — drag a library function in, or right-click it to add · h(x) = x",
-            (0, false) => "stack is empty · h(x) = x",
-            (_, true) => $"stages apply top to bottom: h = {ChainText()} · σ propagation placeholder — variance trace not yet wired",
-            (_, false) => $"h = {ChainText()}"
+            TagText = "OUTPUT · h",
+            TagRight = "x → h(x)",
+            Title = $"h(x) = {TrimText(RootFormula, 44)}",
+            TitleSize = 15,
+            Margin = new Thickness(0, 0, 0, 10)
         };
+        outputRow = new Panel { Background = Brushes.Transparent };
+        outputRow.Children.Add(outputCard);
+        outputRow.PointerPressed += (_, e) => OnOutputPressed(e);
+        StackHost.Children.Add(outputRow);
+
+        AppendRows(ActiveDraft.Root, null, 0, "", true);
+
+        StackFooter.Text = FooterText();
     }
 
-    private string ChainText() =>
-        Stages.Count == 0 ? "identity" : string.Join(" ∘ ", Enumerable.Reverse(Stages).Select(stage => stage.Name));
-
-    private static EdgeLayer CreateArrow() => new()
+    private string FooterText()
     {
-        Height = 30,
-        Edges =
-        [
-            new Edge
+        var formula = TrimText(RootFormula, 58);
+        if (ActiveDraft.Root.CountFunctionNodes() == 0)
+        {
+            return HintSettings.Enabled
+                ? "tree is empty — drag a library function onto the input, or right-click it · h(x) = x"
+                : "tree is empty · h(x) = x";
+        }
+        return HintSettings.Enabled
+            ? $"h(x) = {formula} · each argument branches below its function · drop wraps the node it lands on"
+            : $"h(x) = {formula}";
+    }
+
+    private void OnOutputPressed(PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
+        e.Handled = true;
+        ShowMenu("OUTPUT · h", e.GetPosition(this),
+            ("CLEAR — h(x) = x", () => ReplaceNode(null, 0, new VariableNode())));
+    }
+
+    private void AppendRows(CompositionNode node, FunctionNode? parent, int index, string ancestorGuides, bool isLast)
+    {
+        var row = CreateTreeRow(node, parent, index, ancestorGuides, isLast);
+        treeRows.Add(new TreeRow(row, node, parent, index));
+        StackHost.Children.Add(row);
+
+        if (node is not FunctionNode functionNode) return;
+        var childGuides = parent is null ? "" : ancestorGuides + (isLast ? "    " : "│   ");
+        for (var childIndex = 0; childIndex < functionNode.Arguments.Count; childIndex++)
+        {
+            AppendRows(functionNode.Arguments[childIndex], functionNode, childIndex, childGuides,
+                childIndex == functionNode.Arguments.Count - 1);
+        }
+    }
+
+    private Panel CreateTreeRow(CompositionNode node, FunctionNode? parent, int index, string ancestorGuides, bool isLast)
+    {
+        var content = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+        if (parent is not null)
+        {
+            var prefix = new TextBlock
             {
-                From = new Point(StageArrowX, 0),
-                To = new Point(StageArrowX, 28),
-                Stroke = Palette.TextGhost,
-                Thickness = 2,
-                ArrowAtEnd = true
-            }
-        ]
-    };
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            prefix.Inlines =
+            [
+                new Run(ancestorGuides + (isLast ? "└─ " : "├─ ")) { Foreground = Palette.TextGhost },
+                new Run(parent.PortLabel(index)) { Foreground = Palette.TextFaint }
+            ];
+            DockPanel.SetDock(prefix, Dock.Left);
+            content.Children.Add(prefix);
+        }
+        content.Children.Add(CreateNodeCard(node, parent, index));
 
-    private Panel CreateStageRow(LibraryFunction function, int index)
-    {
-        var card = new NodeCard
-        {
-            Variant = function.IsPrimitive ? NodeCardVariant.Transfer : NodeCardVariant.Provisional,
-            TagText = $"STAGE {index + 2} · {function.Name}",
-            TagRight = "drag ↕",
-            Title = $"{function.Name}(u) = {function.DisplayFormula}",
-            TitleSize = 15
-        };
-
-        var removeText = new TextBlock { Text = "✕", FontSize = 10, Foreground = Palette.TextFaint };
-        var remove = new Border
-        {
-            Background = Brushes.Transparent,
-            Padding = new Thickness(6, 3),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 6, 0),
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Child = removeText
-        };
-        remove.PointerEntered += (_, _) => removeText.Foreground = Palette.Red;
-        remove.PointerExited += (_, _) => removeText.Foreground = Palette.TextFaint;
-        remove.PointerPressed += (_, e) =>
-        {
-            e.Handled = true;
-            RemoveStage(index);
-        };
-
-        var row = new Panel
-        {
-            Background = Brushes.Transparent,
-            Cursor = new Cursor(StandardCursorType.SizeNorthSouth)
-        };
-        row.Children.Add(card);
-        row.Children.Add(remove);
-        row.PointerPressed += (_, e) => OnStagePressed(row, function, index, e);
-        row.PointerMoved += (_, e) => OnStageMoved(row, e);
-        row.PointerReleased += (_, e) => OnStageReleased(row, index, e);
+        var row = new Panel { Background = Brushes.Transparent };
+        row.Children.Add(content);
+        row.PointerPressed += (_, e) => OnRowPressed(node, parent, index, e);
         return row;
     }
 
-    private void OnStagePressed(Panel row, LibraryFunction function, int index, PointerPressedEventArgs e)
+    private Control CreateNodeCard(CompositionNode node, FunctionNode? parent, int index) => node switch
     {
-        var properties = e.GetCurrentPoint(row).Properties;
-        if (properties.IsRightButtonPressed)
+        FunctionNode functionNode => CreateFunctionCard(functionNode, parent, index),
+        ConstantNode constantNode => CreateConstantCard(constantNode),
+        _ => new NodeCard
+        {
+            Variant = NodeCardVariant.Measure,
+            TagText = "INPUT",
+            TagRight = "x",
+            Title = "x · tank_01.level (norm.)",
+            TitleSize = 12
+        }
+    };
+
+    private Control CreateFunctionCard(FunctionNode node, FunctionNode? parent, int index)
+    {
+        var card = new NodeCard
+        {
+            Variant = node.Function.IsPrimitive ? NodeCardVariant.Transfer : NodeCardVariant.Provisional,
+            TagText = $"fn · {node.Function.Name} · {node.Function.ArityLabel}",
+            TagRight = node.Function.SignatureText,
+            Title = TrimText(node.Formula("x"), 38),
+            TitleSize = 13
+        };
+        functionCards.Add((node, card));
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
+        };
+        if (node.CanAddArgument)
+        {
+            buttons.Children.Add(CreateRowButton("+", Palette.Green, () =>
+            {
+                node.Arguments.Add(new VariableNode());
+                OnTreeEdited();
+            }));
+        }
+        buttons.Children.Add(CreateRowButton("✕", Palette.Red, () => ReplaceNode(parent, index, node.Arguments[0])));
+
+        var host = new Panel();
+        host.Children.Add(card);
+        host.Children.Add(buttons);
+        return host;
+    }
+
+    private Control CreateRowButton(string glyph, IBrush hoverBrush, Action action)
+    {
+        var text = new TextBlock { Text = glyph, FontSize = 10, Foreground = Palette.TextFaint };
+        var button = new Border
+        {
+            Background = Brushes.Transparent,
+            Padding = new Thickness(6, 3),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = text
+        };
+        button.PointerEntered += (_, _) => text.Foreground = hoverBrush;
+        button.PointerExited += (_, _) => text.Foreground = Palette.TextFaint;
+        button.PointerPressed += (_, e) =>
         {
             e.Handled = true;
-            ShowMenu($"STAGE {index + 2} · {function.Name}", e.GetPosition(this),
-                ("REMOVE FROM STACK", () => RemoveStage(index)));
-            return;
-        }
-        if (!properties.IsLeftButtonPressed) return;
-        CloseMenu();
-        draggingRow = row;
-        stageDragStartY = e.GetPosition(StackHost).Y;
-        stageDragMoved = false;
-        draggingTransform = new TranslateTransform();
-        row.RenderTransform = draggingTransform;
-        row.ZIndex = 100;
-        e.Pointer.Capture(row);
+            action();
+        };
+        return button;
+    }
+
+    private Control CreateConstantCard(ConstantNode node)
+    {
+        var valueBox = new TextBox
+        {
+            Classes = { "field" },
+            Width = 90,
+            Text = ConstantNode.Format(node.Value),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        valueBox.TextChanged += (_, _) =>
+        {
+            node.Value = double.TryParse(valueBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : double.NaN;
+            ActiveDraft.HasUnsavedChanges = true;
+            RebuildTabs();
+            UpdateFormulaTexts();
+            RefreshResult();
+        };
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.ObjectNode,
+            TagText = "CONST",
+            TagRight = "c",
+            ExtraContent = valueBox
+        };
+    }
+
+    private void UpdateFormulaTexts()
+    {
+        if (outputCard is not null)
+            outputCard.Title = $"h(x) = {TrimText(RootFormula, 44)}";
+        foreach (var (node, card) in functionCards)
+            card.Title = TrimText(node.Formula("x"), 38);
+        StackFooter.Text = FooterText();
+    }
+
+    private void OnRowPressed(CompositionNode node, FunctionNode? parent, int index, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
         e.Handled = true;
+        var items = new List<(string Label, Action Action)>();
+
+        var canDropSlot = parent is not null && parent.CanRemoveArgument;
+        var removeAction = canDropSlot
+            ? () =>
+            {
+                parent!.Arguments.RemoveAt(index);
+                OnTreeEdited();
+            }
+            : (Action)(() => ReplaceNode(parent, index, new VariableNode()));
+        if (node is not VariableNode || canDropSlot)
+            items.Add(("REMOVE", removeAction));
+
+        switch (node)
+        {
+            case FunctionNode functionNode:
+                items.Add(($"UNWRAP — LIFT {functionNode.PortLabel(0)}",
+                    () => ReplaceNode(parent, index, functionNode.Arguments[0])));
+                if (functionNode.CanAddArgument)
+                {
+                    items.Add(("ADD ARGUMENT", () =>
+                    {
+                        functionNode.Arguments.Add(new VariableNode());
+                        OnTreeEdited();
+                    }));
+                }
+                break;
+            case ConstantNode:
+                items.Add(("SET TO x", () => ReplaceNode(parent, index, new VariableNode())));
+                break;
+            default:
+                items.Add(("SET CONSTANT", () => ReplaceNode(parent, index, new ConstantNode(1.0))));
+                break;
+        }
+
+        if (parent is not null)
+        {
+            if (index > 0)
+                items.Add(("MOVE UP", () => SwapArguments(parent, index, index - 1)));
+            if (index < parent.Arguments.Count - 1)
+                items.Add(("MOVE DOWN", () => SwapArguments(parent, index, index + 1)));
+        }
+
+        ShowMenu(DescribeNode(node), e.GetPosition(this), items.ToArray());
     }
 
-    private void OnStageMoved(Panel row, PointerEventArgs e)
+    private void SwapArguments(FunctionNode parent, int first, int second)
     {
-        if (draggingRow != row || draggingTransform is null) return;
-        var delta = e.GetPosition(StackHost).Y - stageDragStartY;
-        if (Math.Abs(delta) > DragThreshold) stageDragMoved = true;
-        draggingTransform.Y = delta;
-        row.Opacity = 0.85;
+        (parent.Arguments[first], parent.Arguments[second]) = (parent.Arguments[second], parent.Arguments[first]);
+        OnTreeEdited();
     }
 
-    private void OnStageReleased(Panel row, int index, PointerReleasedEventArgs e)
+    private static string DescribeNode(CompositionNode node) => node switch
     {
-        if (draggingRow != row) return;
-        draggingRow = null;
-        e.Pointer.Capture(null);
-        row.Opacity = 1;
-        var delta = draggingTransform?.Y ?? 0;
-        row.RenderTransform = null;
-        draggingTransform = null;
-        if (!stageDragMoved)
-        {
-            row.ZIndex = 0;
-            return;
-        }
-        var draggedCenter = row.Bounds.Center.Y + delta;
-        var target = 0;
-        for (var i = 0; i < stageRows.Count; i++)
-        {
-            if (i == index) continue;
-            if (stageRows[i].Bounds.Center.Y < draggedCenter) target++;
-        }
-        if (target != index)
-        {
-            var moved = Stages[index];
-            Stages.RemoveAt(index);
-            Stages.Insert(target, moved);
-        }
-        OnStagesEdited();
-    }
+        FunctionNode functionNode => $"fn · {functionNode.Function.Name}",
+        ConstantNode constantNode => $"const · {ConstantNode.Format(constantNode.Value)}",
+        _ => "input · x"
+    };
 
     private void OnLibraryPanelPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -606,7 +803,7 @@ public partial class TransferFunctionView : UserControl
         isSyncingNameBox = false;
         SetStatus($"editing: {ActiveDraft.Name}", false);
         RebuildTabs();
-        RebuildStack();
+        RebuildTree();
         RefreshResult();
     }
 
@@ -675,9 +872,9 @@ public partial class TransferFunctionView : UserControl
             SetStatus($"{name} is a primitive — choose another name", true);
             return;
         }
-        if (draft.Stages.Count == 0)
+        if (draft.Root.CountFunctionNodes() == 0)
         {
-            SetStatus($"{name} has no stages — add at least one before saving", true);
+            SetStatus($"{name} is bare x — compose at least one function before saving", true);
             return;
         }
         if (library.FindUserFunction(name) is not null && name != draft.SavedName)
@@ -692,7 +889,7 @@ public partial class TransferFunctionView : UserControl
 
     private void CommitDraft(FunctionDraft draft, string name, Action? onSaved)
     {
-        library.SaveComposite(name, draft.Stages);
+        library.SaveComposite(name, draft.Root);
         draft.Name = name;
         draft.SavedName = name;
         draft.HasUnsavedChanges = false;
@@ -727,7 +924,7 @@ public partial class TransferFunctionView : UserControl
             IsHitTestVisible = false,
             Child = new TextBlock
             {
-                Text = $"{function.Name}: {function.DisplayFormula}",
+                Text = $"{function.Name} {function.SignatureText}",
                 FontSize = 11,
                 Foreground = Palette.AmberSoft
             }
@@ -755,7 +952,8 @@ public partial class TransferFunctionView : UserControl
 
     private void RefreshResult()
     {
-        double Compose(double x) => FunctionLibrary.ApplyStages(Stages, x);
+        var root = ActiveDraft.Root;
+        double Compose(double x) => root.Evaluate(x);
 
         var trace = FunctionTrace.CreateTrace(Compose, DomainStart, DomainEnd);
         var (yMin, yMax) = FunctionTrace.RobustRange(trace);
@@ -785,7 +983,7 @@ public partial class TransferFunctionView : UserControl
             .Select(segment => new ChartSeries { Points = segment, Stroke = Palette.Amber, Thickness = 2 })
             .ToArray();
 
-        var formula = FunctionLibrary.ComposeFormula(Stages, "x");
+        var formula = RootFormula;
         ResultChart.XAxisTitle = "x (normalised tank_01.level)";
         ResultChart.YAxisTitle = $"h(x) = {TrimText(formula, 40)}";
         ResultChart.Refresh();
@@ -800,14 +998,15 @@ public partial class TransferFunctionView : UserControl
 
     private void UpdateDraftBar()
     {
-        Draft.CommandText = $"COMPOSE {ChainText()} -> {ActiveDraft.Name} AS h";
+        Draft.CommandText = $"COMPOSE h(x) = {TrimText(RootFormula, 42)} -> {ActiveDraft.Name}";
         Draft.ChipContent = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 12,
             Children =
             {
-                new Chip { Text = $"STAGES: {Stages.Count}", Accent = "cyan" },
+                new Chip { Text = $"NODES: {ActiveDraft.Root.CountFunctionNodes()}", Accent = "cyan" },
+                new Chip { Text = $"DEPTH: {ActiveDraft.Root.Depth()}", Accent = "cyan" },
                 new Chip { Text = ActiveDraft.HasUnsavedChanges ? "UNSAVED" : "SAVED ✓", Accent = ActiveDraft.HasUnsavedChanges ? "amber" : "green" },
                 new Chip { Text = "σ band: placeholder", Accent = "amber" }
             }

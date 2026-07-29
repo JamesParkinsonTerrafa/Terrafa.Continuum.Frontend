@@ -18,15 +18,15 @@
       </controls:TerminalTopBar>
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="1"
-                                 HintText="drag a library function into the stack to insert · right-click for options · drag stages vertically to reorder" />
+                                 HintText="drag a library function onto a node to wrap it · right-click nodes for options · right-click a leaf to pin a constant" />
 
       <controls:TerminalStatusBar DockPanel.Dock="Bottom"
                                   IsVisible="{DynamicResource HintsVisible}">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
-            <TextBlock Text="COMPOSITION = ORDERED PRIMITIVE CHAIN" FontSize="10"
+            <TextBlock Text="COMPOSITION = FUNCTION TREE" FontSize="10"
                        Foreground="{StaticResource TextFaintBrush}" />
-            <TextBlock Text="STAGES APPLY TOP-TO-BOTTOM" FontSize="10"
+            <TextBlock Text="EACH INPUT PORT BRANCHES BELOW ITS FUNCTION" FontSize="10"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>

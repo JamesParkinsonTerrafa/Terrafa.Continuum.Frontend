@@ -626,50 +626,72 @@ public static class SnapshotRunner
             Pump();
         }
 
+        Border GroupHeader(string name)
+        {
+            var header = view.LibraryList.Children.OfType<Border>()
+                .First(candidate => candidate.GetVisualDescendants().OfType<TextBlock>()
+                    .Any(text => text.Text == name));
+            header.BringIntoView();
+            Pump();
+            return header;
+        }
+
+        var expandedRows = view.LibraryList.Children.Count;
+        Click(Center(GroupHeader("aggregates")));
+        var collapsedRows = view.LibraryList.Children.Count;
+        Click(Center(GroupHeader("aggregates")));
+        Click(Center(GroupHeader("regression")));
+        Console.WriteLine(
+            $"tfn probe: aggregates collapse {expandedRows}→{collapsedRows}→{view.LibraryList.Children.Count} rows with regression folder open");
+        Click(Center(GroupHeader("regression")));
+
         CreateFunctionTab();
-        Console.WriteLine($"tfn probe: blank stack has {view.StageRows.Count} stages");
+        Console.WriteLine($"tfn probe: blank tree has {view.NodeRows.Count} node row(s), h(x) = {view.RootFormula}");
 
         Click(Center(LibraryEntry("exp")));
-        Console.WriteLine($"tfn probe: left click added {view.StageRows.Count} stages (expected 0)");
+        Console.WriteLine($"tfn probe: left click alone changed nothing — h(x) = {view.RootFormula}");
 
         OpenMenu(LibraryEntry("exp"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
+        ClickMenuItem("APPLY TO OUTPUT");
+        Console.WriteLine($"tfn probe: after apply to output, h(x) = {view.RootFormula}");
 
-        var dragEntry = LibraryEntry("sum");
+        var dragEntry = LibraryEntry("add");
         var dragStart = Center(dragEntry);
-        var dragDrop = Center(view.StackHost);
+        var dragDrop = Center(view.NodeRows[0]);
         window.MouseDown(dragStart, MouseButton.Left);
         window.MouseMove(new Point(dragStart.X + 30, dragStart.Y + 10));
         window.MouseMove(dragDrop);
         window.MouseUp(dragDrop, MouseButton.Left);
         Pump();
-        Console.WriteLine($"tfn probe: after menu add + drag, {view.StageRows.Count} stages");
+        Console.WriteLine($"tfn probe: after drag wrap, h(x) = {view.RootFormula} across {view.NodeRows.Count} rows");
 
-        var secondRow = view.StageRows[1];
-        var reorderStart = Center(secondRow);
-        var reorderEnd = new Point(reorderStart.X, reorderStart.Y - 110);
-        window.MouseDown(reorderStart, MouseButton.Left);
-        window.MouseMove(new Point(reorderStart.X, reorderStart.Y - 55));
-        window.MouseMove(reorderEnd);
-        window.MouseUp(reorderEnd, MouseButton.Left);
-        Pump();
-        Console.WriteLine($"tfn probe: after reorder, {view.StackFooter.Text}");
+        OpenMenu(view.NodeRows[^1]);
+        ClickMenuItem("SET CONSTANT");
+        Console.WriteLine($"tfn probe: after set constant, h(x) = {view.RootFormula}");
+
+        OpenMenu(LibraryEntry("max"));
+        ClickMenuItem("APPLY TO OUTPUT");
+        OpenMenu(view.NodeRows[0]);
+        Capture(window, outputDir, "2-tfn-interact");
+        ClickMenuItem("ADD ARGUMENT");
+        Console.WriteLine($"tfn probe: aggregate grew, h(x) = {view.RootFormula}");
+
+        OpenMenu(view.NodeRows[0]);
+        ClickMenuItem("UNWRAP — LIFT u1");
+        Console.WriteLine($"tfn probe: after unwrap, h(x) = {view.RootFormula}");
+
+        OpenMenu(view.NodeRows[^1]);
+        ClickMenuItem("REMOVE");
+        Console.WriteLine($"tfn probe: after remove, h(x) = {view.RootFormula}");
 
         Click(Center(view.SaveButton));
-        Console.WriteLine($"tfn probe: library entries after save = {view.LibraryList.Children.Count}");
+        Console.WriteLine($"tfn probe: library rows after save = {view.LibraryList.Children.Count}");
 
         CreateFunctionTab();
         OpenMenu(LibraryEntry("fn_1"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
-        Console.WriteLine($"tfn probe: after composite add, {view.StackFooter.Text}");
+        ClickMenuItem("APPLY TO OUTPUT");
+        Console.WriteLine($"tfn probe: composite reused, {view.StackFooter.Text}");
 
-        OpenMenu(view.StageRows[0]);
-        Capture(window, outputDir, "2-tfn-interact");
-        ClickMenuItem("REMOVE FROM STACK");
-        Console.WriteLine($"tfn probe: after menu remove, {view.StageRows.Count} stages");
-
-        OpenMenu(LibraryEntry("fn_1"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
         TypeName("fn_1");
         Click(Center(view.SaveButton));
         Console.WriteLine($"tfn probe: overwrite dialog = {DialogMessage()}");

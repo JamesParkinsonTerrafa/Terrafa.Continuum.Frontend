@@ -229,7 +229,9 @@ public sealed class NetworkGraph
     }
 
     public LibraryFunction? Stage(NetworkNode node) =>
-        node.Stage.Length == 0 ? null : FunctionLibrary.Instance.Find(node.Stage);
+        node.Stage.Length == 0
+            ? null
+            : FunctionLibrary.Instance.Find(node.Stage) is { IsUnaryScalar: true } stage ? stage : null;
 
     // ── evaluation ───────────────────────────────────────────────────────────────────────────
 
