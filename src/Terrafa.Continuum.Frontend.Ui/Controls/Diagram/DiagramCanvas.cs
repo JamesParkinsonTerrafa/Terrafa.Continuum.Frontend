@@ -66,6 +66,19 @@ public class DiagramCanvas : Border
     public Func<DiagramNode, DiagramNode, (IBrush Stroke, double[]? Dashes, double Opacity)> ConnectionStyle { get; set; } =
         (_, _) => (Palette.Cyan, null, 0.7);
 
+    /// <summary>
+    /// Vetoes a wire the operator tried to draw — a loop, or a pairing the model does not allow.
+    /// Only the port gesture is asked; <see cref="Connect"/> still draws whatever it is told to, so
+    /// a caller redrawing a graph it already owns is not made to re-justify every edge.
+    /// </summary>
+    public Func<DiagramNode, DiagramNode, bool>? CanConnect { get; set; }
+
+    /// <summary>Raised when a wire is drawn by the port gesture, not when one is rendered.</summary>
+    public event Action<DiagramNode, DiagramNode>? Connected;
+
+    /// <summary>Raised when a node is dropped after a drag, so its position can be kept.</summary>
+    public event Action<DiagramNode>? NodeMoved;
+
     public IReadOnlyList<DiagramNode> Nodes => nodes;
     public IReadOnlyList<DiagramConnection> Connections => connections;
 
@@ -133,9 +146,20 @@ public class DiagramCanvas : Border
         RefreshEdges();
     }
 
+    /// <summary>Empties the canvas without disturbing the pan, so a redraw stays where the operator left it.</summary>
+    public void Clear()
+    {
+        foreach (var node in nodes) world.Children.Remove(node.Container);
+        nodes.Clear();
+        connections.Clear();
+        RefreshEdges();
+    }
+
     public Point ViewportToWorld(Point viewportPoint) => new(viewportPoint.X - pan.X, viewportPoint.Y - pan.Y);
 
     public Point WorldToViewport(Point worldPoint) => new(worldPoint.X + pan.X, worldPoint.Y + pan.Y);
+
+    public Point NodePositionOf(DiagramNode node) => NodePosition(node);
 
     public Point NodeCenter(DiagramNode node)
     {
@@ -209,6 +233,7 @@ public class DiagramCanvas : Border
         draggingNode = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        NodeMoved?.Invoke(node);
     }
 
     private void OnPortPressed(DiagramNode node, PortSide side, PointerPressedEventArgs e)
@@ -239,7 +264,11 @@ public class DiagramCanvas : Border
         {
             var source = side == PortSide.Right ? node : target;
             var sink = side == PortSide.Right ? target : node;
-            Connect(source, sink);
+            if (CanConnect?.Invoke(source, sink) != false)
+            {
+                Connect(source, sink);
+                Connected?.Invoke(source, sink);
+            }
         }
         pendingConnection = null;
         e.Pointer.Capture(null);

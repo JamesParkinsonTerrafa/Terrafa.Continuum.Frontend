@@ -23,6 +23,16 @@ public static class MeasureNumerics
     public const string SigmaLeafName = "sigma";
 
     /// <summary>
+    /// The suffix marking a <i>sibling</i> column as another column's σ, as in
+    /// "cell_concentration_umol_l__sigma". An Athena table is flat and cannot nest a child leaf
+    /// under the measure it belongs to, so a real feed spells the pairing in the column name.
+    /// Applied by HttpDatasetCatalog while the rows are still in hand — pairing two series is only
+    /// sound while their row indices are known to line up, which is knowledge this binder does not
+    /// have. <see cref="BindSigmaLeaves"/> handles the nested spelling only.
+    /// </summary>
+    public const string SigmaSuffix = "__sigma";
+
+    /// <summary>
     /// Folds every "sigma" child leaf into its parent measure, so a tree that states its
     /// uncertainty as its own leaf — the shape a real feed uses for a heteroscedastic σ(x) — ends
     /// up indistinguishable to a chart from one that states it inline.
@@ -84,8 +94,16 @@ public static class MeasureNumerics
         IsSigmaCarrier = isSigmaCarrier
     };
 
-    /// <summary>Returns <paramref name="reading"/> with numerics derived from its display strings.</summary>
-    public static Measure Hydrate(Measure reading, string path)
+    /// <summary>
+    /// Returns <paramref name="reading"/> with numerics derived from its display strings.
+    /// </summary>
+    /// <param name="withHistory">
+    /// Whether to put a series behind the reading. True for the hand-written demo tree, whose whole
+    /// job is to have something to draw. False for a real catalogue: a sample query returns one row,
+    /// and giving that one reading twenty-four invented neighbours would put a fabricated time
+    /// series on a chart that looked exactly like a measured one.
+    /// </param>
+    public static Measure Hydrate(Measure reading, string path, bool withHistory = true)
     {
         if (reading.HasValue) return reading;
 
@@ -105,8 +123,34 @@ public static class MeasureNumerics
             Value = value,
             Sigma = sigma,
             Unit = unit,
-            History = History(path, value, sigma)
+            History = withHistory ? History(path, value, sigma) : []
         };
+    }
+
+    /// <summary>
+    /// Writes a number the way the demo data spells one, so a reading derived by the network reads
+    /// as the same kind of thing as one the tree declared — "24,085", not "24085.000000001".
+    /// </summary>
+    public static string Format(double value)
+    {
+        if (double.IsNaN(value)) return "—";
+        var magnitude = Math.Abs(value);
+        if (magnitude >= 10000) return value.ToString("#,##0", CultureInfo.InvariantCulture);
+        if (magnitude >= 100) return value.ToString("0.#", CultureInfo.InvariantCulture);
+        if (magnitude >= 1) return value.ToString("0.##", CultureInfo.InvariantCulture);
+        return value.ToString("0.####", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A σ, to three significant figures. Quoting a propagated σ to the precision the arithmetic
+    /// happens to produce — "± 152.11813" — claims a sharpness the inputs never had.
+    /// </summary>
+    public static string FormatSigma(double sigma)
+    {
+        if (double.IsNaN(sigma)) return "";
+        if (sigma == 0) return "0";
+        var scale = Math.Pow(10, 2 - Math.Floor(Math.Log10(Math.Abs(sigma))));
+        return Format(Math.Round(sigma * scale) / scale);
     }
 
     /// <summary>Splits a reading such as "8,410 bbl" into its number and its unit.</summary>

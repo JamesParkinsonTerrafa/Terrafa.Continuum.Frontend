@@ -53,9 +53,22 @@ public static class DataFeedOptions
     public static bool SampleValues { get; } = true;
 
     /// <summary>
-    /// Most columns one sample query asks for. A wide table would otherwise put hundreds of
+    /// Most columns one query asks for. A wide table would otherwise put hundreds of
     /// <c>columns=</c> pairs in the query string and scan every one of them; leaves past this
-    /// keep their placeholder reading and say so.
+    /// keep their placeholder reading and say so. The x axis is always inside the cap — it leads
+    /// the projection, because it is the one column the request cannot do without.
     /// </summary>
     public static int MaxSampleColumns { get; } = 64;
+
+    /// <summary>
+    /// Most points a leaf's series keeps, taken from the recent end.
+    ///
+    /// <para>
+    /// The service caps a read at its own MaxRows and applies that cap <i>after</i> ordering, so
+    /// asking for ascending order on a long table would hand back its oldest rows and the chart
+    /// would draw that dataset's distant past. The query therefore sorts descending and the rows
+    /// are reversed here, which makes both cuts — the service's and this one — keep the present.
+    /// </para>
+    /// </summary>
+    public static int SeriesRows { get; } = 240;
 }

@@ -34,6 +34,7 @@ public static class SnapshotRunner
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
         CaptureDashboardProbe(outputDir);
+        CaptureFigureProbe(outputDir);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -46,6 +47,137 @@ public static class SnapshotRunner
         // Mount a second dataset last — it mutates the shared workspace the earlier captures rely on.
         CaptureDataSourcesProbe(outputDir, snapshot);
         CaptureTreeLinkProbe(outputDir, snapshot);
+        ProbeMountedLeavesReachBothScreens(outputDir, snapshot);
+    }
+
+    /// <summary>
+    /// The other direction of the same wiring as <see cref="CaptureFigureProbe"/>: a dataset mounted
+    /// on DATA SOURCES has to turn up as something the network can place and the dashboard can plot.
+    /// Runs after the data-sources probe, which is what mounts the second dataset.
+    /// </summary>
+    private static void ProbeMountedLeavesReachBothScreens(string outputDir, DataSnapshot snapshot)
+    {
+        var network = new NetworkView(snapshot, _ => { });
+        var networkWindow = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = network
+        };
+        networkWindow.Show();
+        Pump();
+
+        var railed = network.MeasureList.GetVisualDescendants().OfType<TextBlock>()
+            .Any(text => text.Text == "ice_brent /");
+        Console.WriteLine($"mount probe: ice_brent offered on the network rail = {railed}");
+        networkWindow.Close();
+
+        var dashboard = new DashboardView(snapshot, _ => { });
+        var dashboardWindow = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = dashboard
+        };
+        dashboardWindow.Show();
+        Pump();
+
+        var tile = dashboard.Canvas.Placements[0].Tile;
+        var tilePoint = dashboard.Canvas.Find(tile)!.Container
+            .TranslatePoint(new Point(60, 12), dashboardWindow)!.Value;
+        dashboardWindow.MouseDown(tilePoint, MouseButton.Left);
+        dashboardWindow.MouseUp(tilePoint, MouseButton.Left);
+        dashboardWindow.MouseDown(tilePoint, MouseButton.Left);
+        dashboardWindow.MouseUp(tilePoint, MouseButton.Left);
+        Pump();
+
+        var group = dashboard.EditorBody.GetVisualDescendants().OfType<TextBlock>()
+            .Any(text => text.Text == "ice_brent /");
+        Console.WriteLine($"mount probe: ice_brent offered as a tile source = {group}");
+
+        // The invariant the picker exists to hold: it offers the tree, not a subset of it.
+        foreach (var subtree in Workspace.Instance.Subtrees)
+        {
+            var inTree = subtree.Leaves.Count(leaf => leaf.Reading is { IsSigmaCarrier: false });
+            var offered = TileData.AvailableMeasures(subtree).Count();
+            Console.WriteLine(
+                $"mount probe: {subtree.Dataset} — {inTree} leaves in the tree, {offered} pickable" +
+                (inTree == offered ? "" : "  ← MISMATCH"));
+        }
+
+        dashboardWindow.Close();
+        ProbeValuelessLeafIsPickable(outputDir);
+    }
+
+    /// <summary>
+    /// A column out of the real catalogue arrives with no number behind it until a sample query
+    /// runs, and for a while that made the dashboard's picker silently empty for any live dataset
+    /// while the DATA TREE screen showed every leaf. There is no live service here, so the case is
+    /// mounted directly: one leaf, no value, and it has to be offered and wireable all the same.
+    /// </summary>
+    private static void ProbeValuelessLeafIsPickable(string outputDir)
+    {
+        var root = new DataTreeNode
+        {
+            Name = "PROBE_UNSAMPLED",
+            Path = "PROBE_UNSAMPLED",
+            Kind = DataNodeKind.Object,
+            Tag = "SUBTREE ROOT"
+        };
+        root.Children.Add(new DataTreeNode
+        {
+            Name = "cell_concentration",
+            Path = "PROBE_UNSAMPLED.cell_concentration",
+            Kind = DataNodeKind.Measure,
+            Reading = new Measure { Display = "—", Detail = "double" }
+        });
+
+        Workspace.Instance.Mount(
+            new DatasetSchema("PROBE_UNSAMPLED", "athena", "table", "—", "—", "—", root),
+            root);
+
+        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var tile = view.Canvas.Placements[0].Tile;
+        var tilePoint = view.Canvas.Find(tile)!.Container.TranslatePoint(new Point(60, 12), window)!.Value;
+        for (var click = 0; click < 2; click++)
+        {
+            window.MouseDown(tilePoint, MouseButton.Left);
+            window.MouseUp(tilePoint, MouseButton.Left);
+        }
+        Pump();
+
+        var row = view.EditorBody.GetVisualDescendants().OfType<TextBlock>()
+            .FirstOrDefault(text => text.Text == "cell_concentration");
+        if (row is null)
+        {
+            Console.Error.WriteLine("unsampled probe: a leaf with no value is not offered on the dashboard");
+        }
+        else
+        {
+            var point = row.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+            var wired = view.ActiveTileSources.Any(source => source.Path.EndsWith("cell_concentration", StringComparison.Ordinal));
+            Console.WriteLine($"unsampled probe: offered = True · wires onto a tile = {wired}");
+            Capture(window, outputDir, "3-dash-unsampled");
+        }
+
+        window.Close();
+        Workspace.Instance.Unmount("PROBE_UNSAMPLED");
+        Dashboard.Instance.Reset(seedDemo: true);
     }
 
     private static void CaptureDataSourcesProbe(string outputDir, DataSnapshot snapshot)
@@ -303,6 +435,125 @@ public static class SnapshotRunner
 
         Capture(window, outputDir, "1-netw-interact");
         window.Close();
+
+        // The canvas is session state now, so what this probe built would otherwise turn up in
+        // every later frame of every screen that reads a figure.
+        NetworkGraph.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>
+    /// The path the whole app hangs off: commit a figure on the network canvas, wire a tree leaf
+    /// into it, and find it on the dashboard as a source a tile can plot. Both ends are driven
+    /// through the real controls — the figure's value is asserted against the leaf it came from, so
+    /// this fails if the two screens ever stop reading the same catalogue.
+    /// </summary>
+    private static void CaptureFigureProbe(string outputDir)
+    {
+        var network = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = network
+        };
+        window.Show();
+        Pump();
+
+        Point Centre(Visual visual) =>
+            visual.TranslatePoint(new Point(visual.Bounds.Width / 2, visual.Bounds.Height / 2), window)!.Value;
+
+        Point ToWindow(Point worldPoint) =>
+            network.Diagram.TranslatePoint(network.Diagram.WorldToViewport(worldPoint), window)!.Value;
+
+        void Drag(Point from, Point to)
+        {
+            window.MouseDown(from, MouseButton.Left);
+            window.MouseMove(new Point((from.X + to.X) / 2, (from.Y + to.Y) / 2));
+            window.MouseMove(to);
+            window.MouseUp(to, MouseButton.Left);
+            Pump();
+        }
+
+        var element = network.BuildList.Children.OfType<Border>()
+            .First(shell => shell.GetVisualDescendants().OfType<TextBlock>()
+                .Any(text => text.Text == "DASHBOARD FIG"));
+        Drag(Centre(element), ToWindow(new Point(880, 760)));
+        Console.WriteLine($"figure probe: naming dialog open = {network.Dialog.IsVisible}");
+
+        var nameBox = network.Dialog.GetVisualDescendants().OfType<TextBox>().First();
+        nameBox.Text = "tank_01 headroom";
+        Pump();
+        ClickText(window, network.Dialog, "COMMIT <GO>");
+
+        var committed = FigureCatalog.Instance.Find("tank_01_headroom");
+        Console.WriteLine($"figure probe: committed {committed?.Name} · unwired display '{committed?.Display}'");
+
+        // Wire the temperature leaf straight into it, port to port, exactly as an operator would.
+        var leaf = network.Diagram.Nodes.First(node => node.Id.EndsWith("tank_01.temp", StringComparison.Ordinal));
+        var figure = network.Diagram.Nodes.First(node => node.Id == NetworkGraph.FigureId("tank_01_headroom"));
+        Drag(
+            ToWindow(network.Diagram.PortAnchor(leaf, PortSide.Right)) + new Point(-3, 0),
+            ToWindow(network.Diagram.PortAnchor(figure, PortSide.Left)) + new Point(3, 0));
+
+        var wired = FigureCatalog.Instance.Find("tank_01_headroom");
+        var source = Workspace.Instance.FindNode("SITE_ALPHA.tank_farm.tank_01.temp")?.Reading;
+        Console.WriteLine(
+            $"figure probe: fig.tank_01_headroom = {wired?.Display} {wired?.SigmaDisplay} " +
+            $"· leaf says {source?.Display} {source?.SigmaDisplay} · derived = {wired?.Origin}");
+
+        Capture(window, outputDir, "1-netw-figure");
+        window.Close();
+
+        CaptureFigureOnDashboard(outputDir);
+
+        NetworkGraph.Instance.Reset(seedDemo: true);
+        Dashboard.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>The other half: the figure just committed, picked up as a tile source.</summary>
+    private static void CaptureFigureOnDashboard(string outputDir)
+    {
+        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var tile = view.Canvas.Placements.First(placement => placement.Tile.Name == "tile.committed_figures").Tile;
+        var tilePoint = view.Canvas.Find(tile)!.Container
+            .TranslatePoint(new Point(60, 12), window)!.Value;
+        // Two presses in a row rather than a ClickCount the headless input has no overload for —
+        // the canvas reads the gesture off the press, so this is the double-click it listens for.
+        window.MouseDown(tilePoint, MouseButton.Left);
+        window.MouseUp(tilePoint, MouseButton.Left);
+        window.MouseDown(tilePoint, MouseButton.Left);
+        window.MouseUp(tilePoint, MouseButton.Left);
+        Pump();
+
+        var row = view.EditorBody.GetVisualDescendants().OfType<TextBlock>()
+            .FirstOrDefault(text => text.Text == "fig.tank_01_headroom");
+        if (row is null)
+        {
+            Console.Error.WriteLine("figure probe: the committed figure is not offered on the dashboard");
+        }
+        else
+        {
+            var point = row.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+            Console.WriteLine(
+                $"figure probe: tile wired to {string.Join(",", view.ActiveTileSources.Select(s => s.Display))}");
+        }
+
+        Capture(window, outputDir, "3-dash-figure");
+        window.Close();
     }
 
     private static void CaptureTransferFunctionProbe(string outputDir)
@@ -525,6 +776,10 @@ public static class SnapshotRunner
 
         VarianceSettings.SetEnabled(true);
         window.Close();
+
+        // The board outlives the view now, so the tile this probe dragged out would otherwise
+        // appear on every dashboard frame captured after it.
+        Dashboard.Instance.Reset(seedDemo: true);
 
         ProbeSigmaLeafBinding();
     }

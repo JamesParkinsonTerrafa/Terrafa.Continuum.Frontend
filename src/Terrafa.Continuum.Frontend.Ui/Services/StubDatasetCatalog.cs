@@ -40,8 +40,12 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
         return Task.FromResult(schema);
     }
 
-    /// <summary>Stub readings are baked into the schema, so there is nothing extra to fetch.</summary>
-    public Task<DatasetSchema> GetSampleAsync(string dataset) => GetSchemaAsync(dataset);
+    /// <summary>
+    /// Stub readings are baked into the schema, series and all, so there is nothing extra to fetch
+    /// and no ordering to impose — the demo trees are written in order. The axis is accepted and
+    /// ignored rather than rejected, so a caller does not have to know which catalogue it holds.
+    /// </summary>
+    public Task<DatasetSchema> GetSeriesAsync(string dataset, string xAxis) => GetSchemaAsync(dataset);
 
     private static DatasetSchema BuildSchema(string dataset) => dataset switch
     {

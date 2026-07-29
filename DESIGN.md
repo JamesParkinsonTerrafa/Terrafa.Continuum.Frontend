@@ -147,6 +147,31 @@ turning down.
   footnotes) is bound to `HintsVisible` and collapses from Settings. Data, alerts, and
   readouts are not hints and always stay. Where a status bar is entirely hints, the whole bar
   collapses rather than leaving an empty strip.
+- **Session state outlives the screen it was built on.** The mounted tree (`Workspace`), the
+  network canvas (`NetworkGraph`) and the board (`Dashboard`) are models, not view fields.
+  A change on any screen rebuilds the others, and a screen that held its own state would throw
+  away the operator's work every time they went to fetch the leaf it needed. A screen renders
+  its model and writes back to it; it never keeps a second copy.
+- **One value has one owner.** A dashboard figure is computed by the network from the leaves
+  wired into it and published to `FigureCatalog` — the single list the network draws its cards
+  from and the dashboard offers as tile sources. Where a value cannot be computed it is
+  *declared*, and says so: the seeded hazard branch is not identifiable from its leaves, so
+  nothing downstream of it is handed a number the chain cannot support.
+- **The read path is thin; the table owes it a shape.** A dataset names the column its readings
+  run along — `timestamp` when it has one, otherwise the operator picks — because Athena has no
+  inherent row order and the service caps a read *after* ordering. From there a value's whole
+  journey to a chart is: rows come back sorted, each column's non-null cells parse into the
+  series, the newest cell is the reading. No windowing, no repair. What earns that thinness is
+  a contract on the data: **one row per axis value per table**. A table that carries more —
+  one row per sensor or analyte — interleaves several series in every column, and the client
+  detects it, says so on the header and every leaf, and declines to draw through it; the fix
+  belongs in the table. A text column keeps its text and carries no series.
+- **σ travels beside its measure.** A flat table cannot nest a σ under its reading, so the feed
+  spells the pairing in the column name — `level__sigma` beside `level` — and the catalogue
+  folds it in row-by-row: σ(x) is the carrier's cell on each row the measure read from, or the
+  flat newest σ where the carrier is missing one. The carrier leaf stays in the tree (it is
+  real data) but is never offered as a quantity to plot. Nested trees keep the `sigma`-child
+  spelling, bound by `MeasureNumerics.BindSigmaLeaves`.
 - **Overlays are anchored to what they describe.** On the map, pins and zones hold normalized
   image coordinates, never screen ones. Swap the client's photo, or fit a portrait one into a
   landscape frame, and every figure is still over the same piece of ground. The card keeps its

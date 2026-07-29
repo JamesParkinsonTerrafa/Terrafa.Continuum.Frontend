@@ -30,6 +30,13 @@ public sealed class MountedSubtree
     public string Contract { get; set; } = "";
     public bool Visible { get; set; } = true;
 
+    /// <summary>
+    /// The column the subtree's readings were ordered by when it was mounted. Empty for a subtree
+    /// whose leaves carry no series. Kept so a screen downstream can say what a chart's x axis
+    /// actually is rather than implying the points are evenly spaced in time.
+    /// </summary>
+    public string XAxis { get; set; } = "";
+
     public int LeafCount => Root.Descendants().Count(node => node.Kind == DataNodeKind.Measure);
 
     public IEnumerable<DataTreeNode> Leaves =>
@@ -85,6 +92,7 @@ public sealed class Workspace
         var subtree = Find(schema.Dataset) ?? CreateSubtree(schema);
         subtree.Cadence = schema.Cadence;
         subtree.Contract = schema.Contract;
+        if (schema.XAxis.Length > 0) subtree.XAxis = schema.XAxis;
 
         var chain = PathTo(schema.Root, node) ?? [node];
         var cursor = subtree.Root;
@@ -189,6 +197,10 @@ public sealed class Workspace
             parent.Children.Add(Clone(source, withChildren: true));
             return;
         }
+        // Re-adding a node the mount already holds refreshes what is behind it: the newest read
+        // wins. Without this, a subtree mounted while its first fetch was still in flight kept
+        // its empty readings forever, and re-adding it did nothing.
+        if (source.Reading is not null) existing.Reading = source.Reading;
         foreach (var child in source.Children)
             Graft(existing, child);
     }
@@ -210,6 +222,29 @@ public sealed class Workspace
                 copy.Children.Add(Clone(child, withChildren: true));
         }
         return copy;
+    }
+
+    /// <summary>
+    /// Writes a fresh read's values onto an already-mounted subtree, node by path. Mounting is
+    /// deliberately shape-preserving — it never adds leaves the operator did not pick — but the
+    /// values behind the picked leaves belong to the newest read: a dataset mounted while its
+    /// first fetch was still in flight would otherwise sit valueless until someone unmounted it.
+    /// </summary>
+    public void RefreshReadings(DatasetSchema schema)
+    {
+        if (Find(schema.Dataset) is not { } subtree) return;
+
+        var refreshed = false;
+        foreach (var node in subtree.Root.Descendants())
+        {
+            if (schema.Root.Find(node.Path)?.Reading is not { } fresh) continue;
+            node.Reading = fresh;
+            refreshed = true;
+        }
+
+        if (!refreshed) return;
+        if (schema.XAxis.Length > 0) subtree.XAxis = schema.XAxis;
+        Changed?.Invoke();
     }
 
     /// <summary>

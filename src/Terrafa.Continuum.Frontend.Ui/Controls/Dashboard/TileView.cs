@@ -90,6 +90,25 @@ public static class TileView
             .Select(entry => entry.Series!)
             .ToList();
 
+        // Mounted and wired, but with no number behind it. Distinct from the case above: nothing is
+        // wrong with the wiring, so the tile says what it is holding rather than telling the
+        // operator to rewire it — and it separates a column that has not been sampled yet from one
+        // that reads as text and never will plot.
+        var silent = series.Where(entry => !entry.HasValue).ToList();
+        if (silent.Count > 0)
+        {
+            var categorical = silent.Where(entry => Reads(entry)).ToList();
+            footnote = Footnote(
+                categorical.Count > 0
+                    ? "the source reads, but not as a number a chart can take"
+                    : "the source is mounted — it carries no value behind it yet",
+                Palette.TextFaint);
+            return Placeholder(
+                "NO READING",
+                string.Join(" · ", silent.Select(entry => Reads(entry) ? $"{entry.Label} = {entry.Display}" : entry.Label)),
+                Palette.Amber);
+        }
+
         // The rule the master switch exists for: with variance on, a tile that cannot draw bounds
         // blanks rather than showing a bare central estimate that would read as certain.
         if (VarianceSettings.Enabled && series.Any(entry => !entry.HasVariance))
@@ -112,6 +131,10 @@ public static class TileView
             _ => BuildTable(series, showBounds)
         };
     }
+
+    /// <summary>Whether the source shows something — as opposed to the "—" of a leaf never read.</summary>
+    private static bool Reads(TileSeries series) =>
+        series.Display.Length > 0 && series.Display != "—";
 
     private static string BuildFootnote(IReadOnlyList<TileSeries> series, bool showBounds)
     {
@@ -270,8 +293,11 @@ public static class TileView
             AddCell(row, 1, BodyCell(FormatValue(entry.Value), Palette.TextStrong));
             if (showBounds)
             {
+                // Quoted the way the card that produced it quotes it — a σ propagated up a chain
+                // lands on 152.11813, and printing that here while the network says "± 152" reads
+                // as the two screens disagreeing.
                 var sigmaBrush = entry.IsAssertedSigma ? Palette.Purple : Palette.Cyan;
-                AddCell(row, 2, BodyCell($"± {FormatValue(entry.Sigma)}", sigmaBrush));
+                AddCell(row, 2, BodyCell($"± {MeasureNumerics.FormatSigma(entry.Sigma)}", sigmaBrush));
                 AddCell(row, 3, BodyCell(Trim(entry.SigmaNote, 20), sigmaBrush));
             }
             else

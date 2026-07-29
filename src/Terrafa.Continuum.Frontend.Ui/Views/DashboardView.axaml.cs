@@ -15,10 +15,7 @@ namespace Terrafa.Continuum.Frontend.Views;
 public partial class DashboardView : UserControl
 {
     private const double DragThreshold = 6;
-    private static readonly Size DefaultTileSize = new(360, 250);
-
-    /// <summary>Narrower than a hand-placed tile so the seeded grid clears both side panels.</summary>
-    private static readonly Size SeedTileSize = new(302, 252);
+    private static readonly Size DefaultTileSize = new(Dashboard.DefaultWidth, Dashboard.DefaultHeight);
 
     private sealed record ElementEntry(string Label, string Detail, TileKind Kind);
 
@@ -34,7 +31,7 @@ public partial class DashboardView : UserControl
         ])
     ];
 
-    private readonly List<DashboardTile> tiles = [];
+    private readonly Dashboard board = Dashboard.Instance;
     private readonly List<DashboardTile> openEditors = [];
     private readonly HashSet<string> collapsedSections = [];
     private int activeEditorIndex = -1;
@@ -53,10 +50,16 @@ public partial class DashboardView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
+        // Before the first tile is drawn: the figures a tile plots are computed by the network, and
+        // building the graph is what computes them. Without this a dashboard opened first would
+        // paint the values the figures were declared with.
+        _ = NetworkGraph.Instance;
+
         FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
 
         Canvas.MenuProvider = BuildTileMenu;
         Canvas.TileActivated += OpenEditor;
+        Canvas.TileMoved += OnTileMoved;
 
         EditorTabs.TabSelected += SelectEditor;
         EditorTabs.TabCloseRequested += CloseEditor;
@@ -66,7 +69,7 @@ public partial class DashboardView : UserControl
         PointerReleased += (_, e) => OnElementDragReleased(e);
 
         BuildElements();
-        SeedTiles();
+        DrawBoard();
         SyncEditor();
         UpdateVarianceToggle();
 
@@ -77,18 +80,50 @@ public partial class DashboardView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         VarianceSettings.Changed += OnVarianceChanged;
+
+        // A figure committed on the network canvas, or a dataset mounted on DATA SOURCES, changes
+        // both what this screen offers as a source and what the wired tiles are drawing.
+        FigureCatalog.Instance.Changed += OnSourcesChanged;
+        Workspace.Instance.Changed += OnSourcesChanged;
+        board.Changed += SyncBoard;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         VarianceSettings.Changed -= OnVarianceChanged;
+        FigureCatalog.Instance.Changed -= OnSourcesChanged;
+        Workspace.Instance.Changed -= OnSourcesChanged;
+        board.Changed -= SyncBoard;
     }
 
     private void OnVarianceChanged()
     {
         UpdateVarianceToggle();
         RefreshAllTiles();
+        SyncEditor();
+    }
+
+    private void OnSourcesChanged()
+    {
+        RefreshAllTiles();
+        SyncEditor();
+        UpdateStatus();
+    }
+
+    /// <summary>
+    /// The canvas follows the board rather than being patched alongside it: adding, removing and
+    /// resetting all come through here, so there is one path that can put a tile on screen. Both
+    /// this view's own edits and a reset from elsewhere call it, and it is a no-op when the canvas
+    /// already shows exactly what the board holds.
+    /// </summary>
+    private void SyncBoard()
+    {
+        if (Canvas.Placements.Select(placement => placement.Tile).SequenceEqual(board.Tiles)) return;
+
+        openEditors.RemoveAll(tile => board.Find(tile) is null);
+        activeEditorIndex = Math.Clamp(activeEditorIndex, -1, openEditors.Count - 1);
+        DrawBoard();
         SyncEditor();
     }
 
@@ -287,27 +322,36 @@ public partial class DashboardView : UserControl
 
     // ── tiles ────────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Redraws the canvas from the board — the one place a tile reaches the screen.</summary>
+    private void DrawBoard()
+    {
+        Canvas.Clear();
+        foreach (var placement in board.Placements)
+        {
+            Canvas.AddTile(
+                placement.Tile,
+                TileView.Build(placement.Tile),
+                new Point(placement.X, placement.Y),
+                new Size(placement.Width, placement.Height));
+        }
+        Canvas.SetSelected(ActiveTile);
+        UpdateStatus();
+    }
+
     private DashboardTile CreateTile(TileKind kind, Point position)
     {
-        var tile = new DashboardTile(kind, NextTileName(kind));
-        tiles.Add(tile);
-        Canvas.AddTile(tile, TileView.Build(tile), position, DefaultTileSize);
+        var tile = new DashboardTile(kind, board.NextName(kind));
+        board.Add(tile, position.X, position.Y, DefaultTileSize.Width, DefaultTileSize.Height);
+        SyncBoard();
         OpenEditor(tile);
-        UpdateStatus();
         return tile;
     }
 
-    private string NextTileName(TileKind kind)
+    /// <summary>Keeps where the operator put a tile, so a later redraw does not shuffle the board.</summary>
+    private void OnTileMoved(DashboardTile tile)
     {
-        var stem = kind switch
-        {
-            TileKind.Line => "line",
-            TileKind.Bar => "bar",
-            _ => "table"
-        };
-        var index = 1;
-        while (tiles.Any(tile => tile.Name == $"tile.{stem}_{index}")) index++;
-        return $"tile.{stem}_{index}";
+        if (Canvas.Find(tile) is not { } placement) return;
+        board.Place(tile, placement.Position.X, placement.Position.Y, placement.Size.Width, placement.Size.Height);
     }
 
     private void RefreshTile(DashboardTile tile) =>
@@ -315,7 +359,7 @@ public partial class DashboardView : UserControl
 
     private void RefreshAllTiles()
     {
-        foreach (var tile in tiles) RefreshTile(tile);
+        foreach (var tile in board.Tiles) RefreshTile(tile);
     }
 
     private IReadOnlyList<(string Label, Action Action)> BuildTileMenu(DashboardTile tile) =>
@@ -327,94 +371,47 @@ public partial class DashboardView : UserControl
 
     private void DuplicateTile(DashboardTile tile)
     {
-        var origin = Canvas.Find(tile)?.Position ?? default;
-        var copy = new DashboardTile(tile.Kind, NextTileName(tile.Kind));
+        var origin = board.Find(tile);
+        var copy = new DashboardTile(tile.Kind, board.NextName(tile.Kind));
         copy.Sources.AddRange(tile.Sources);
-        tiles.Add(copy);
-        Canvas.AddTile(copy, TileView.Build(copy), new Point(origin.X + 28, origin.Y + 28), DefaultTileSize);
+        board.Add(
+            copy,
+            (origin?.X ?? 0) + 28,
+            (origin?.Y ?? 0) + 28,
+            origin?.Width ?? DefaultTileSize.Width,
+            origin?.Height ?? DefaultTileSize.Height);
+        SyncBoard();
         OpenEditor(copy);
-        UpdateStatus();
     }
 
     private void RemoveTile(DashboardTile tile)
     {
-        Canvas.RemoveTile(tile);
-        tiles.Remove(tile);
-        if (openEditors.Contains(tile)) CloseEditor(openEditors.IndexOf(tile));
-        UpdateStatus();
-    }
-
-    /// <summary>
-    /// A dashboard that opens empty reads as broken, so the canvas starts with worked examples of
-    /// each tile form wired to real leaves and figures — including one deliberately wired to a
-    /// figure that carries no σ, which is the case the master switch exists to make visible.
-    /// </summary>
-    private void SeedTiles()
-    {
-        var root = Workspace.Instance.Find("SITE_ALPHA")?.Root.Path;
-        if (root is null) return;
-
-        Seed(TileKind.Line, "tile.tank_levels", Slot(0, 0),
-            Measure($"{root}.tank_farm.tank_01.level"),
-            Measure($"{root}.tank_farm.tank_02.level"));
-
-        Seed(TileKind.Table, "tile.site_readings", Slot(1, 0),
-            Measure($"{root}.tank_farm.tank_01.level"),
-            Measure($"{root}.tank_farm.tank_01.temp"),
-            Measure($"{root}.tank_farm.tank_01.spoilage"));
-
-        Seed(TileKind.Bar, "tile.level_compare", Slot(2, 0),
-            Measure($"{root}.tank_farm.tank_01.level"),
-            Measure($"{root}.tank_farm.tank_02.level"));
-
-        Seed(TileKind.Line, "tile.tank_temps", Slot(0, 1),
-            Measure($"{root}.tank_farm.tank_01.temp"),
-            Measure($"{root}.tank_farm.tank_02.temp"));
-
-        Seed(TileKind.Table, "tile.committed_figures", Slot(1, 1),
-            Figure("total_inventory"),
-            Figure("expiry_risk"));
-
-        Seed(TileKind.Line, "tile.log_score", Slot(2, 1),
-            Figure("log_score"));
-
-        UpdateStatus();
-    }
-
-    /// <summary>
-    /// Where a seeded tile lands. Tiles are free to be dragged anywhere afterwards; this only lays
-    /// the starting six out so all six are on screen between the two side panels rather than
-    /// needing a pan to find.
-    /// </summary>
-    private static Point Slot(int column, int row) =>
-        new(24 + column * (SeedTileSize.Width + 16), 20 + row * (SeedTileSize.Height + 18));
-
-    private static TileSource Measure(string path) => new(TileSourceKind.Measure, path);
-
-    private static TileSource Figure(string key) => new(TileSourceKind.Figure, key);
-
-    private void Seed(TileKind kind, string name, Point position, params TileSource[] sources)
-    {
-        var tile = new DashboardTile(kind, name);
-        tile.Sources.AddRange(sources);
-        tiles.Add(tile);
-        Canvas.AddTile(tile, TileView.Build(tile), position, SeedTileSize);
+        board.Remove(tile);
+        SyncBoard();
     }
 
     private void UpdateStatus()
     {
-        var blank = tiles.Count(IsBlanked);
+        var count = board.Placements.Count;
+        var blank = board.Tiles.Count(IsBlanked);
         StatusRight.Text = blank == 0
-            ? $"{tiles.Count} TILE(S) · VARIANCE {(VarianceSettings.Enabled ? "ON" : "OFF")}"
-            : $"{tiles.Count} TILE(S) · {blank} BLANK — NO σ WIRED";
+            ? $"{count} TILE(S) · VARIANCE {(VarianceSettings.Enabled ? "ON" : "OFF")}"
+            : $"{count} TILE(S) · {blank} BLANK — NO σ OR NO VALUE";
         StatusRight.Foreground = blank == 0 ? Palette.TextFaint : Palette.Amber;
     }
 
+    /// <summary>
+    /// Whether the tile is drawing nothing. Two ways to get there: a source that carries no number
+    /// yet, which blanks it whatever the master switch says, and — with variance on — one that
+    /// carries no σ.
+    /// </summary>
     private static bool IsBlanked(DashboardTile tile)
     {
-        if (!VarianceSettings.Enabled || !tile.IsWired) return false;
-        var resolved = tile.Sources.Select(TileData.Resolve).Where(series => series is not null).ToList();
-        return resolved.Count > 0 && resolved.Any(series => !series!.HasVariance);
+        if (!tile.IsWired) return false;
+        var resolved = tile.Sources.Select(TileData.Resolve).OfType<TileSeries>().ToList();
+        if (resolved.Count == 0) return false;
+        if (resolved.Any(series => !series.HasValue)) return true;
+        return VarianceSettings.Enabled && resolved.Any(series => !series.HasVariance);
     }
 
     // ── variance switch ──────────────────────────────────────────────────────────────────────
@@ -510,17 +507,24 @@ public partial class DashboardView : UserControl
         EditorBody.Children.Add(BuildSourceList(tile));
 
         var wired = tile.Sources.Count;
-        var resolved = tile.Sources.Select(TileData.Resolve).Where(series => series is not null).ToList();
-        var bare = resolved.Count(series => !series!.HasVariance);
-        var asserted = resolved.Count(series => series!.IsAssertedSigma);
-        EditorFooter.Text = (wired, bare, asserted, VarianceSettings.Enabled) switch
-        {
-            (0, _, _, _) => "Not wired. Pick one or more measures or figures below.",
-            (_, > 0, _, true) => $"{bare} of {wired} source(s) carry no σ — this tile is blank while variance is on",
-            (_, > 0, _, false) => $"{bare} of {wired} source(s) carry no σ · hidden while variance is off",
-            (_, _, > 0, _) => $"{wired} source(s) wired · {asserted} σ asserted from a figure, not carried by the tree",
-            _ => $"{wired} source(s) wired · all carry σ · bounds drawn natively"
-        };
+        var resolved = tile.Sources.Select(TileData.Resolve).OfType<TileSeries>().ToList();
+        var silent = resolved.Count(series => !series.HasValue);
+        var bare = resolved.Count(series => !series.HasVariance);
+        var asserted = resolved.Count(series => series.IsAssertedSigma);
+
+        // No value comes first: σ is a property of a number, so reporting a missing σ for a source
+        // that has no reading at all would send someone looking for the wrong thing.
+        EditorFooter.Text = wired == 0
+            ? "Not wired. Pick one or more measures or figures below."
+            : silent > 0
+                ? $"{silent} of {wired} source(s) carry no value — this tile stays blank until they do"
+                : (bare, asserted, VarianceSettings.Enabled) switch
+                {
+                    ( > 0, _, true) => $"{bare} of {wired} source(s) carry no σ — this tile is blank while variance is on",
+                    ( > 0, _, false) => $"{bare} of {wired} source(s) carry no σ · hidden while variance is off",
+                    (_, > 0, _) => $"{wired} source(s) wired · {asserted} σ asserted from a figure, not carried by the tree",
+                    _ => $"{wired} source(s) wired · all carry σ · bounds drawn natively"
+                };
     }
 
     private static TextBlock FieldLabel(string text) => new()
@@ -599,9 +603,9 @@ public partial class DashboardView : UserControl
                     tile,
                     new TileSource(TileSourceKind.Figure, figure.Key),
                     figure.Name,
-                    figure.HasVariance ? figure.SigmaDisplay : "no σ",
+                    figure.StateNote,
                     figure.HasVariance,
-                    figure.IsProvisional));
+                    figure.IsProvisional || !figure.HasValue));
             }
         }
 
@@ -618,15 +622,17 @@ public partial class DashboardView : UserControl
                     tile,
                     new TileSource(TileSourceKind.Measure, leaf.Path),
                     ShortPath(leaf.Path, subtree.Root.Path),
-                    reading.HasVariance ? reading.SigmaDisplay : "no σ",
+                    reading.StateNote,
                     reading.HasVariance,
-                    isProvisional: false));
+                    isProvisional: !reading.HasValue));
 
                 // The customisation route, offered only where it applies: a measure the tree gives
-                // no σ for can borrow one from a figure. A figure never gets this — its σ comes up
-                // the chain, and nominating one would be asserting what the network computes.
+                // no σ for can borrow one from a figure. Not offered for a leaf with no value at
+                // all — there would be nothing for the σ to be the spread of. A figure never gets
+                // this either: its σ comes up the chain, and nominating one would be asserting what
+                // the network computes.
                 if (tile.Sources.Any(existing => existing.Matches(TileSourceKind.Measure, leaf.Path)) &&
-                    !reading.HasVariance)
+                    reading is { HasValue: true, HasVariance: false })
                 {
                     list.Children.Add(SigmaFigureRow(tile, leaf.Path));
                 }
@@ -669,7 +675,9 @@ public partial class DashboardView : UserControl
 
         var keys = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
         keys.Children.Add(SigmaFigureKey(tile, index, null, "INTRINSIC", bound is null));
-        foreach (var figure in FigureCatalog.Instance.Figures)
+
+        // A figure with nothing wired into it has no number to lend, so it is not offered as one.
+        foreach (var figure in FigureCatalog.Instance.Figures.Where(figure => figure.HasValue))
             keys.Children.Add(SigmaFigureKey(tile, index, figure.Key, figure.Name, bound == figure.Key));
 
         var caption = new TextBlock

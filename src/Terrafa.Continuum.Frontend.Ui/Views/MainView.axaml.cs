@@ -34,6 +34,11 @@ public partial class MainView : UserControl
         this.catalog = catalog;
         InitializeComponent();
 
+        // Build the network before any screen does. The graph is what computes the dashboard
+        // figures, so whichever screen opens first must find them already derived rather than
+        // showing the values they were declared with until someone visits NETW.
+        _ = NetworkGraph.Instance;
+
         // Warm the catalogue while the first screen builds — DATA SOURCES then opens populated.
         _ = WarmCatalogue();
 
@@ -54,6 +59,8 @@ public partial class MainView : UserControl
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RebuildScreens;
         Workspace.Instance.Changed += InvalidateInactiveScreens;
+        FigureCatalog.Instance.Changed += InvalidateInactiveScreens;
+        NetworkGraph.Instance.Changed += InvalidateInactiveScreens;
         AuthSession.Instance.Changed += OnSessionChanged;
         SettingsFlyout.ToggleRequested += ToggleSettings;
         ContactDialog.ShowRequested += ShowContact;
@@ -63,6 +70,8 @@ public partial class MainView : UserControl
     {
         ThemeManager.Changed -= RebuildScreens;
         Workspace.Instance.Changed -= InvalidateInactiveScreens;
+        FigureCatalog.Instance.Changed -= InvalidateInactiveScreens;
+        NetworkGraph.Instance.Changed -= InvalidateInactiveScreens;
         AuthSession.Instance.Changed -= OnSessionChanged;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
         ContactDialog.ShowRequested -= ShowContact;
@@ -72,11 +81,18 @@ public partial class MainView : UserControl
     /// <summary>
     /// Signing in or out swaps the whole catalogue underneath the app, so the workspace is emptied
     /// with it — a subtree mounted from the demo catalogue is meaningless against a real one, and
-    /// vice versa. Resetting raises Workspace.Changed, which drops the screens that are not on
-    /// show; the DATA SOURCES screen refreshes itself, since that is where the change was made.
+    /// vice versa. The network and the board go with it: both are built out of leaves that are
+    /// about to stop existing, and a figure derived from the demo tree must not survive into a real
+    /// session. Resetting raises Changed, which drops the screens that are not on show; the DATA
+    /// SOURCES screen refreshes itself, since that is where the change was made.
     /// </summary>
-    private void OnSessionChanged() =>
-        Workspace.Instance.Reset(seedDemo: !AuthSession.Instance.IsSignedIn);
+    private void OnSessionChanged()
+    {
+        var seedDemo = !AuthSession.Instance.IsSignedIn;
+        Workspace.Instance.Reset(seedDemo);
+        NetworkGraph.Instance.Reset(seedDemo);
+        Dashboard.Instance.Reset(seedDemo);
+    }
 
     /// <summary>
     /// Prefetch only. A failure is deliberately dropped here: DataSourcesView makes the same call

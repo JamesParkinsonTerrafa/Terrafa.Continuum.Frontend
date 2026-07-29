@@ -15,9 +15,6 @@ namespace Terrafa.Continuum.Frontend.Views;
 
 public partial class NetworkView : UserControl
 {
-    private static readonly string[] FunctionLibrary =
-        ["exp(θ·x)", "log(x)", "clip(x, lo, hi)", "sum(a, b)", "hazard λ₀(t)·exp(θᵀx)"];
-
     private sealed record RailRow(
         DataTreeNode Node,
         MountedSubtree Subtree,
@@ -26,12 +23,16 @@ public partial class NetworkView : UserControl
         TextBlock CheckBlock,
         TextBlock NameBlock);
 
+    /// <summary>A drag out of the left rail, and what to do where it lands on the canvas.</summary>
+    private sealed record RailDrag(string Label, IBrush Accent, Action<Point> Drop);
+
     private readonly Action<int> navigate;
     private readonly Workspace workspace = Workspace.Instance;
+    private readonly NetworkGraph graph = NetworkGraph.Instance;
     private readonly Dictionary<string, RailRow> railRows = [];
-    private readonly Dictionary<string, DiagramNode> placedMeasures = [];
+    private readonly Dictionary<string, DiagramNode> placed = [];
     private readonly HashSet<string> collapsedSubtrees = [];
-    private RailRow? railDrag;
+    private RailDrag? railDrag;
     private Border? railGhost;
 
     public NetworkView() : this(DemoData.CreateSnapshot(), _ => { })
@@ -55,15 +56,335 @@ public partial class NetworkView : UserControl
                     ? (Palette.Purple, [6, 5], 0.8)
                     : (Palette.Green, null, 0.8);
         Diagram.MenuProvider = BuildNodeMenu;
+        Diagram.CanConnect = (source, target) => graph.CanConnect(source.Id, target.Id);
+        Diagram.Connected += OnConnected;
+        Diagram.NodeMoved += OnNodeMoved;
 
-        BuildMeasureList();
-        SeedDiagram();
+        BuildBuildList();
+        Render();
         BuildLegend();
 
         PointerMoved += (_, e) => OnRailDragMoved(e);
         PointerReleased += (_, e) => OnRailDragReleased(e);
 
         NoiseOverlay.Attach(this);
+    }
+
+    // ── canvas ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Draws whatever the graph holds. Everything that changes the network goes through the model
+    /// and comes back through here, so the canvas can never hold a wire the figures were not
+    /// computed from.
+    /// </summary>
+    private void Render()
+    {
+        Diagram.Clear();
+        placed.Clear();
+
+        foreach (var node in graph.Nodes)
+        {
+            placed[node.Id] = Diagram.AddNode(
+                node.Id,
+                BuildCard(node),
+                leftPort: node.Kind != NetworkNodeKind.Measure,
+                rightPort: node.Kind != NetworkNodeKind.Figure,
+                new Point(node.X, node.Y));
+        }
+
+        foreach (var edge in graph.Edges)
+        {
+            if (placed.TryGetValue(edge.FromId, out var from) && placed.TryGetValue(edge.ToId, out var to))
+                Diagram.Connect(from, to);
+        }
+
+        BuildMeasureList();
+        UpdateStatus();
+    }
+
+    private void UpdateStatus()
+    {
+        var figures = FigureCatalog.Instance.Figures;
+        var derived = figures.Count(figure => figure.Origin == FigureOrigin.Derived && figure.HasValue);
+        FigureCountText.Text = $"{figures.Count} DASHBOARD FIG(S) · {derived} COMPUTED FROM THE TREE";
+    }
+
+    private void OnConnected(DiagramNode source, DiagramNode target)
+    {
+        graph.Connect(source.Id, target.Id);
+        Render();
+    }
+
+    private void OnNodeMoved(DiagramNode node)
+    {
+        var position = Diagram.NodePositionOf(node);
+        graph.Move(node.Id, position.X, position.Y);
+    }
+
+    private NodeCard BuildCard(NetworkNode node) => node.Kind switch
+    {
+        NetworkNodeKind.Measure => BuildLeafCard(node),
+        NetworkNodeKind.Figure => BuildFigureCard(node),
+        _ => BuildTransferCard(node)
+    };
+
+    private NodeCard BuildLeafCard(NetworkNode node)
+    {
+        var subtree = workspace.SubtreeOf(node.Key);
+        var reading = workspace.FindNode(node.Key)?.Reading;
+        var accentIndex = subtree?.AccentIndex ?? 0;
+
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Measure,
+            TagText = "MEASURE · LEAF",
+            TagRight = subtree?.Dataset.ToLowerInvariant() ?? "",
+            Width = 220,
+            Title = NetworkGraph.LeafTitle(node.Key),
+            ValueMain = reading?.Display ?? "—",
+            ValueAccent = reading?.SigmaDisplay ?? "",
+            Note = reading?.Detail ?? "leaf no longer mounted",
+            AccentOverride = SubtreeAccents.Stroke(accentIndex),
+            FillOverride = SubtreeAccents.Fill(accentIndex)
+        };
+    }
+
+    /// <summary>
+    /// A transfer states what it did to its inputs and what that cost in σ. The seeded hazard states
+    /// instead that it will not do it — its branch is not identifiable from these leaves, and a
+    /// number there would be the assertion the whole screen exists to refuse.
+    /// </summary>
+    private NodeCard BuildTransferCard(NetworkNode node)
+    {
+        var tag = node.Id.StartsWith("transfer:", StringComparison.Ordinal)
+            ? node.Id["transfer:".Length..].ToUpperInvariant()
+            : node.Id.ToUpperInvariant();
+
+        if (node.IsOpaque) return BuildOpaqueTransferCard(node, tag);
+
+        var result = graph.Evaluate(node);
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Transfer,
+            TagText = $"TRANSFER · {tag}",
+            TagRight = "dν/dµ",
+            Title = graph.Title(node),
+            TitleSize = 12,
+            ValueMain = result is null ? "" : $"{MeasureNumerics.Format(result.Value)} {result.Unit}".Trim(),
+            ValueAccent = result is { } value && value.HasVariance
+                ? $"± {MeasureNumerics.FormatSigma(value.Sigma)}"
+                : "",
+            Width = 250,
+            ExtraContent = TransferExtra(result, graph.InputsOf(node.Id).Count())
+        };
+    }
+
+    private static NodeCard BuildOpaqueTransferCard(NetworkNode node, string tag)
+    {
+        var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
+        extra.Inlines =
+        [
+            new Run("ν ≪ µ "),
+            new Run("✓") { Foreground = Palette.Green },
+            new Run(" · "),
+            new Run("NONLINEAR") { Foreground = Palette.Red },
+            new Run(" — linearisation refused"),
+            new LineBreak(),
+            new Run("⚠ branch auto-switched to MONTE-CARLO σ") { Foreground = Palette.Amber }
+        ];
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Transfer,
+            TagText = $"TRANSFER · {tag}",
+            TagRight = "dν/dµ",
+            Title = node.OpaqueTitle,
+            TitleSize = 12,
+            Width = 250,
+            ExtraContent = extra
+        };
+    }
+
+    private static Control TransferExtra(TransferResult? result, int inputCount)
+    {
+        var extra = new TextBlock
+        {
+            FontSize = 9,
+            LineHeight = 14,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextMuted
+        };
+
+        if (result is null)
+        {
+            extra.Inlines =
+            [
+                new Run(inputCount == 0
+                    ? "no inputs — wire a leaf into the left port"
+                    : "inputs carry nothing this transfer can push")
+                {
+                    Foreground = Palette.Amber
+                }
+            ];
+            return extra;
+        }
+
+        extra.Inlines =
+        [
+            new Run("ν ≪ µ "),
+            new Run("✓") { Foreground = Palette.Green },
+            new Run(" · "),
+            result.Linearised
+                ? new Run("C¹ (linear) ✓") { Foreground = Palette.Green }
+                : new Run("NONLINEAR") { Foreground = Palette.Red },
+            new LineBreak(),
+            new Run(result.Note)
+        ];
+        return extra;
+    }
+
+    /// <summary>
+    /// Figure cards read from <see cref="FigureCatalog"/> rather than restating their own values —
+    /// the dashboard offers the same figures as tile sources, and the two screens have to agree.
+    /// </summary>
+    private static NodeCard BuildFigureCard(NetworkNode node)
+    {
+        var figure = FigureCatalog.Instance.Find(node.Key);
+        if (figure is null)
+        {
+            return new NodeCard
+            {
+                Variant = NodeCardVariant.Provisional,
+                TagText = "DASHBOARD FIG · MISSING",
+                Title = $"fig.{node.Key}",
+                Width = 270,
+                Note = "not in the figure catalogue"
+            };
+        }
+
+        var unwired = !figure.HasValue;
+        return new NodeCard
+        {
+            Variant = figure.IsProvisional || unwired ? NodeCardVariant.Provisional : NodeCardVariant.Figure,
+            TagText = unwired
+                ? "DASHBOARD FIG · UNWIRED"
+                : figure.IsProvisional
+                    ? "DASHBOARD FIG · PROVISIONAL"
+                    : "DASHBOARD FIG",
+            TagRight = figure.Origin == FigureOrigin.Derived && !unwired ? "computed" : "",
+            Title = figure.Name,
+            ValueMain = figure.Display,
+            ValueAccent = figure.SigmaDisplay,
+            ValueSize = 16,
+            Width = 270,
+            Note = figure.Note
+        };
+    }
+
+    // ── node menus ───────────────────────────────────────────────────────────────────────────
+
+    private IReadOnlyList<(string Label, Action Action)> BuildNodeMenu(DiagramNode node)
+    {
+        if (graph.Find(node.Id) is not { } model) return [("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))];
+
+        return model.Kind switch
+        {
+            NetworkNodeKind.Measure =>
+            [
+                ("PUBLISH AS DASHBOARD FIG", () => ShowFigureDialog(model.X + 300, model.Y, model.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            NetworkNodeKind.Figure =>
+            [
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            _ when model.IsOpaque =>
+            [
+                ("MODIFY FUNCTION", () => navigate(1)),
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            _ =>
+            [
+                ("CHANGE FUNCTION", () => Mutate(() => graph.CycleStage(model))),
+                ("CHANGE COMBINER", () => Mutate(() => graph.CycleCombiner(model))),
+                ("MODIFY FUNCTION", () => navigate(1)),
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ]
+        };
+    }
+
+    private void Mutate(Action change)
+    {
+        change();
+        Render();
+    }
+
+    private void ClearInputs(string id) => Mutate(() => graph.ClearInputs(id));
+
+    private void RemoveNode(string id) => Mutate(() => graph.Remove(id));
+
+    // ── left rail ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The blocks the network is built from. A leaf below is data the tree already holds; these two
+    /// are the operator's own — a transfer to combine leaves, and the figure that commits the result
+    /// to the dashboard.
+    /// </summary>
+    private void BuildBuildList()
+    {
+        BuildList.Children.Clear();
+        BuildList.Children.Add(RailHeader("build /", 0, Palette.Amber));
+
+        BuildList.Children.Add(BuildElementRow(
+            "TRANSFER",
+            "combines its inputs and carries their σ",
+            Palette.Amber,
+            point => Mutate(() => graph.AddTransfer(point.X - 125, point.Y - 40))));
+
+        BuildList.Children.Add(BuildElementRow(
+            "DASHBOARD FIG",
+            "commits a value the dashboard can plot",
+            Palette.Green,
+            point => ShowFigureDialog(point.X - 135, point.Y - 40, wireFrom: null)));
+    }
+
+    private Border BuildElementRow(string label, string detail, IBrush accent, Action<Point> drop)
+    {
+        var body = new StackPanel
+        {
+            Children =
+            {
+                new TextBlock { Text = label, FontSize = 10, LetterSpacing = 1, Foreground = accent },
+                new TextBlock
+                {
+                    Text = detail,
+                    FontSize = 9,
+                    Margin = new Thickness(0, 3, 0, 0),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Palette.TextFaint
+                }
+            }
+        };
+
+        var shell = new Border
+        {
+            Margin = new Thickness(10, 0, 0, 0),
+            BorderBrush = Palette.TextGhost,
+            BorderThickness = new Thickness(1),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(9, 7),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = body
+        };
+        shell.PointerEntered += (_, _) => shell.Background = Palette.BgField;
+        shell.PointerExited += (_, _) => shell.Background = Brushes.Transparent;
+        shell.PointerPressed += (_, e) => BeginRailDrag(new RailDrag(label, accent, drop), shell, e);
+        shell.PointerMoved += (_, e) => OnRailDragMoved(e);
+        shell.PointerReleased += (_, e) => OnRailDragReleased(e);
+        shell.PointerCaptureLost += (_, _) => CancelRailDrag();
+        return shell;
     }
 
     private void BuildMeasureList()
@@ -81,7 +402,7 @@ public partial class NetworkView : UserControl
                          node.Children.Any(child => child.Kind == DataNodeKind.Measure)))
             {
                 var relativePath = objectNode.Path[(subtree.Root.Path.Length + 1)..].Replace(".", " / ");
-                MeasureList.Children.Add(RailHeader($"{relativePath} /", 12));
+                MeasureList.Children.Add(RailHeader($"{relativePath} /", 12, Palette.TextMuted));
 
                 foreach (var measure in objectNode.Children.Where(child => child.Kind == DataNodeKind.Measure))
                     MeasureList.Children.Add(BuildRailRow(measure, subtree));
@@ -125,11 +446,12 @@ public partial class NetworkView : UserControl
             Child = row
         };
 
-        var railRow = new RailRow(measure, subtree, LeafTitle(measure), shell, checkBlock, nameBlock);
+        var railRow = new RailRow(
+            measure, subtree, NetworkGraph.LeafTitle(measure.Path), shell, checkBlock, nameBlock);
         railRows[measure.Path] = railRow;
         shell.PointerEntered += (_, _) => UpdateRailRow(railRow, hover: true);
         shell.PointerExited += (_, _) => UpdateRailRow(railRow, hover: false);
-        shell.PointerPressed += (_, e) => BeginRailDrag(railRow, e);
+        shell.PointerPressed += (_, e) => BeginMeasureDrag(railRow, e);
         shell.PointerMoved += (_, e) => OnRailDragMoved(e);
         shell.PointerReleased += (_, e) => OnRailDragReleased(e);
         shell.PointerCaptureLost += (_, _) => CancelRailDrag();
@@ -165,7 +487,7 @@ public partial class NetworkView : UserControl
         };
         var count = new TextBlock
         {
-            Text = $"{subtree.Leaves.Count(leaf => placedMeasures.ContainsKey(leaf.Path))} placed",
+            Text = $"{subtree.Leaves.Count(leaf => graph.Contains(leaf.Path))} placed",
             FontSize = 10,
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
@@ -200,110 +522,147 @@ public partial class NetworkView : UserControl
         return shell;
     }
 
-    private static string LeafTitle(DataTreeNode measure)
-    {
-        var segments = measure.Path.Split('.');
-        return segments.Length >= 2 ? $"{segments[^2]}.{segments[^1]}" : measure.Path;
-    }
-
-    private static TextBlock RailHeader(string text, double indent) => new()
+    private static TextBlock RailHeader(string text, double indent, IBrush brush) => new()
     {
         Text = text,
         FontSize = 11,
-        Foreground = Palette.TextMuted,
+        Foreground = brush,
         Margin = new Thickness(indent, 0, 0, 0)
     };
 
-    private void SeedDiagram()
-    {
-        var root = workspace.Find("SITE_ALPHA")?.Root.Path;
-        if (root is null) return;
-
-        PlaceSeedMeasure(root, "tank_farm.tank_01.level", new Point(70, 118));
-        PlaceSeedMeasure(root, "tank_farm.tank_02.level", new Point(70, 258));
-        PlaceSeedMeasure(root, "tank_farm.tank_01.temp", new Point(70, 418));
-        PlaceSeedMeasure(root, "tank_farm.tank_01.spoilage", new Point(70, 558));
-
-        var transfer1 = Diagram.AddNode("transfer:t1", BuildTransfer1Card(), leftPort: true, rightPort: true, new Point(450, 172));
-        var transfer2 = Diagram.AddNode("transfer:t2", BuildTransfer2Card(), leftPort: true, rightPort: true, new Point(450, 468));
-        var figInventory = Diagram.AddNode("figure:total_inventory", BuildInventoryFigureCard(), leftPort: true, rightPort: false, new Point(866, 190));
-        var figExpiry = Diagram.AddNode("figure:expiry_risk", BuildExpiryFigureCard(), leftPort: true, rightPort: false, new Point(866, 472));
-
-        ConnectSeedMeasure(root, "tank_farm.tank_01.level", transfer1);
-        ConnectSeedMeasure(root, "tank_farm.tank_02.level", transfer1);
-        ConnectSeedMeasure(root, "tank_farm.tank_01.temp", transfer2);
-        ConnectSeedMeasure(root, "tank_farm.tank_01.spoilage", transfer2);
-        Diagram.Connect(transfer1, figInventory);
-        Diagram.Connect(transfer2, figExpiry);
-    }
-
-    private void PlaceSeedMeasure(string root, string relativePath, Point position)
-    {
-        if (railRows.TryGetValue($"{root}.{relativePath}", out var row)) PlaceMeasure(row, position);
-    }
-
-    private void ConnectSeedMeasure(string root, string relativePath, DiagramNode target)
-    {
-        if (placedMeasures.TryGetValue($"{root}.{relativePath}", out var source)) Diagram.Connect(source, target);
-    }
-
-    private void PlaceMeasure(RailRow row, Point position)
-    {
-        var card = BuildLeafCard(row.LeafTitle, row.Node.Reading!, row.Subtree);
-        var node = Diagram.AddNode(row.Node.Path, card, leftPort: false, rightPort: true, position);
-        placedMeasures[row.Node.Path] = node;
-        UpdateRailRow(row);
-        BuildMeasureList();
-    }
-
     private void UpdateRailRow(RailRow row, bool hover = false)
     {
-        var placed = placedMeasures.ContainsKey(row.Node.Path);
-        var highlighted = hover && !placed;
-        var brush = placed
+        var isPlaced = graph.Contains(row.Node.Path);
+        var highlighted = hover && !isPlaced;
+        var brush = isPlaced
             ? SubtreeAccents.Stroke(row.Subtree.AccentIndex)
             : highlighted ? Palette.TextSub : Palette.TextFaint;
-        row.CheckBlock.Text = placed ? "[x]" : "[ ]";
+        row.CheckBlock.Text = isPlaced ? "[x]" : "[ ]";
         row.CheckBlock.Foreground = brush;
         row.NameBlock.Foreground = brush;
         row.Shell.Background = highlighted ? Palette.BgField : Brushes.Transparent;
-        row.Shell.Cursor = new Cursor(placed ? StandardCursorType.Arrow : StandardCursorType.Hand);
+        row.Shell.Cursor = new Cursor(isPlaced ? StandardCursorType.Arrow : StandardCursorType.Hand);
     }
 
-    private IReadOnlyList<(string Label, Action Action)> BuildNodeMenu(DiagramNode node) =>
-        node.Card.Variant == NodeCardVariant.Transfer
-            ?
-            [
-                ("CHANGE FUNCTION", () => CycleTransferFunction(node)),
-                ("MODIFY FUNCTION", () => navigate(1)),
-                ("REMOVE FROM DIAGRAM", () => RemoveDiagramNode(node))
-            ]
-            : [("REMOVE FROM DIAGRAM", () => RemoveDiagramNode(node))];
+    // ── figure naming ────────────────────────────────────────────────────────────────────────
 
-    private static void CycleTransferFunction(DiagramNode node)
+    /// <summary>
+    /// Names the figure before it exists. A dashboard fig is addressed by name from three screens,
+    /// so it is asked for up front rather than left as "figure_3" for someone to find later.
+    /// </summary>
+    private void ShowFigureDialog(double x, double y, string? wireFrom)
     {
-        var index = Array.IndexOf(FunctionLibrary, node.Card.Title);
-        node.Card.Title = FunctionLibrary[(index + 1) % FunctionLibrary.Length];
+        var suggestion = FigureCatalog.Instance.NextKey(
+            wireFrom is null ? "figure" : Slug(NetworkGraph.LeafTitle(wireFrom)));
+
+        var box = new TextBox { Classes = { "field" }, Text = suggestion, Watermark = "figure name" };
+        var preview = new TextBlock { FontSize = 11, Foreground = Palette.Green };
+        var warning = new TextBlock
+        {
+            FontSize = 10,
+            Margin = new Thickness(0, 4, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.Amber
+        };
+
+        void Sync()
+        {
+            var key = Slug(box.Text ?? "");
+            preview.Text = key.Length == 0 ? "fig.—" : $"fig.{key}";
+            warning.Text = key.Length == 0
+                ? "a figure needs a name — it is how the dashboard and the map address it"
+                : FigureCatalog.Instance.Contains(key)
+                    ? $"fig.{key} already exists — committing here replaces what it publishes"
+                    : "";
+        }
+
+        box.TextChanged += (_, _) => Sync();
+        Sync();
+
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(DialogBlock("NAME", new SquircleBorder
+        {
+            Classes = { "emboss-press" },
+            Background = Palette.BgField,
+            Child = box
+        }));
+        body.Children.Add(DialogBlock("PUBLISHES AS", preview));
+        body.Children.Add(DialogBlock("SOURCE", new TextBlock
+        {
+            Text = wireFrom is null
+                ? "nothing yet — drag a wire into its left port once it lands"
+                : NetworkGraph.LeafTitle(wireFrom),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.Text
+        }));
+        body.Children.Add(warning);
+
+        Dialog.Show("DASHBOARD FIG", body, "COMMIT <GO>", () =>
+        {
+            var key = Slug(box.Text ?? "");
+            if (key.Length == 0) return false;
+
+            var node = graph.AddFigure(key, x, y);
+            if (wireFrom is not null) graph.Connect(wireFrom, node.Id);
+            Render();
+            return true;
+        });
     }
 
-    private void RemoveDiagramNode(DiagramNode node)
+    /// <summary>A figure key: lowercase, words joined by underscores, nothing else.</summary>
+    private static string Slug(string text)
     {
-        Diagram.RemoveNode(node);
-        if (!placedMeasures.Remove(node.Id)) return;
-        if (railRows.TryGetValue(node.Id, out var row)) UpdateRailRow(row);
-        BuildMeasureList();
+        var slug = new string(text.Trim().ToLowerInvariant()
+            .Select(character => char.IsAsciiLetterOrDigit(character) ? character : '_')
+            .ToArray())
+            .Trim('_');
+        while (slug.Contains("__", StringComparison.Ordinal))
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        return slug;
     }
 
-    private void BeginRailDrag(RailRow row, PointerPressedEventArgs e)
+    private static Control DialogBlock(string label, Control body)
     {
-        if (placedMeasures.ContainsKey(row.Node.Path)) return;
-        if (!e.GetCurrentPoint(row.Shell).Properties.IsLeftButtonPressed) return;
+        var stack = new StackPanel { Spacing = 5 };
+        stack.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 9,
+            LetterSpacing = 1.5,
+            Foreground = Palette.TextFaint
+        });
+        stack.Children.Add(body);
+        return stack;
+    }
+
+    // ── rail drag ────────────────────────────────────────────────────────────────────────────
+
+    private void BeginMeasureDrag(RailRow row, PointerPressedEventArgs e)
+    {
+        if (graph.Contains(row.Node.Path)) return;
+        var accent = SubtreeAccents.Stroke(row.Subtree.AccentIndex);
+        BeginRailDrag(
+            new RailDrag(row.LeafTitle, accent, point => PlaceMeasure(row, point)),
+            row.Shell,
+            e);
+    }
+
+    private void PlaceMeasure(RailRow row, Point point)
+    {
+        graph.PlaceMeasure(row.Node.Path, point.X - 110, point.Y - 40);
+        Render();
+    }
+
+    private void BeginRailDrag(RailDrag drag, Border shell, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(shell).Properties.IsLeftButtonPressed) return;
         CancelRailDrag();
-        railDrag = row;
-        railGhost = BuildGhost(row.LeafTitle, SubtreeAccents.Stroke(row.Subtree.AccentIndex));
+        railDrag = drag;
+        railGhost = BuildGhost(drag.Label, drag.Accent);
         GhostLayer.Children.Add(railGhost);
         PositionGhost(e.GetPosition(this));
-        e.Pointer.Capture(row.Shell);
+        e.Pointer.Capture(shell);
         e.Handled = true;
     }
 
@@ -316,14 +675,13 @@ public partial class NetworkView : UserControl
     private void OnRailDragReleased(PointerReleasedEventArgs e)
     {
         if (railDrag is null) return;
-        var row = railDrag;
+        var drag = railDrag;
         var dropPoint = e.GetPosition(Diagram);
         CancelRailDrag();
 
         if (dropPoint.X < 0 || dropPoint.Y < 0 ||
             dropPoint.X > Diagram.Bounds.Width || dropPoint.Y > Diagram.Bounds.Height) return;
-        var worldPoint = Diagram.ViewportToWorld(dropPoint);
-        PlaceMeasure(row, new Point(worldPoint.X - 110, worldPoint.Y - 40));
+        drag.Drop(Diagram.ViewportToWorld(dropPoint));
     }
 
     private void CancelRailDrag()
@@ -333,12 +691,8 @@ public partial class NetworkView : UserControl
             GhostLayer.Children.Remove(railGhost);
             railGhost = null;
         }
-        if (railDrag is not null)
-        {
-            var row = railDrag;
-            railDrag = null;
-            UpdateRailRow(row);
-        }
+        railDrag = null;
+        foreach (var row in railRows.Values) UpdateRailRow(row);
     }
 
     private void PositionGhost(Point position)
@@ -357,105 +711,7 @@ public partial class NetworkView : UserControl
         Child = new TextBlock { Text = leafTitle, FontSize = 10, Foreground = accent }
     };
 
-    private static NodeCard BuildLeafCard(string leafTitle, Measure reading, MountedSubtree subtree) => new()
-    {
-        Variant = NodeCardVariant.Measure,
-        TagText = "MEASURE · LEAF",
-        TagRight = subtree.Dataset.ToLowerInvariant(),
-        Width = 220,
-        Title = leafTitle,
-        ValueMain = reading.Display,
-        ValueAccent = reading.SigmaDisplay,
-        Note = reading.Detail,
-        AccentOverride = SubtreeAccents.Stroke(subtree.AccentIndex),
-        FillOverride = SubtreeAccents.Fill(subtree.AccentIndex)
-    };
-
-    private static NodeCard BuildTransfer1Card()
-    {
-        var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
-        extra.Inlines =
-        [
-            new Run("ν ≪ µ "),
-            new Run("✓") { Foreground = Palette.Green },
-            new Run(" · C¹ (linear) "),
-            new Run("✓") { Foreground = Palette.Green },
-            new LineBreak(),
-            new Run("σ_out = √(J Σ Jᵀ) — exact")
-        ];
-        return new NodeCard
-        {
-            Variant = NodeCardVariant.Transfer,
-            TagText = "TRANSFER · T1",
-            TagRight = "dν/dµ",
-            Title = "sum(level_01, level_02)",
-            TitleSize = 12,
-            Width = 250,
-            ExtraContent = extra
-        };
-    }
-
-    private static NodeCard BuildTransfer2Card()
-    {
-        var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
-        extra.Inlines =
-        [
-            new Run("ν ≪ µ "),
-            new Run("✓") { Foreground = Palette.Green },
-            new Run(" · "),
-            new Run("NONLINEAR") { Foreground = Palette.Red },
-            new Run(" — linearisation refused"),
-            new LineBreak(),
-            new Run("⚠ branch auto-switched to MONTE-CARLO σ") { Foreground = Palette.Amber }
-        ];
-        return new NodeCard
-        {
-            Variant = NodeCardVariant.Transfer,
-            TagText = "TRANSFER · T2",
-            TagRight = "dν/dµ",
-            Title = "hazard λ₀(t)·exp(θᵀx)",
-            TitleSize = 12,
-            Width = 250,
-            ExtraContent = extra
-        };
-    }
-
-    private static NodeCard BuildInventoryFigureCard() => BuildFigureCard("total_inventory", "");
-
-    private static NodeCard BuildExpiryFigureCard() => BuildFigureCard("expiry_risk", "L4");
-
-    /// <summary>
-    /// Figure cards read from <see cref="FigureCatalog"/> rather than restating their own values —
-    /// the dashboard offers the same figures as tile sources, and the two screens have to agree.
-    /// </summary>
-    private static NodeCard BuildFigureCard(string key, string tagRight)
-    {
-        var figure = FigureCatalog.Instance.Find(key);
-        if (figure is null)
-        {
-            return new NodeCard
-            {
-                Variant = NodeCardVariant.Provisional,
-                TagText = "DASHBOARD FIG · MISSING",
-                Title = $"fig.{key}",
-                Width = 270,
-                Note = "not in the figure catalogue"
-            };
-        }
-
-        return new NodeCard
-        {
-            Variant = figure.IsProvisional ? NodeCardVariant.Provisional : NodeCardVariant.Figure,
-            TagText = figure.IsProvisional ? "DASHBOARD FIG · PROVISIONAL" : "DASHBOARD FIG",
-            TagRight = tagRight,
-            Title = figure.Name,
-            ValueMain = figure.Display,
-            ValueAccent = figure.SigmaDisplay,
-            ValueSize = 16,
-            Width = 270,
-            Note = figure.Note
-        };
-    }
+    // ── legend ───────────────────────────────────────────────────────────────────────────────
 
     private void BuildLegend()
     {

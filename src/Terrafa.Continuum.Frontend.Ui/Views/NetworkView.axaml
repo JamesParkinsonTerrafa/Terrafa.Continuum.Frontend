@@ -36,6 +36,7 @@
       <controls:TerminalStatusBar.LeftContent>
         <StackPanel Orientation="Horizontal" Spacing="18">
           <TextBlock x:Name="EventCountText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock x:Name="FigureCountText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
           <TextBlock Text="STATE = FOLD(LOG) · REPLAY ✓" FontSize="10" Foreground="{StaticResource TextFaintBrush}"
                      IsVisible="{DynamicResource HintsVisible}" />
         </StackPanel>
@@ -63,13 +64,19 @@
     <Border DockPanel.Dock="Left" Width="272"
             Background="{StaticResource BgPanelBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-      <controls:PanelBox Title="DB MEASURES · DRAG ONTO CANVAS">
+      <controls:PanelBox Title="NETWORK ELEMENTS" FooterHeight="54">
         <controls:PanelBox.InnerContent>
-          <StackPanel x:Name="MeasureList" Margin="12,10" Spacing="4" />
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="12,10" Spacing="4">
+              <StackPanel x:Name="BuildList" Spacing="4" />
+              <StackPanel x:Name="MeasureList" Spacing="4" />
+            </StackPanel>
+          </ScrollViewer>
         </controls:PanelBox.InnerContent>
         <controls:PanelBox.FooterContent>
           <TextBlock Text="Only selected leaves enter the network. Selecting a leaf enlarges 𝒢 — every estimate it feeds sharpens."
                      FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                     MaxLines="3" TextTrimming="CharacterEllipsis"
                      Foreground="{StaticResource TextFaintBrush}"
                      IsVisible="{DynamicResource HintsVisible}" />
         </controls:PanelBox.FooterContent>
@@ -97,5 +104,6 @@
     </Panel>
   </DockPanel>
   <Canvas x:Name="GhostLayer" IsHitTestVisible="False" />
+  <controls:OverlayDialog x:Name="Dialog" />
   </Panel>
 </UserControl>

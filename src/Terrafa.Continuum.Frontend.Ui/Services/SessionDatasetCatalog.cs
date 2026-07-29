@@ -52,7 +52,8 @@ public sealed class SessionDatasetCatalog : IDatasetCatalog, IDisposable
 
     public Task<DatasetSchema> GetSchemaAsync(string dataset) => Current.GetSchemaAsync(dataset);
 
-    public Task<DatasetSchema> GetSampleAsync(string dataset) => Current.GetSampleAsync(dataset);
+    public Task<DatasetSchema> GetSeriesAsync(string dataset, string xAxis) =>
+        Current.GetSeriesAsync(dataset, xAxis);
 
     /// <summary>
     /// Drops the live catalogue on any session change. Its caches are keyed by dataset name and

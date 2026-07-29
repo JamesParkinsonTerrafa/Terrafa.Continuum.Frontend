@@ -47,6 +47,14 @@ public sealed class FunctionLibrary
     public LibraryFunction? FindUserFunction(string name) =>
         userFunctions.FirstOrDefault(function => function.Name == name);
 
+    /// <summary>
+    /// Any function by name, primitive or saved. A network transfer stores the name rather than the
+    /// function, so a composite the operator saves on the TRANSFER FN screen is usable as a stage
+    /// without the network holding a reference to a definition that may since have been replaced.
+    /// </summary>
+    public LibraryFunction? Find(string name) =>
+        Primitives.FirstOrDefault(function => function.Name == name) ?? FindUserFunction(name);
+
     public bool IsPrimitiveName(string name) =>
         Primitives.Any(function => function.Name == name);
 

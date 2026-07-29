@@ -56,6 +56,16 @@ public sealed record TileSeries(
     /// <summary>σ per step where the source carries one; empty means <see cref="Sigma"/> is flat.</summary>
     public IReadOnlyList<double> SigmaHistory { get; init; } = [];
 
+    /// <summary>False for a source that resolved but carries no number yet.</summary>
+    public bool HasValue => !double.IsNaN(Value);
+
+    /// <summary>
+    /// What the tree shows for the reading. Only consulted when there is no number: it is what
+    /// separates a column that has not been sampled from one that reads "EN590" and never will be
+    /// plottable — one is worth waiting for and the other is worth rewiring.
+    /// </summary>
+    public string Display { get; init; } = "";
+
     /// <summary>
     /// Set when σ came from a figure the operator nominated rather than from the source's own
     /// tree. Drawn in the provisional language, because it is asserted rather than computed.
@@ -96,8 +106,13 @@ public sealed class DashboardTile
 }
 
 /// <summary>
-/// Turns a tile's wired sources into series. Measures come from the mounted workspace, figures from
-/// the shared catalogue, and anything that no longer resolves returns null so the tile can say so.
+/// Turns a tile's wired sources into series.
+///
+/// Null means gone — the leaf is no longer mounted, or the figure is no longer registered — and the
+/// tile says so. A source that is present but carries no number yet resolves to a series with a NaN
+/// value instead, because "mounted, waiting on a value" and "wired to something that no longer
+/// exists" are different things and a tile that reported them identically sent people rewiring a
+/// tile that was wired correctly.
 /// </summary>
 public static class TileData
 {
@@ -110,7 +125,6 @@ public static class TileData
     private static TileSeries? FromMeasure(TileSource source)
     {
         if (Workspace.Instance.FindNode(source.Path)?.Reading is not { } reading) return null;
-        if (!reading.HasValue) return null;
 
         var series = new TileSeries(
             source.ShortLabel,
@@ -121,8 +135,11 @@ public static class TileData
             reading.HasVariance,
             IsProvisional: false)
         {
+            Display = reading.Display,
             SigmaHistory = reading.SigmaHistory,
-            SigmaNote = reading.SigmaHistory.Count > 0 ? "σ(x) from tree leaf" : "σ from tree"
+            SigmaNote = !reading.HasVariance
+                ? "no σ in the tree"
+                : reading.SigmaHistory.Count > 0 ? "σ(x) from tree leaf" : "σ from tree"
         };
 
         if (source.SigmaFigureKey is not { } key) return series;
@@ -143,7 +160,6 @@ public static class TileData
     private static TileSeries? FromFigure(TileSource source)
     {
         if (FigureCatalog.Instance.Find(source.Path) is not { } figure) return null;
-        if (!figure.HasValue) return null;
 
         return new TileSeries(
             figure.Name,
@@ -154,16 +170,28 @@ public static class TileData
             figure.HasVariance,
             figure.IsProvisional)
         {
-            SigmaNote = "σ propagated up the chain"
+            Display = figure.Display,
+            SigmaHistory = figure.SigmaHistory,
+            SigmaNote = figure.Origin == FigureOrigin.Derived
+                ? "σ propagated up the chain"
+                : "σ as declared"
         };
     }
 
     /// <summary>
-    /// Every measure currently mounted that a chart could plot. σ carriers are left out: a "sigma"
-    /// leaf is real data and stays in the tree, but offering it here would invite someone to plot
-    /// a standard deviation as though it were a quantity.
+    /// Every measure leaf currently mounted, which is what the picker offers.
+    ///
+    /// This deliberately mirrors the DATA TREE screen rather than filtering. It used to require a
+    /// leaf to already carry a number, which quietly made the whole picker empty for any dataset
+    /// out of the real catalogue: those leaves get their values from a sample query — one row, when
+    /// it runs at all — so a freshly mounted subtree offered nothing, and the dashboard disagreed
+    /// with the tree it was supposed to be reading. What a tile can *draw* is a question for the
+    /// tile, which says so on its own face; it is not a reason to hide the leaf from the operator
+    /// who just mounted it.
+    ///
+    /// σ carriers stay out: a "sigma" leaf is real data and stays in the tree, but offering it here
+    /// would invite someone to plot a standard deviation as though it were a quantity.
     /// </summary>
     public static IEnumerable<DataTreeNode> AvailableMeasures(MountedSubtree subtree) =>
-        subtree.Leaves.Where(leaf =>
-            leaf.Reading is { HasValue: true, IsSigmaCarrier: false });
+        subtree.Leaves.Where(leaf => leaf.Reading is { IsSigmaCarrier: false });
 }

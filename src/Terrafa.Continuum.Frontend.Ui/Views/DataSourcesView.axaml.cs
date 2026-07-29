@@ -34,6 +34,13 @@ public partial class DataSourcesView : UserControl
     private string? openDataset;
     private string? previewMessage;
 
+    /// <summary>
+    /// The column the open dataset's readings are ordered by. Null while nobody has settled on one,
+    /// which is a state the screen shows rather than guesses its way out of — see
+    /// <see cref="SeriesAxis"/> for why an unordered read is not worth drawing.
+    /// </summary>
+    private string? xAxis;
+
     public DataSourcesView() : this(DemoData.CreateSnapshot(), _ => { })
     {
     }
@@ -228,23 +235,38 @@ public partial class DataSourcesView : UserControl
     /// Opens a dataset in two passes: the schema, which is a catalog lookup and lands quickly, and
     /// then its values, which come from a query that can take seconds. Each render is guarded on
     /// the dataset still being the open one, so a slow response cannot overwrite a newer preview.
+    ///
+    /// <para>
+    /// The second pass needs an x axis, and only runs once there is one. A dataset carrying a
+    /// <see cref="SeriesAxis.Default"/> column supplies its own and nobody is asked; anything else
+    /// waits for a pick rather than spending a billed query on rows in an order that would not
+    /// mean anything.
+    /// </para>
     /// </summary>
     private async void OpenSchema(string dataset)
     {
         openDataset = dataset;
         previewMessage = null;
+        xAxis = null;
 
         try
         {
             var schema = await catalog.GetSchemaAsync(dataset);
             if (openDataset != dataset) return;
             preview = schema;
-            RenderPreview();
 
-            var sampled = await catalog.GetSampleAsync(dataset);
-            if (openDataset != dataset) return;
-            preview = sampled;
+            // Demo trees are written with their series already in them and there is nothing to
+            // order — the axis exists because Athena has no inherent row order, not because a
+            // chart needs one named.
+            if (!IsLive)
+            {
+                RenderPreview();
+                return;
+            }
+
+            xAxis = SeriesAxis.Preferred(schema);
             RenderPreview();
+            if (xAxis is { } axis) await LoadSeries(dataset, axis);
         }
         catch (Exception ex)
         {
@@ -254,6 +276,45 @@ public partial class DataSourcesView : UserControl
             previewMessage = Describe(ex);
             RenderPreview();
         }
+    }
+
+    /// <summary>
+    /// Reads the dataset ordered by <paramref name="axis"/>. Guarded on the axis as well as the
+    /// dataset: changing the axis starts a second read of the same dataset, and the slower of the
+    /// two must not land on top of the newer one.
+    /// </summary>
+    private async Task LoadSeries(string dataset, string axis)
+    {
+        try
+        {
+            var series = await catalog.GetSeriesAsync(dataset, axis);
+            if (openDataset != dataset || xAxis != axis) return;
+            preview = series;
+            previewMessage = null;
+
+            // The operator may have mounted from the structure-only pass while this query was
+            // running — values landing later belong on that mount too, not only on the preview.
+            if (workspace.IsMounted(dataset)) workspace.RefreshReadings(series);
+        }
+        catch (Exception ex)
+        {
+            if (openDataset != dataset || xAxis != axis) return;
+            previewMessage = Describe(ex);
+        }
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// Re-reads the open dataset ordered by a different column. The whole subtree moves together:
+    /// every leaf's series is indexed by the same axis, which is what makes two of them comparable
+    /// on one chart.
+    /// </summary>
+    private async void ChooseAxis(string dataset, string axis)
+    {
+        xAxis = axis;
+        previewMessage = null;
+        RenderPreview();
+        await LoadSeries(dataset, axis);
     }
 
     /// <summary>
@@ -549,7 +610,179 @@ public partial class DataSourcesView : UserControl
         var column = new StackPanel();
         column.Children.Add(top);
         column.Children.Add(meta);
+        if (IsLive)
+        {
+            column.Children.Add(XAxisRow(schema));
+            if (schema.RowsPerPoint > 1) column.Children.Add(TiesNote(schema));
+        }
         return column;
+    }
+
+    /// <summary>
+    /// Said once, in the header, when the table breaks the one-row-per-point contract. There is
+    /// nothing to click: interleaved rows are the table's shape to fix upstream, not something
+    /// this client untangles.
+    /// </summary>
+    private static Control TiesNote(DatasetSchema schema)
+    {
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        row.Children.Add(new TextBlock
+        {
+            Text = "SERIES",
+            FontSize = 9,
+            LetterSpacing = 1,
+            Foreground = Palette.TextFaint,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = $"{schema.RowsPerPoint} rows per axis point — a chart needs one; fix the table, and these leaves will carry series",
+            FontSize = 10,
+            Foreground = Palette.Amber,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return row;
+    }
+
+    /// <summary>
+    /// The x axis control: what the dataset's rows are sorted by, and the way to change it. Sitting
+    /// in the header rather than on a tile because it is a property of the read — every leaf in the
+    /// subtree shares it, and two leaves ordered differently could not go on one chart.
+    /// </summary>
+    private Control XAxisRow(DatasetSchema schema)
+    {
+        var candidates = SeriesAxis.Candidates(schema);
+
+        var label = new TextBlock
+        {
+            Text = "X AXIS",
+            FontSize = 9,
+            LetterSpacing = 1,
+            Foreground = Palette.TextFaint,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        row.Children.Add(label);
+
+        if (candidates.Count == 0)
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = "no orderable column — this dataset has no series to plot",
+                FontSize = 10,
+                Foreground = Palette.TextFaint,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            return row;
+        }
+
+        var chip = new Chip
+        {
+            Text = xAxis is { } axis ? axis.ToUpperInvariant() : "SELECT AN X AXIS",
+            Accent = xAxis is null ? "amber" : "cyan",
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        chip.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            ShowAxisDialog(schema, candidates);
+        };
+        row.Children.Add(chip);
+
+        row.Children.Add(new TextBlock
+        {
+            Text = xAxis is null
+                ? "rows arrive unordered — pick the column the readings run along"
+                : $"rows sorted by {xAxis}, newest {DataFeedOptions.SeriesRows} kept",
+            FontSize = 10,
+            Foreground = xAxis is null ? Palette.Amber : Palette.TextFaint,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        return row;
+    }
+
+    /// <summary>
+    /// The axis picker. A dialog rather than a context menu because a wide table offers dozens of
+    /// columns and the menu neither scrolls nor fits them.
+    /// </summary>
+    private void ShowAxisDialog(DatasetSchema schema, IReadOnlyList<string> candidates)
+    {
+        var chosen = xAxis;
+        var rows = new StackPanel { Spacing = 1 };
+        var entries = new List<(string Path, Border Row)>(candidates.Count);
+
+        foreach (var candidate in candidates)
+        {
+            var entry = new Border
+            {
+                Padding = new Thickness(10, 6),
+                Background = candidate == chosen ? Palette.BgField : Brushes.Transparent,
+                BorderBrush = candidate == chosen ? Palette.Cyan : Palette.Border,
+                BorderThickness = new Thickness(1),
+                Cursor = new Cursor(StandardCursorType.Hand),
+                Child = new TextBlock
+                {
+                    Text = candidate,
+                    FontSize = 11,
+                    Foreground = candidate == chosen ? Palette.TextBright : Palette.Text
+                }
+            };
+
+            var path = candidate;
+            entry.PointerPressed += (_, e) =>
+            {
+                e.Handled = true;
+                chosen = path;
+                foreach (var (other, control) in entries)
+                {
+                    var selected = other == path;
+                    control.Background = selected ? Palette.BgField : Brushes.Transparent;
+                    control.BorderBrush = selected ? Palette.Cyan : Palette.Border;
+                    ((TextBlock)control.Child!).Foreground = selected ? Palette.TextBright : Palette.Text;
+                }
+            };
+
+            entries.Add((candidate, entry));
+            rows.Children.Add(entry);
+        }
+
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(DialogField("DATASET", schema.Dataset));
+        body.Children.Add(new TextBlock
+        {
+            Text = "Athena returns rows in no particular order, so the service is asked to sort on " +
+                   "this column. Every leaf in the subtree is read along the same axis.",
+            FontSize = 10,
+            LineHeight = 15,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextFaint
+        });
+        body.Children.Add(new ScrollViewer
+        {
+            MaxHeight = 280,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = rows
+        });
+
+        Dialog.Show("ORDER BY", body, "SET AXIS <GO>", () =>
+        {
+            if (chosen is not { } axis) return false;
+            ChooseAxis(schema.Dataset, axis);
+            return true;
+        });
     }
 
     private static Control MetaCell(string label, string value)

@@ -128,6 +128,13 @@ public class TileCanvas : Border
         placements.Remove(placement);
     }
 
+    /// <summary>Empties the canvas without disturbing the pan, so a redraw stays where the operator left it.</summary>
+    public void Clear()
+    {
+        foreach (var placement in placements) world.Children.Remove(placement.Container);
+        placements.Clear();
+    }
+
     public TilePlacement? Find(DashboardTile tile) =>
         placements.FirstOrDefault(placement => placement.Tile == tile);
 

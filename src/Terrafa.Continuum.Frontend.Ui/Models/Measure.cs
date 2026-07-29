@@ -46,4 +46,11 @@ public sealed class Measure
 
     /// <summary>Whether a chart can draw bounds for this leaf without inventing them.</summary>
     public bool HasVariance => HasValue && !double.IsNaN(Sigma) && Sigma > 0;
+
+    /// <summary>
+    /// What a source list shows on the right of the row. "no value" is its own state and not a
+    /// synonym for "no σ": a column out of the catalogue that has not been sampled is in the tree
+    /// and pickable, it just has nothing behind it to draw yet.
+    /// </summary>
+    public string StateNote => !HasValue ? "no value" : HasVariance ? SigmaDisplay : "no σ";
 }
