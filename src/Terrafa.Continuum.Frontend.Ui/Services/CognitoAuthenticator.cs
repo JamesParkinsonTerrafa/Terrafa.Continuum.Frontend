@@ -1,8 +1,8 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using Amazon;
+using Amazon.CognitoIdentityProvider;
+using Amazon.CognitoIdentityProvider.Model;
+using Amazon.Extensions.CognitoAuthentication;
+using Amazon.Runtime;
 
 namespace Terrafa.Continuum.Frontend.Services;
 
@@ -22,160 +22,171 @@ public interface IAuthenticator
 public sealed class AuthException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
-/// Signs in against a Cognito user pool with <c>USER_PASSWORD_AUTH</c>, which is the flow that
-/// fits accounts an administrator creates and hands out — the user never self-registers, and there
-/// is no hosted-UI redirect to bounce through.
+/// Signs in against a Cognito user pool with <c>USER_SRP_AUTH</c>.
 ///
 /// <para>
-/// This talks to the Cognito JSON API directly rather than through the AWS SDK. The call takes no
-/// AWS credentials and no request signing, so the SDK would contribute nothing but megabytes to a
-/// wasm bundle that has to be downloaded before the app starts.
+/// SRP rather than <c>USER_PASSWORD_AUTH</c> because that is the only user-facing flow the pool's
+/// app client allows, deliberately: SRP proves knowledge of the password without ever transmitting
+/// it, so the password does not reach AWS at the application layer even inside TLS. The trade is
+/// that the client has to do modular exponentiation over a 3072-bit group, derive a key with HKDF
+/// and assemble Cognito's particular claim signature — which is why this leans on
+/// <c>Amazon.Extensions.CognitoAuthentication</c> instead of hand-rolling it.
+/// </para>
+///
+/// <para>
+/// <b>Two shims below exist solely for the browser head.</b> AWS does not support browser-wasm as a
+/// target for AWSSDK.Core, and it fails there in two distinct ways that both look like unrelated
+/// crashes. They are cheap, they are inert on the desktop head, and removing either one breaks
+/// sign-in on the web build only — which is exactly the kind of regression nobody notices locally.
 /// </para>
 /// </summary>
-public sealed class CognitoAuthenticator(HttpClient client) : IAuthenticator
+public sealed class CognitoAuthenticator : IAuthenticator
 {
-    private const string TargetHeader = "X-Amz-Target";
-    private const string InitiateAuth = "AWSCognitoIdentityProviderService.InitiateAuth";
+    private readonly CognitoUserPool _pool;
+    private readonly IAmazonCognitoIdentityProvider _provider;
 
-    public CognitoAuthenticator() : this(new HttpClient { Timeout = TimeSpan.FromSeconds(30) })
+    public CognitoAuthenticator()
     {
+        _provider = new AmazonCognitoIdentityProviderClient(
+            new AnonymousAWSCredentials(),
+            new AmazonCognitoIdentityProviderConfig
+            {
+                RegionEndpoint = RegionEndpoint.GetBySystemName(AuthOptions.Region),
+
+                // Shim 1. AWSSDK.Core's default factory builds a SocketsHttpHandler and sets
+                // EnableMultipleHttp2Connections on it. Browser-wasm has no SocketsHttpHandler, so
+                // merely constructing the client throws PlatformNotSupportedException before a
+                // single byte moves. HttpClientFactory is the SDK's own override point.
+                HttpClientFactory = new BrowserSafeHttpClientFactory(),
+            });
+
+        _pool = new CognitoUserPool(AuthOptions.UserPoolId, AuthOptions.ClientId, _provider);
     }
 
     public Task<AuthTokens> SignInAsync(string username, string password) =>
-        AuthenticateAsync(
-            new CognitoAuthRequest("USER_PASSWORD_AUTH", AuthOptions.ClientId,
-                new Dictionary<string, string> { ["USERNAME"] = username, ["PASSWORD"] = password }),
+        RunAsync(
+            async () =>
+            {
+                var user = new CognitoUser(username, AuthOptions.ClientId, _pool, _provider);
+                var result = await user.StartWithSrpAuthAsync(new InitiateSrpAuthRequest { Password = password });
+                return result.AuthenticationResult;
+            },
             "Could not sign in");
 
     public Task<AuthTokens> RefreshAsync(string refreshToken) =>
-        AuthenticateAsync(
-            new CognitoAuthRequest("REFRESH_TOKEN_AUTH", AuthOptions.ClientId,
-                new Dictionary<string, string> { ["REFRESH_TOKEN"] = refreshToken }),
+        RunAsync(
+            async () =>
+            {
+                // The SDK renews through a CognitoUser carrying the existing tokens rather than
+                // taking a bare refresh token. Only the refresh token and its expiry matter here;
+                // the access and id token slots are what the call is about to replace.
+                var user = new CognitoUser(null, AuthOptions.ClientId, _pool, _provider)
+                {
+                    SessionTokens = new CognitoUserSession(null, null, refreshToken,
+                        DateTime.UtcNow, DateTime.UtcNow.AddDays(30)),
+                };
+
+                var result = await user.StartWithRefreshTokenAuthAsync(
+                    new InitiateRefreshTokenAuthRequest { AuthFlowType = AuthFlowType.REFRESH_TOKEN_AUTH });
+                return result.AuthenticationResult;
+            },
             "Could not renew the session");
 
-    private async Task<AuthTokens> AuthenticateAsync(CognitoAuthRequest body, string what)
+    private static async Task<AuthTokens> RunAsync(Func<Task<AuthenticationResultType?>> call, string what)
     {
         if (!AuthOptions.IsConfigured)
             throw new AuthException("No user pool is configured in AuthOptions, so there is nothing to sign in to.");
 
-        // Serialised up front rather than streamed: a JsonContent has no length until it is
-        // written, so it goes out chunked with no Content-Length, and the AWS endpoints expect a
-        // length on a POST. Buffering costs nothing here — the body is two short strings.
-        var content = new StringContent(
-            JsonSerializer.Serialize(body, CognitoJson.Default.CognitoAuthRequest), Encoding.UTF8);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/x-amz-json-1.1");
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, AuthOptions.Endpoint)
-        {
-            Content = content
-        };
-        request.Headers.TryAddWithoutValidation(TargetHeader, InitiateAuth);
-
-        HttpResponseMessage response;
+        AuthenticationResultType? result;
         try
         {
-            response = await client.SendAsync(request);
+            result = await call();
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex)
         {
-            throw new AuthException($"{what}: could not reach the sign-in service. {ex.Message}", ex);
+            throw new AuthException($"{what}: {Explain(ex, what)}", ex);
         }
 
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode) throw new AuthException($"{what}: {await ExplainAsync(response)}");
+        if (result is not { AccessToken: { Length: > 0 } token })
+            throw new AuthException($"{what}: the sign-in service returned no token.");
 
-            CognitoAuthResponse? result;
-            try
-            {
-                result = await response.Content.ReadFromJsonAsync(CognitoJson.Default.CognitoAuthResponse);
-            }
-            catch (JsonException ex)
-            {
-                throw new AuthException($"{what}: the sign-in service returned an unreadable response.", ex);
-            }
-
-            // A challenge is a 200 with no tokens in it. The one that actually turns up is
-            // NEW_PASSWORD_REQUIRED, which is the state an administrator-created account sits in
-            // until its temporary password is replaced — so it is named rather than lumped in with
-            // a generic failure, because the fix is specific and this app cannot do it.
-            if (result?.ChallengeName is { Length: > 0 } challenge)
-            {
-                throw new AuthException(challenge == "NEW_PASSWORD_REQUIRED"
-                    ? "This account still has its temporary password and must have a permanent one set before it can be used here. " +
-                      $"Contact {AuthOptions.ContactEmail}."
-                    : $"{what}: the account needs to complete '{challenge}', which this app cannot do.");
-            }
-
-            if (result?.AuthenticationResult is not { AccessToken: { Length: > 0 } token } tokens)
-                throw new AuthException($"{what}: the sign-in service returned no token.");
-
-            return new AuthTokens(token, tokens.IdToken, tokens.RefreshToken, tokens.ExpiresIn);
-        }
+        return new AuthTokens(token, result.IdToken, result.RefreshToken, result.ExpiresIn ?? 0);
     }
 
     /// <summary>
-    /// Turns a Cognito error into something worth reading. Its wire errors carry the failure in a
-    /// <c>__type</c> field, and the few that a person can actually act on are worth saying plainly
-    /// rather than relaying "NotAuthorizedException" to someone mistyping a password.
+    /// Turns an SDK exception into something worth reading. The few a person can actually act on
+    /// are worth saying plainly rather than relaying "NotAuthorizedException" to someone who has
+    /// mistyped a password.
     /// </summary>
-    private static async Task<string> ExplainAsync(HttpResponseMessage response)
+    private static string Explain(Exception ex, string what) => ex switch
     {
-        CognitoError? error = null;
-        try
-        {
-            error = await response.Content.ReadFromJsonAsync(CognitoJson.Default.CognitoError);
-        }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException or HttpRequestException)
-        {
-            // Not a Cognito error body; fall through to the status code.
-        }
+        NotAuthorizedException => "that username and password were not accepted.",
+        UserNotFoundException => "that username was not accepted.",
+        UserNotConfirmedException => "that account has not been confirmed yet.",
+        PasswordResetRequiredException => "that account needs its password reset before it can be used.",
+        TooManyRequestsException or LimitExceededException =>
+            "too many attempts have been made — wait a moment and try again.",
 
-        // __type arrives either bare or namespaced as "com.amazonaws...#NotAuthorizedException".
-        var kind = error?.Type is { Length: > 0 } raw ? raw[(raw.IndexOf('#') + 1)..] : "";
+        // An administrator-created account sits in FORCE_CHANGE_PASSWORD until a permanent password
+        // is set for it, and Cognito answers the SRP challenge with NEW_PASSWORD_REQUIRED rather
+        // than tokens. Named because the fix is specific and this app deliberately cannot do it.
+        InvalidParameterException p when p.Message.Contains("NEW_PASSWORD_REQUIRED", StringComparison.OrdinalIgnoreCase) =>
+            "This account still has its temporary password and must have a permanent one set before it can be used here. " +
+            $"Contact {AuthOptions.ContactEmail}.",
 
-        return kind switch
-        {
-            "NotAuthorizedException" => "that username and password were not accepted.",
-            "UserNotFoundException" => "that username was not accepted.",
-            "UserNotConfirmedException" => "that account has not been confirmed yet.",
-            "PasswordResetRequiredException" => "that account needs its password reset before it can be used.",
-            "TooManyRequestsException" or "LimitExceededException" =>
-                "too many attempts have been made — wait a moment and try again.",
-            "InvalidParameterException" => $"the sign-in service rejected the request. {error?.Message}",
-            "ResourceNotFoundException" =>
-                "the configured user pool client does not exist — check AuthOptions.ClientId and Region.",
-            _ => error?.Message is { Length: > 0 } message
-                ? message
-                : $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}".TrimEnd()
-        };
-    }
+        InvalidParameterException p => $"the sign-in service rejected the request. {p.Message}",
+        ResourceNotFoundException =>
+            "the configured user pool client does not exist — check AuthOptions.ClientId and Region.",
+
+        // USER_SRP_AUTH missing from the app client's explicit auth flows lands here. It is a
+        // deployment fault rather than a user one, so it says so instead of blaming the password.
+        AmazonCognitoIdentityProviderException a when a.Message.Contains("Auth flow not enabled", StringComparison.OrdinalIgnoreCase) =>
+            "this pool's app client does not allow USER_SRP_AUTH, so the app cannot sign anyone in.",
+
+        HttpRequestException or TaskCanceledException => $"could not reach the sign-in service. {ex.Message}",
+        AmazonServiceException s => s.Message,
+        _ => ex.Message,
+    };
 }
 
-// Cognito's JSON protocol is PascalCase on the wire, unlike the DataFeed service, so these get
-// their own context rather than inheriting the camelCase policy of DataFeedJson.
+/// <summary>
+/// Shim 2's carrier. Returns an <see cref="HttpClient"/> whose handler buffers the response body
+/// before the SDK reads it.
+/// </summary>
+internal sealed class BrowserSafeHttpClientFactory : HttpClientFactory
+{
+    public override HttpClient CreateHttpClient(IClientConfig config) =>
+        new(new BufferingHandler()) { Timeout = TimeSpan.FromSeconds(30) };
 
-internal sealed record CognitoAuthRequest(
-    string AuthFlow,
-    string ClientId,
-    Dictionary<string, string> AuthParameters);
+    public override bool UseSDKHttpClientCaching(IClientConfig config) => true;
 
-internal sealed record CognitoAuthResponse(
-    CognitoAuthenticationResult? AuthenticationResult,
-    string? ChallengeName);
+    public override bool DisposeHttpClientsAfterUse(IClientConfig config) => false;
+}
 
-internal sealed record CognitoAuthenticationResult(
-    string? AccessToken,
-    string? IdToken,
-    string? RefreshToken,
-    int ExpiresIn);
+/// <summary>
+/// Shim 2. AWSSDK.Core unmarshals responses with a <b>synchronous</b> <c>Stream.Read</c>, and the
+/// browser's response stream only supports async reads — it throws
+/// <c>NotSupportedException: net_http_synchronous_reads_not_supported</c>, surfacing as an opaque
+/// "Error unmarshalling response back from AWS" on an HTTP 200. Reading the body to completion here
+/// means the SDK's sync read lands on a MemoryStream instead.
+///
+/// <para>
+/// Not a trimming problem: it reproduces identically with <c>PublishTrimmed=false</c>. Responses on
+/// this path are a few kilobytes of JSON, so buffering costs nothing worth measuring.
+/// </para>
+/// </summary>
+internal sealed class BufferingHandler() : DelegatingHandler(new HttpClientHandler())
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        var response = await base.SendAsync(request, ct);
 
-internal sealed record CognitoError(
-    [property: JsonPropertyName("__type")] string? Type,
-    [property: JsonPropertyName("message")] string? Message);
+        var body = await response.Content.ReadAsByteArrayAsync(ct);
+        var buffered = new ByteArrayContent(body);
+        foreach (var header in response.Content.Headers)
+            buffered.Headers.TryAddWithoutValidation(header.Key, header.Value);
 
-[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
-[JsonSerializable(typeof(CognitoAuthRequest))]
-[JsonSerializable(typeof(CognitoAuthResponse))]
-[JsonSerializable(typeof(CognitoError))]
-internal sealed partial class CognitoJson : JsonSerializerContext;
+        response.Content = buffered;
+        return response;
+    }
+}

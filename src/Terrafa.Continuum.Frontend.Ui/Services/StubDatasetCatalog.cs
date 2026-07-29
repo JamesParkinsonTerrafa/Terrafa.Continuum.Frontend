@@ -109,9 +109,13 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
 
         "MET_ENSEMBLE" => Schema(dataset, "national met", "vM.7", "6 h cycle", "2016-01 → live", "public", root =>
         {
+            // σ as its own leaf under each member rather than an inline string: this is the shape
+            // BindSigmaLeaves exists for, and the reason a tile on m01_temp draws bounds at all.
             root.Object("members", "ENSEMBLE")
-                .Leaf("m01_temp", "302.1 K", "", "σ native", "ensemble member")
-                .Leaf("m02_temp", "301.4 K", "", "σ native", "ensemble member");
+                .Leaf("m01_temp", "302.1 K", "", "σ native", "ensemble member · σ carried as a leaf",
+                    sigmaLeaf: "0.9 K")
+                .Leaf("m02_temp", "301.4 K", "", "σ native", "ensemble member · σ carried as a leaf",
+                    sigmaLeaf: "1.1 K");
             root.Object("spread").Leaf("sigma_native", "0.9 K", "", "σ native", "σ carried natively — no fit");
         }),
 
@@ -172,6 +176,7 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
             Tag = "SUBTREE ROOT"
         };
         build(new SchemaNode(root));
+        MeasureNumerics.BindSigmaLeaves(root);
         return new DatasetSchema(dataset, provider, contract, cadence, coverage, licence, root);
     }
 
@@ -191,24 +196,50 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
             return new SchemaNode(child);
         }
 
+        /// <summary>
+        /// Adds a measure leaf. <paramref name="sigmaLeaf"/> gives it a "sigma" child carrying its
+        /// σ as data in its own right — the shape a feed uses when σ varies per reading, rather
+        /// than the inline "± 92" string.
+        /// </summary>
         public SchemaNode Leaf(
-            string name, string display, string sigmaDisplay, string sigmaKind, string detail, bool isVector = false)
+            string name, string display, string sigmaDisplay, string sigmaKind, string detail,
+            bool isVector = false, string sigmaLeaf = "")
         {
-            node.Children.Add(new DataTreeNode
+            var path = $"{node.Path}.{name}";
+            var leaf = new DataTreeNode
             {
                 Name = name,
-                Path = $"{node.Path}.{name}",
+                Path = path,
                 Kind = DataNodeKind.Measure,
                 Tag = isVector ? "VECTOR" : "",
-                Reading = new Measure
+                Reading = MeasureNumerics.Hydrate(
+                    new Measure
+                    {
+                        Display = display,
+                        SigmaDisplay = sigmaDisplay,
+                        SigmaKind = sigmaKind,
+                        Detail = detail,
+                        IsVector = isVector
+                    },
+                    path)
+            };
+
+            if (sigmaLeaf.Length > 0)
+            {
+                var sigmaPath = $"{path}.{MeasureNumerics.SigmaLeafName}";
+                leaf.Children.Add(new DataTreeNode
                 {
-                    Display = display,
-                    SigmaDisplay = sigmaDisplay,
-                    SigmaKind = sigmaKind,
-                    Detail = detail,
-                    IsVector = isVector
-                }
-            });
+                    Name = MeasureNumerics.SigmaLeafName,
+                    Path = sigmaPath,
+                    Kind = DataNodeKind.Measure,
+                    Tag = "σ",
+                    Reading = MeasureNumerics.Hydrate(
+                        new Measure { Display = sigmaLeaf, SigmaKind = sigmaKind, Detail = $"σ for {name}" },
+                        sigmaPath)
+                });
+            }
+
+            node.Children.Add(leaf);
             return this;
         }
     }

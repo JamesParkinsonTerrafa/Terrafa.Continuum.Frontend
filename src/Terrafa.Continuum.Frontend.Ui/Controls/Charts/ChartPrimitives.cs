@@ -12,6 +12,19 @@ public sealed class ChartSeries
     public string? Label { get; init; }
     public Point? LabelAt { get; init; }
     public bool LabelAnchorEnd { get; init; } = true;
+
+    /// <summary>
+    /// Upper and lower bound traces, drawn as thin lines either side of the series with a faint
+    /// fill between them. Both must be set for either to draw — a one-sided bound is a bug, not a
+    /// style, and silently drawing it would misreport the interval.
+    /// </summary>
+    public IReadOnlyList<Point>? Upper { get; init; }
+
+    public IReadOnlyList<Point>? Lower { get; init; }
+
+    public IBrush? BoundFill { get; init; }
+
+    public bool HasBounds => Upper is { Count: > 1 } && Lower is { Count: > 1 };
 }
 
 public sealed record AxisTick(double Value, string Label);

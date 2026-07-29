@@ -33,6 +33,7 @@ public static class SnapshotRunner
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
+        CaptureDashboardProbe(outputDir);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -432,6 +433,116 @@ public static class SnapshotRunner
         Console.WriteLine($"tfn probe: tabs after close = {view.StackTabs.Labels.Count}");
 
         window.Close();
+    }
+
+    /// <summary>
+    /// Drags a tile out of the element rail onto the canvas — which lands empty and opens its
+    /// editor — then flips the master variance switch. Those two frames are the only way to see
+    /// the states the dashboard is built around: an unwired tile, and every tile with its bounds
+    /// suppressed for prototyping.
+    /// </summary>
+    private static void CaptureDashboardProbe(string outputDir)
+    {
+        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        Point Centre(Visual visual) =>
+            visual.TranslatePoint(new Point(visual.Bounds.Width / 2, visual.Bounds.Height / 2), window)!.Value;
+
+        var lineEntry = view.ElementsList.GetVisualDescendants().OfType<TextBlock>()
+            .First(text => text.Text == "LINE CHART");
+        var from = Centre(lineEntry);
+        var to = new Point(760, 700);
+
+        window.MouseDown(from, MouseButton.Left);
+        window.MouseMove(new Point(from.X + 40, from.Y + 40));
+        window.MouseMove(new Point((from.X + to.X) / 2, (from.Y + to.Y) / 2));
+        window.MouseMove(to);
+        window.MouseUp(to, MouseButton.Left);
+        Pump();
+
+        Console.WriteLine($"dash probe: tiles = {view.Canvas.Placements.Count}, editors = {view.EditorTabs.Labels.Count}");
+
+        // tank_03 reports but is not uncertainty-characterised, so wiring it blanks the tile — and
+        // the σ picker only appears for exactly that case.
+        void ClickSourceRow(string label)
+        {
+            var row = view.EditorBody.GetVisualDescendants().OfType<TextBlock>()
+                .FirstOrDefault(text => text.Text == label);
+            if (row is null)
+            {
+                Console.Error.WriteLine($"dash probe: no source row '{label}'");
+                return;
+            }
+            var point = Centre(row);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+        }
+
+        ClickSourceRow("tank_farm.tank_03.level");
+        Console.WriteLine($"dash probe: wired = {string.Join(",", view.ActiveTileSources.Select(s => s.Path))}");
+        Capture(window, outputDir, "3-dash-interact");
+
+        // The σ keys repeat the figure names the source list already shows, so they are located
+        // through the "σ FROM" caption rather than by label alone.
+        var sigmaGroup = view.EditorBody.GetVisualDescendants().OfType<StackPanel>()
+            .FirstOrDefault(panel => panel.Children.Count > 0 &&
+                                     panel.Children[0] is TextBlock { Text: "σ FROM" });
+        if (sigmaGroup is null)
+        {
+            Console.Error.WriteLine("dash probe: σ picker not shown");
+        }
+        else
+        {
+            var key = sigmaGroup.GetVisualDescendants().OfType<TextBlock>()
+                .First(text => text.Text == "fig.total_inventory");
+            var point = Centre(key);
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            Pump();
+
+            var bound = view.ActiveTileSources.FirstOrDefault(s => s.Path.EndsWith("tank_03.level"));
+            Console.WriteLine($"dash probe: σ bound to {bound?.SigmaFigureKey ?? "(none)"}");
+            Capture(window, outputDir, "3-dash-sigma-bound");
+        }
+
+        var toggle = Centre(view.VarianceToggle);
+        window.MouseDown(toggle, MouseButton.Left);
+        window.MouseUp(toggle, MouseButton.Left);
+        Pump();
+
+        Console.WriteLine($"dash probe: variance enabled = {VarianceSettings.Enabled}");
+        Capture(window, outputDir, "3-dash-novariance");
+
+        VarianceSettings.SetEnabled(true);
+        window.Close();
+
+        ProbeSigmaLeafBinding();
+    }
+
+    /// <summary>
+    /// MET_ENSEMBLE states σ as a child leaf rather than inline, and it is not mounted by default,
+    /// so that route is asserted against the schema directly rather than through a frame.
+    /// </summary>
+    private static void ProbeSigmaLeafBinding()
+    {
+        var schema = StubDatasetCatalog.Instance.GetSchemaAsync("MET_ENSEMBLE").GetAwaiter().GetResult();
+        var member = schema.Root.Find("MET_ENSEMBLE.members.m01_temp")?.Reading;
+        var carrier = schema.Root.Find("MET_ENSEMBLE.members.m01_temp.sigma")?.Reading;
+
+        Console.WriteLine(
+            $"sigma-leaf probe: m01_temp σ = {member?.Sigma:0.###} · " +
+            $"σ(x) points = {member?.SigmaHistory.Count ?? 0} · " +
+            $"variance = {member?.HasVariance} · carrier hidden = {carrier?.IsSigmaCarrier}");
     }
 
     /// <summary>Drags a dashboard figure out of the rail onto the plan, moves it, and opens the
