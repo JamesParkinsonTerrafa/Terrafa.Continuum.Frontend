@@ -16,6 +16,12 @@
     <PackageReference Include="Avalonia" Version="11.3.18" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.18" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
+    <!-- SRP, so the password is never sent — the pool's app client allows USER_SRP_AUTH and
+         deliberately not USER_PASSWORD_AUTH. Hand-rolling SRP means BigInteger modular
+         exponentiation, HKDF and a Cognito-specific key schedule, which is not code worth owning.
+         Trimmed, these three assemblies cost ~190 KB brotli in the wasm bundle. Two wasm shims in
+         CognitoAuthenticator are needed to make them run in a browser at all — see there. -->
+    <PackageReference Include="Amazon.Extensions.CognitoAuthentication" Version="3.1.5" />
   </ItemGroup>
   <ItemGroup>
     <!-- Embedded so text renders identically on every head. The desktop build used to

@@ -4,35 +4,34 @@ namespace Terrafa.Continuum.Frontend.Services;
 /// Where the DataFeed service lives and how hard this client leans on it.
 ///
 /// <para>
-/// <b>To point the app at a deployed service, change <see cref="BaseAddress"/> below.</b> It is
-/// currently a placeholder in 192.0.2.0/24 — the range RFC 5737 reserves for documentation, which
-/// nothing routes. That is deliberate: an unset address can only ever fail to connect, it can
-/// never quietly reach some other machine that happens to answer on that port.
+/// The address is the deployed API Gateway stage, compiled in for the same reason the Cognito
+/// values in <see cref="AuthOptions"/> are: the browser head has no environment, so a default that
+/// only ever came from <c>TERRAFA_DATAFEED_URL</c> left the web build pointing at nothing. The
+/// variable still overrides on the desktop head.
 /// </para>
 ///
 /// <para>
-/// While the address is the placeholder, <see cref="IsConfigured"/> is false and the app keeps
-/// running against <see cref="StubDatasetCatalog"/> exactly as it does today. Filling in a real
-/// address is the only step needed to switch the catalogue over to the live service.
+/// The gateway rejects an unauthenticated request itself, before the function is invoked, so the
+/// address being public gives away only that the service exists.
 /// </para>
 /// </summary>
 public static class DataFeedOptions
 {
-    /// <summary>The reserved address that means "not deployed yet". Compared against, never dialled.</summary>
-    private const string Placeholder = "http://192.0.2.10:8080";
-
     /// <summary>
     /// Root of the DataFeed service, without the <c>/api</c> suffix — the client appends the
-    /// route itself. Overridden at run time by <c>TERRAFA_DATAFEED_URL</c> on the desktop head,
-    /// which has an environment to read; the browser head has none, so there it is this constant.
+    /// route itself.
     /// </summary>
     public static string BaseAddress { get; } =
         Environment.GetEnvironmentVariable("TERRAFA_DATAFEED_URL") is { Length: > 0 } fromEnvironment
             ? fromEnvironment.TrimEnd('/')
-            : Placeholder;
+            : "https://0ncy4qt6v1.execute-api.eu-north-1.amazonaws.com";
 
-    /// <summary>False while the address is still the placeholder — the app then stays on the stub.</summary>
-    public static bool IsConfigured => BaseAddress != Placeholder;
+    /// <summary>
+    /// Whether the catalogue should read from the live service at all. Always true now that a real
+    /// address is compiled in; kept because the call sites branch on it to fall back to
+    /// <see cref="StubDatasetCatalog"/>, which is still what runs when the user has not signed in.
+    /// </summary>
+    public static bool IsConfigured => BaseAddress.Length > 0;
 
     /// <summary>Host and port only, for showing which service a screen is reading from.</summary>
     public static string DisplayHost =>

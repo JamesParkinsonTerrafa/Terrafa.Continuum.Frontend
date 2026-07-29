@@ -25,6 +25,14 @@ public class LineChart : Control
     public ChartBand? Band { get; set; }
     public IReadOnlyList<double> BarValues { get; set; } = [];
     public IReadOnlyList<IBrush> BarBrushes { get; set; } = [];
+
+    /// <summary>
+    /// 1σ per bar, drawn as a whisker. Shorter than <see cref="BarValues"/> means the trailing bars
+    /// carry no variance and get no whisker; NaN does the same for a single bar.
+    /// </summary>
+    public IReadOnlyList<double> BarSigmas { get; set; } = [];
+
+    public IBrush BarWhiskerBrush { get; set; } = Palette.TextSub;
     public IReadOnlyList<ChartSeries> Series { get; set; } = [];
     public double? ThresholdY { get; set; }
     public IBrush ThresholdBrush { get; set; } = Palette.Red;
@@ -133,27 +141,94 @@ public class LineChart : Control
             var x = plot.X + slot * i + (slot - barWidth) / 2;
             context.FillRectangle(brush, new Rect(x, top, barWidth, plot.Bottom - top));
         }
+
+        DrawBarWhiskers(context, plot, slot, barWidth);
+    }
+
+    /// <summary>A bar without a whisker states a quantity it cannot support — so σ is drawn on top of the fill.</summary>
+    private void DrawBarWhiskers(DrawingContext context, Rect plot, double slot, double barWidth)
+    {
+        if (BarSigmas.Count == 0) return;
+
+        var pen = new Pen(BarWhiskerBrush, 1);
+        var capHalfWidth = Math.Max(barWidth * 0.22, 2);
+        var limit = Math.Min(BarValues.Count, BarSigmas.Count);
+
+        for (var i = 0; i < limit; i++)
+        {
+            var sigma = BarSigmas[i];
+            if (double.IsNaN(sigma) || sigma <= 0) continue;
+
+            var centre = plot.X + slot * i + slot / 2;
+            var upper = Map(new Point(0, BarValues[i] + sigma), plot).Y;
+            var lower = Map(new Point(0, BarValues[i] - sigma), plot).Y;
+
+            context.DrawLine(pen, new Point(centre, upper), new Point(centre, lower));
+            context.DrawLine(pen, new Point(centre - capHalfWidth, upper), new Point(centre + capHalfWidth, upper));
+            context.DrawLine(pen, new Point(centre - capHalfWidth, lower), new Point(centre + capHalfWidth, lower));
+        }
     }
 
     private void DrawSeriesLines(DrawingContext context, Rect plot)
     {
         foreach (var series in Series)
         {
+            DrawSeriesBounds(context, plot, series);
+
             if (series.Points.Count < 2) continue;
             var pen = new Pen(series.Stroke, series.Thickness)
             {
                 DashStyle = series.Dashes is null ? null : new DashStyle(series.Dashes, 0)
             };
-            var geometry = new StreamGeometry();
-            using (var geometryContext = geometry.Open())
-            {
-                geometryContext.BeginFigure(Map(series.Points[0], plot), false);
-                for (var i = 1; i < series.Points.Count; i++)
-                    geometryContext.LineTo(Map(series.Points[i], plot));
-                geometryContext.EndFigure(false);
-            }
-            context.DrawGeometry(null, pen, geometry);
+            context.DrawGeometry(null, pen, Polyline(series.Points, plot));
         }
+    }
+
+    /// <summary>
+    /// The line-chart form of a bound: a trace above and one below, thinner than the series so the
+    /// central estimate still reads first, over a faint fill that ties the pair together.
+    /// </summary>
+    private void DrawSeriesBounds(DrawingContext context, Rect plot, ChartSeries series)
+    {
+        if (!series.HasBounds) return;
+
+        var upper = series.Upper!;
+        var lower = series.Lower!;
+
+        if (series.BoundFill is { } fill)
+        {
+            var band = new StreamGeometry();
+            using (var bandContext = band.Open())
+            {
+                bandContext.BeginFigure(Map(upper[0], plot), true);
+                for (var i = 1; i < upper.Count; i++)
+                    bandContext.LineTo(Map(upper[i], plot));
+                for (var i = lower.Count - 1; i >= 0; i--)
+                    bandContext.LineTo(Map(lower[i], plot));
+                bandContext.EndFigure(true);
+            }
+            context.DrawGeometry(fill, null, band);
+        }
+
+        var pen = new Pen(series.Stroke, Math.Max(series.Thickness * 0.5, 0.75))
+        {
+            DashStyle = new DashStyle([3, 3], 0)
+        };
+        context.DrawGeometry(null, pen, Polyline(upper, plot));
+        context.DrawGeometry(null, pen, Polyline(lower, plot));
+    }
+
+    private StreamGeometry Polyline(IReadOnlyList<Point> points, Rect plot)
+    {
+        var geometry = new StreamGeometry();
+        using (var geometryContext = geometry.Open())
+        {
+            geometryContext.BeginFigure(Map(points[0], plot), false);
+            for (var i = 1; i < points.Count; i++)
+                geometryContext.LineTo(Map(points[i], plot));
+            geometryContext.EndFigure(false);
+        }
+        return geometry;
     }
 
     private void DrawThreshold(DrawingContext context, Rect plot)

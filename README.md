@@ -39,53 +39,116 @@ Signing in or out empties the workspace. A subtree mounted from the demo catalog
 against a real one, so carrying mounts across the switch would leave the tree and network screens
 drawing leaves whose dataset is no longer listed.
 
-The address lives in one place,
-[`Services/DataFeedOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/DataFeedOptions.cs).
-Until it is filled in, it is an address in the range RFC 5737 reserves for documentation, the app
-stays on `StubDatasetCatalog`, and the status bar says so — an unset address can only fail to
-connect, never quietly reach whatever else answers on that port. Filling in a real one is the
-whole switch-over. The desktop head also honours `TERRAFA_DATAFEED_URL`, which is the easy way to
-point a local build at a local service:
+### The deployed values
+
+Everything the app needs to find the backend is compiled in. None of it is a secret — a browser
+app cannot authenticate without knowing which pool to authenticate against, and all of it travels
+in the clear on the first request any signed-in browser makes.
+
+| Value | Lives in | Current |
+| --- | --- | --- |
+| DataFeed base address | [`Services/DataFeedOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/DataFeedOptions.cs) | `https://0ncy4qt6v1.execute-api.eu-north-1.amazonaws.com` |
+| Cognito region | [`Services/AuthOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/AuthOptions.cs) | `eu-north-1` |
+| App client id | same | `2lroc37l2gjoi6nnvbitpm4m57` |
+| User pool id | same | `eu-north-1_dgRWlrr7C` |
+
+They are constants rather than configuration because **the browser head has no environment**:
+`Environment.GetEnvironmentVariable` returns null under wasm whatever the deploy sets, so an
+environment-only default left the web build permanently unable to sign in. The desktop head does
+have an environment, and these still override there:
 
 ```bash
 TERRAFA_DATAFEED_URL=http://127.0.0.1:5205 dotnet run --project src/Terrafa.Continuum.Frontend/Terrafa.Continuum.Frontend.csproj
 ```
 
-The browser head has no environment to read, so there the constant is the only setting.
+`TERRAFA_COGNITO_REGION`, `TERRAFA_COGNITO_CLIENT_ID` and `TERRAFA_COGNITO_USER_POOL_ID` work the
+same way. To re-read them all from the deployed stack:
+
+```bash
+terraform -chdir=terraform output
+```
 
 ### Sign-in
 
-Accounts are ones you create — there is no self-registration. Sign-in posts the username and
-password straight to a Cognito user pool (`USER_PASSWORD_AUTH`), takes the access token back, and
-sends it as `Authorization: Bearer` on every call to the DataFeed service. The token is held in
-memory only, so closing the app signs out; it is renewed automatically about two minutes before
-it expires, and a revoked refresh token drops the app back to demo data rather than failing
+Accounts are ones you create — there is no self-registration. Sign-in uses **`USER_SRP_AUTH`**,
+which proves knowledge of the password without ever sending it; the app takes the access token
+back and sends it as `Authorization: Bearer` on every call to the DataFeed service. The token is
+held in memory only, so closing the app signs out; it is renewed automatically about two minutes
+before it expires, and a revoked refresh token drops the app back to demo data rather than failing
 silently.
 
-Fill the pool in at
-[`Services/AuthOptions.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/AuthOptions.cs) — region
-and **app client id**, neither of which is a secret, since the client is the public one
-(`cognito_generate_client_secret = false`) and the pool is what enforces the password. Blank
-values leave the dialog saying sign-in is not available rather than offering a box that goes
-nowhere.
+SRP rather than `USER_PASSWORD_AUTH` because that is the only user-facing flow the pool's app
+client allows, deliberately. The arithmetic comes from `Amazon.Extensions.CognitoAuthentication`
+rather than being hand-rolled — trimmed, it costs about 190 KB brotli in the wasm bundle.
 
-Four things have to be true on the AWS side before it works:
+**Two shims in [`Services/CognitoAuthenticator.cs`](src/Terrafa.Continuum.Frontend.Ui/Services/CognitoAuthenticator.cs)
+exist only for the browser head.** AWS does not support browser-wasm for AWSSDK.Core, and it fails
+there in two ways that both look like unrelated crashes: it builds a `SocketsHttpHandler` that wasm
+has no implementation of, and it unmarshals responses with a synchronous `Stream.Read` that the
+browser's async-only response stream refuses. Both are inert on the desktop head, and removing
+either breaks sign-in **on the web build only**.
 
-- The app client allows **`ALLOW_USER_PASSWORD_AUTH`**. The hosted-UI redirect the Terraform's
-  callback URLs describe is a different flow from the in-app password box; a client can offer both.
-- Each user has a **permanent** password (`admin-set-user-password --permanent`). An
-  administrator-created account otherwise sits in `FORCE_CHANGE_PASSWORD`, and Cognito answers
-  with a `NEW_PASSWORD_REQUIRED` challenge that this app reports but cannot complete.
-- The API has a **JWT authorizer** on the user pool. Nothing exists in the Terraform yet, so today
-  the service accepts the token by ignoring it.
-- **CORS** lists the CloudFront origin in `cors_allow_origins`, or every browser-head request
-  fails preflight. Two origins are involved now, not one: the wasm bundle also calls
-  `cognito-idp.<region>.amazonaws.com` directly, which Cognito already allows. The desktop head is
-  unaffected either way — it is not a browser and has no origin.
+#### Creating a user
 
-The client sends the **access** token, which is what a JWT authorizer configured with the resource
-server's scopes expects. If yours is configured against an audience instead, it wants the id token
-— that is the one line to change in `AuthSession`.
+Self sign-up is off. Both commands are needed: `admin-create-user` issues a *temporary* password,
+which leaves the account in `FORCE_CHANGE_PASSWORD` — Cognito then answers sign-in with a
+`NEW_PASSWORD_REQUIRED` challenge that this app deliberately cannot complete. The second command
+is what makes the password you hand out actually work, and it is once per user, not a recurring
+prompt anyone sees.
+
+```bash
+POOL=eu-north-1_dgRWlrr7C
+```
+
+```bash
+aws cognito-idp admin-create-user --user-pool-id "$POOL" --username you@example.com --user-attributes Name=email,Value=you@example.com Name=email_verified,Value=true --message-action SUPPRESS --region eu-north-1
+```
+
+```bash
+aws cognito-idp admin-set-user-password --user-pool-id "$POOL" --username you@example.com --password 'YourPassword1!' --permanent --region eu-north-1
+```
+
+Plain ASCII quotes and a double hyphen on `--permanent` — a smart quote or an en dash pasted from
+a document makes the CLI reject the command, and the account silently stays in
+`FORCE_CHANGE_PASSWORD`. Check it took:
+
+```bash
+aws cognito-idp list-users --user-pool-id eu-north-1_dgRWlrr7C --query 'Users[].{u:Username,status:UserStatus}' --output table --region eu-north-1
+```
+
+`CONFIRMED` is the state you want. The pool's policy is 12+ characters with upper, lower, number
+and symbol.
+
+#### Still outstanding on the AWS side
+
+- **CORS** must list the CloudFront origin in `cors_allow_origins`, or every browser-head request
+  to the DataFeed API fails preflight. Cognito's own endpoint sends permissive CORS, so sign-in
+  itself works either way — it is the data calls that break. The desktop head is unaffected: not a
+  browser, no origin.
+
+The client sends the **access** token. The route's scope check is off (`api_required_scopes = []`)
+because `InitiateAuth` access tokens carry only `aws.cognito.signin.user.admin` — custom resource
+server scopes like `datafeed/read` are issued solely by the hosted UI's `/token` endpoint, so
+requiring one would reject every token this app can obtain. The JWT authorizer still validates
+issuer and audience, so an unauthenticated request never reaches the function.
+
+### Testing sign-in
+
+```bash
+dotnet test
+```
+
+[`tests/`](tests/Terrafa.Continuum.Frontend.Tests/AuthenticationTests.cs) talks to the **real** user
+pool, and needs no credentials: a deliberately wrong password proves the whole handshake ran,
+because Cognito can only reject the SRP proof after accepting everything leading up to it. That
+one assertion covers the region and client id resolving to a pool that exists, the app client still
+permitting `USER_SRP_AUTH`, the SRP key schedule producing a well-formed claim, and the response
+unmarshalling — each of which has its own failure message the test asserts it did *not* get. They
+need outbound network, so CI without it runs:
+
+```bash
+dotnet test --filter Category!=Live
+```
 
 Opening a dataset costs one Athena query, billed on bytes scanned, because that is where the
 leaf values come from. `DataFeedOptions.SampleValues` turns that off and leaves the schema

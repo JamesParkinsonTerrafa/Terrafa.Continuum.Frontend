@@ -76,12 +76,14 @@ public sealed class Tank02
     };
 }
 
+// Plumbed in and reporting, but not yet uncertainty-characterised: readings with no σ behind them.
+// This is the case the dashboard blanks, and the one a σ figure can be nominated for.
 public sealed class Tank03
 {
     [TreeNew]
     public Measure Level { get; init; } = new()
     {
-        Display = "—",
+        Display = "6,740 bbl",
         Detail = "no σ yet — awaiting Type A/B",
         IsNew = true
     };
@@ -89,7 +91,7 @@ public sealed class Tank03
     [TreeNew]
     public Measure Temp { get; init; } = new()
     {
-        Display = "—",
+        Display = "300.5 K",
         Detail = "no σ yet — awaiting Type A/B",
         IsNew = true
     };

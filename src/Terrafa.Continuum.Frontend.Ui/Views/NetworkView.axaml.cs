@@ -420,30 +420,42 @@ public partial class NetworkView : UserControl
         };
     }
 
-    private static NodeCard BuildInventoryFigureCard() => new()
-    {
-        Variant = NodeCardVariant.Figure,
-        TagText = "DASHBOARD FIG",
-        Title = "fig.total_inventory",
-        ValueMain = "24,085 bbl",
-        ValueAccent = "± 152",
-        ValueSize = 16,
-        Width = 270,
-        Note = "σ composed up the tree · pinned to DASH & MAP"
-    };
+    private static NodeCard BuildInventoryFigureCard() => BuildFigureCard("total_inventory", "");
 
-    private static NodeCard BuildExpiryFigureCard() => new()
+    private static NodeCard BuildExpiryFigureCard() => BuildFigureCard("expiry_risk", "L4");
+
+    /// <summary>
+    /// Figure cards read from <see cref="FigureCatalog"/> rather than restating their own values —
+    /// the dashboard offers the same figures as tile sources, and the two screens have to agree.
+    /// </summary>
+    private static NodeCard BuildFigureCard(string key, string tagRight)
     {
-        Variant = NodeCardVariant.Provisional,
-        TagText = "DASHBOARD FIG · PROVISIONAL",
-        TagRight = "L4",
-        Title = "fig.expiry_risk",
-        ValueMain = "λ 0.031 /d",
-        ValueAccent = "± 0.019",
-        ValueSize = 16,
-        Width = 270,
-        Note = "⚠ under-determined — frailty Z not identifiable from these leaves. Drawn provisional, not asserted. Add prior or leaf to pin down."
-    };
+        var figure = FigureCatalog.Instance.Find(key);
+        if (figure is null)
+        {
+            return new NodeCard
+            {
+                Variant = NodeCardVariant.Provisional,
+                TagText = "DASHBOARD FIG · MISSING",
+                Title = $"fig.{key}",
+                Width = 270,
+                Note = "not in the figure catalogue"
+            };
+        }
+
+        return new NodeCard
+        {
+            Variant = figure.IsProvisional ? NodeCardVariant.Provisional : NodeCardVariant.Figure,
+            TagText = figure.IsProvisional ? "DASHBOARD FIG · PROVISIONAL" : "DASHBOARD FIG",
+            TagRight = tagRight,
+            Title = figure.Name,
+            ValueMain = figure.Display,
+            ValueAccent = figure.SigmaDisplay,
+            ValueSize = 16,
+            Width = 270,
+            Note = figure.Note
+        };
+    }
 
     private void BuildLegend()
     {

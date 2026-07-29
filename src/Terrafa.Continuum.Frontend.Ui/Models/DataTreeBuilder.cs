@@ -15,6 +15,7 @@ public static class DataTreeBuilder
             Tag = rootTag
         };
         AppendChildren(source, root);
+        MeasureNumerics.BindSigmaLeaves(root);
         return root;
     }
 
@@ -39,7 +40,7 @@ public static class DataTreeBuilder
                     Kind = DataNodeKind.Measure,
                     Tag = tag.Length > 0 ? tag : (reading.IsVector ? "VECTOR" : ""),
                     IsNew = isNew || reading.IsNew,
-                    Reading = reading
+                    Reading = MeasureNumerics.Hydrate(reading, path)
                 });
                 continue;
             }

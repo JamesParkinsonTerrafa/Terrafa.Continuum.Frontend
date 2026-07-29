@@ -13,7 +13,13 @@ public sealed class DataTreeNode
     public DataNodeKind Kind { get; init; }
     public string Tag { get; init; } = "";
     public bool IsNew { get; init; }
-    public Measure? Reading { get; init; }
+
+    /// <summary>
+    /// Settable so <see cref="MeasureNumerics.BindSigmaLeaves"/> can fold a "sigma" child into its
+    /// parent once the whole tree exists — a leaf cannot see its own children while it is being
+    /// constructed.
+    /// </summary>
+    public Measure? Reading { get; set; }
     public List<DataTreeNode> Children { get; } = [];
 
     public string KindLabel => Kind == DataNodeKind.Object
