@@ -20,6 +20,11 @@
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </controls:SquircleBorder>
+      <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="14,0,0,0"
+                 Text="READ ONLY · SETTINGS ▸ BUILDER MODE TO MAKE CHANGES"
+                 FontSize="9" LetterSpacing="1"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 IsVisible="{DynamicResource BuilderHintVisible}" />
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />

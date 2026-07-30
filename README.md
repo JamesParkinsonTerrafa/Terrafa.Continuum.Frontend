@@ -1,5 +1,33 @@
 # Terrafa Continuum — Frontend
 
+## Install
+
+**macOS / Linux**
+
+1. Open **Terminal** (on a Mac: press ⌘ Space, type `Terminal`, press Return).
+2. Copy the command below, paste it into the Terminal window and press Return:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JamesParkinsonTerrafa/Terrafa.Continuum.Frontend/main/install.sh | bash
+```
+
+3. Wait for the message **Continuum installed**. On a Mac, click
+   **Terrafa Continuum** in `/Applications` to run the app.
+
+**Windows**
+
+1. Open **PowerShell** (press the Windows key, type `PowerShell`, press Enter).
+2. Copy the command below, paste it into the PowerShell window and press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/JamesParkinsonTerrafa/Terrafa.Continuum.Frontend/main/install.ps1 | iex
+```
+
+3. Wait for the message **Continuum installed**. Click **Terrafa Continuum** in
+   the Start Menu to run the app.
+
+## Architecture
+
 An Avalonia app with two heads over one UI project:
 
 | | project | ships as |

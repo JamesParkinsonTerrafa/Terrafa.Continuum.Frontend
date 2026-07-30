@@ -15,6 +15,7 @@ public class App : Application
     {
         ThemeManager.Initialize(Resources);
         HintSettings.RegisterResources(Resources);
+        BuilderModeSettings.RegisterResources(Resources);
         ButtonSettings.RegisterResources(Resources);
         AvaloniaXamlLoader.Load(this);
     }

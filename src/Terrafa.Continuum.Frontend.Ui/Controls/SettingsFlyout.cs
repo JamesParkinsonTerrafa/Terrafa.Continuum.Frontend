@@ -48,6 +48,8 @@ public class SettingsFlyout : Panel
     private readonly TextBlock lightLabel;
     private readonly TextBlock hintsOnLabel;
     private readonly TextBlock hintsOffLabel;
+    private readonly TextBlock builderOnLabel;
+    private readonly TextBlock builderOffLabel;
     private readonly TextBlock waveValue;
 
     public SettingsFlyout()
@@ -66,6 +68,8 @@ public class SettingsFlyout : Panel
         lightLabel = BuildToggleLabel("LIGHT");
         hintsOnLabel = BuildToggleLabel("ON");
         hintsOffLabel = BuildToggleLabel("OFF");
+        builderOnLabel = BuildToggleLabel("ON");
+        builderOffLabel = BuildToggleLabel("OFF");
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         bubbleArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
@@ -160,6 +164,7 @@ public class SettingsFlyout : Panel
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
+        column.Children.Add(BuildBuilderModeRow());
         column.Children.Add(BuildThemeRow());
         column.Children.Add(BuildHintsRow());
         column.Children.Add(AppearanceToggleRow);
@@ -199,8 +204,10 @@ public class SettingsFlyout : Panel
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RefreshThemeLabels;
         HintSettings.Changed += RefreshHintLabels;
+        BuilderModeSettings.Changed += RefreshBuilderLabels;
         RefreshThemeLabels();
         RefreshHintLabels();
+        RefreshBuilderLabels();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -208,6 +215,7 @@ public class SettingsFlyout : Panel
         base.OnDetachedFromVisualTree(e);
         ThemeManager.Changed -= RefreshThemeLabels;
         HintSettings.Changed -= RefreshHintLabels;
+        BuilderModeSettings.Changed -= RefreshBuilderLabels;
     }
 
     private static TextBlock BuildToggleLabel(string text) => new()
@@ -223,6 +231,10 @@ public class SettingsFlyout : Panel
     private void RefreshHintLabels() =>
         MarkActive(HintSettings.Enabled ? hintsOnLabel : hintsOffLabel,
             HintSettings.Enabled ? hintsOffLabel : hintsOnLabel);
+
+    private void RefreshBuilderLabels() =>
+        MarkActive(BuilderModeSettings.Enabled ? builderOnLabel : builderOffLabel,
+            BuilderModeSettings.Enabled ? builderOffLabel : builderOnLabel);
 
     private static void MarkActive(TextBlock active, TextBlock inactive)
     {
@@ -266,6 +278,9 @@ public class SettingsFlyout : Panel
 
     private Border BuildHintsRow() =>
         BuildToggleRow("HINTS", hintsOnLabel, hintsOffLabel, HintSettings.Toggle);
+
+    private Border BuildBuilderModeRow() =>
+        BuildToggleRow("BUILDER MODE", builderOnLabel, builderOffLabel, BuilderModeSettings.Toggle);
 
     private static Border BuildToggleRow(string label, TextBlock first, TextBlock second, Action toggle)
     {

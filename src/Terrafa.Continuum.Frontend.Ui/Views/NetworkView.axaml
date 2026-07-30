@@ -62,6 +62,7 @@
     </controls:DraftBar>
 
     <Border DockPanel.Dock="Left" Width="272"
+            IsVisible="{DynamicResource BuilderPanelsVisible}"
             Background="{StaticResource BgPanelBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
       <controls:PanelBox Title="NETWORK ELEMENTS" FooterHeight="54">

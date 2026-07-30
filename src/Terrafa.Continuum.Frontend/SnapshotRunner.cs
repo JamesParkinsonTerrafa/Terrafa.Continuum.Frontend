@@ -31,6 +31,9 @@ public static class SnapshotRunner
         Directory.CreateDirectory(outputDir);
         var snapshot = new StaticDataFeed().Current;
 
+        // The probes drive the side panels, which only exist in builder mode.
+        BuilderModeSettings.SetEnabled(true);
+
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
         CaptureBubbleProbe(outputDir);
@@ -44,6 +47,9 @@ public static class SnapshotRunner
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
+        BuilderModeSettings.SetEnabled(false);
+        CaptureAllViews(outputDir, snapshot, "-readonly");
+        BuilderModeSettings.SetEnabled(true);
         ThemeManager.SetLight(false);
         CaptureAllViews(outputDir, snapshot, "-dark");
         ThemeManager.SetLight(true);

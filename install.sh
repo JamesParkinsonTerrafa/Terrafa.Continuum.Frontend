@@ -124,8 +124,7 @@ install_macos() {
     # saved this script from a browser and ran it against a browser-fetched zip.
     xattr -dr com.apple.quarantine "$dest/$APP_NAME.app" 2> /dev/null || true
 
-    info "Installed $APP_NAME $VERSION to $dest"
-    info "Launch it with: open -a \"$APP_NAME\""
+    info "Continuum $VERSION installed — click \"$APP_NAME\" in $dest to run"
 }
 
 install_linux() {
@@ -148,10 +147,14 @@ Terminal=false
 Categories=Science;Education;
 EOF
 
-    info "Installed $APP_NAME $VERSION to $bindir/$LINUX_CMD"
     case ":$PATH:" in
-        *":$bindir:"*) info "Launch it with: $LINUX_CMD" ;;
-        *) warn "$bindir is not on your PATH — add it, or run $bindir/$LINUX_CMD" ;;
+        *":$bindir:"*)
+            info "Continuum $VERSION installed — open \"$APP_NAME\" from your applications menu, or run: $LINUX_CMD"
+            ;;
+        *)
+            info "Continuum $VERSION installed — open \"$APP_NAME\" from your applications menu, or run: $bindir/$LINUX_CMD"
+            warn "$bindir is not on your PATH"
+            ;;
     esac
 }
 

@@ -39,6 +39,7 @@
       <controls:DraftBar x:Name="Draft" DockPanel.Dock="Bottom" />
 
       <Border x:Name="LibraryPanel" DockPanel.Dock="Left" Width="250"
+              IsVisible="{DynamicResource BuilderPanelsVisible}"
               Background="{StaticResource BgPanelBrush}"
               BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
         <controls:PanelBox Title="FUNCTION LIBRARY" FooterHeight="54">
@@ -58,6 +59,7 @@
       </Border>
 
       <Border x:Name="StackColumn" DockPanel.Dock="Left" Width="470"
+              IsVisible="{DynamicResource BuilderPanelsVisible}"
               BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
         <controls:PanelBox x:Name="StackBox" Title="COMPOSITION" FooterHeight="54">
           <controls:PanelBox.HeaderRightContent>

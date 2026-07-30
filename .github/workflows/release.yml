@@ -156,21 +156,36 @@ jobs:
           ### Install
 
           **macOS / Linux**
+
+          1. Open **Terminal** (on a Mac: press ⌘ Space, type `Terminal`, press Return).
+          2. Copy the command below, paste it into the Terminal window and press Return:
+
           ```sh
           curl -fsSL https://raw.githubusercontent.com/__REPO__/main/install.sh | bash
           ```
 
-          **Windows** (PowerShell)
+          3. Wait for the message **Continuum installed**. On a Mac, click
+             **Terrafa Continuum** in `/Applications` to run the app.
+
+          **Windows**
+
+          1. Open **PowerShell** (press the Windows key, type `PowerShell`, press Enter).
+          2. Copy the command below, paste it into the PowerShell window and press Enter:
+
           ```powershell
           irm https://raw.githubusercontent.com/__REPO__/main/install.ps1 | iex
           ```
 
-          The scripted install verifies checksums and is not flagged by Gatekeeper
-          or SmartScreen, because neither `curl` nor `Invoke-WebRequest` marks the
-          download the way a browser does.
+          3. Wait for the message **Continuum installed**. Click
+             **Terrafa Continuum** in the Start Menu to run the app.
 
-          The `.dmg`, `setup.exe` and `.deb` below are unsigned: macOS needs
-          right-click ▸ Open on first launch, Windows needs **More info** ▸ **Run anyway**.
+          The install script verifies each download against its checksum.
+          Gatekeeper and SmartScreen do not flag the app, because `curl` and
+          `Invoke-WebRequest` do not mark downloads the way a browser does.
+
+          The `.dmg`, `setup.exe` and `.deb` below are unsigned. On macOS,
+          right-click the app and select **Open** on first launch. On Windows,
+          select **More info** ▸ **Run anyway**.
           EOF
           sed -i "s|__REPO__|$GITHUB_REPOSITORY|g" notes.md
 

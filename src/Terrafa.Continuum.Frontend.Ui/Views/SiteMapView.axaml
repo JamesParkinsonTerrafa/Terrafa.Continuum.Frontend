@@ -34,6 +34,7 @@
       </controls:TerminalStatusBar>
 
       <Border DockPanel.Dock="Left" Width="300"
+              IsVisible="{DynamicResource BuilderPanelsVisible}"
               Background="{StaticResource BgPanelBrush}"
               BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
         <DockPanel>

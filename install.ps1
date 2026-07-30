@@ -132,9 +132,7 @@ Start-Process powershell -WindowStyle Hidden -ArgumentList @(
     Set-ItemProperty $key NoModify 1 -Type DWord
     Set-ItemProperty $key NoRepair 1 -Type DWord
 
-    Write-Info "Installed $AppName $resolved to $InstallDir"
-    Write-Info 'Launch it from the Start Menu, or run:'
-    Write-Host "    & '$exe'"
+    Write-Info "Continuum $resolved installed - click '$AppName' in the Start Menu to run"
 } finally {
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

@@ -147,6 +147,10 @@ turning down.
   footnotes) is bound to `HintsVisible` and collapses from Settings. Data, alerts, and
   readouts are not hints and always stay. Where a status bar is entirely hints, the whole bar
   collapses rather than leaving an empty strip.
+- **Building is opt-in.** The left rails are editing surfaces, bound to `BuilderPanelsVisible`
+  and hidden until BUILDER MODE — the first row in Settings — is switched on. Off is the
+  default: the app opens read-only, and the top bar shows a `BuilderHintVisible` note pointing
+  at the switch. The readouts themselves never collapse; only the tools for changing them do.
 - **Session state outlives the screen it was built on.** The mounted tree (`Workspace`), the
   network canvas (`NetworkGraph`) and the board (`Dashboard`) are models, not view fields.
   A change on any screen rebuilds the others, and a screen that held its own state would throw
