@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -30,6 +31,8 @@ public static class SnapshotRunner
 
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
+        CaptureBubbleProbe(outputDir);
+        CaptureBubbleHandoffProbe(outputDir);
         CaptureRegressorProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
@@ -353,6 +356,7 @@ public static class SnapshotRunner
 
         ExpandSection(flyout.AppearanceToggleRow);
         ExpandSection(flyout.ButtonToggleRow);
+        ExpandSection(flyout.BubbleToggleRow);
         ExpandSection(flyout.GrainToggleRow);
 
         flyout.SaturationSlider.Value = AppearanceSettings.NodeSaturation;
@@ -361,6 +365,10 @@ public static class SnapshotRunner
         flyout.HighlightBrightnessSlider.Value = AppearanceSettings.HighlightBrightness;
         flyout.IdleEmbossSlider.Value = ButtonSettings.IdleEmbossStrength;
         flyout.CornerRadiusSlider.Value = ButtonSettings.CornerRadius;
+        flyout.PopSpeedSlider.Value = BubbleSettings.PopSpeed;
+        flyout.PopForceSlider.Value = BubbleSettings.PopForce;
+        flyout.WobbleSlider.Value = BubbleSettings.Wobble;
+        flyout.HoldToPopSlider.Value = BubbleSettings.HoldSeconds;
         flyout.IntensitySlider.Value = 24;
         flyout.SlopeSlider.Value = 0.8;
         flyout.WarpSlider.Value = 34;
@@ -440,6 +448,147 @@ public static class SnapshotRunner
         // The canvas is session state now, so what this probe built would otherwise turn up in
         // every later frame of every screen that reads a figure.
         NetworkGraph.Instance.Reset(seedDemo: true);
+    }
+
+    private static void CaptureBubbleProbe(string outputDir)
+    {
+        var selected = new List<int>();
+        var view = new NetworkView(new StaticDataFeed().Current, selected.Add);
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var strip = view.Tabs;
+        var samples = new List<double>();
+
+        Point CentreOf(int index)
+        {
+            var key = strip.KeyAt(index);
+            return key.TranslatePoint(new Point(key.Bounds.Width / 2, key.Bounds.Height / 2), window)!.Value;
+        }
+
+        double ScaleOf(int index) => ((ScaleTransform)strip.KeyAt(index).RenderTransform!).ScaleY;
+
+        void PumpFor(double seconds, int index)
+        {
+            var clock = Stopwatch.StartNew();
+            while (clock.Elapsed.TotalSeconds < seconds)
+            {
+                Pump();
+                samples.Add(ScaleOf(index));
+                Thread.Sleep(8);
+            }
+        }
+
+        void PumpUntilSelected(int count, int index)
+        {
+            var clock = Stopwatch.StartNew();
+            while (selected.Count < count && clock.Elapsed.TotalSeconds < 2)
+            {
+                Pump();
+                samples.Add(ScaleOf(index));
+                Thread.Sleep(8);
+            }
+        }
+
+        samples.Clear();
+        window.MouseDown(CentreOf(2), MouseButton.Left);
+        PumpFor(0.12, 2);
+        var compressed = ScaleOf(2);
+        var selectedDuringHold = selected.Count;
+        window.MouseUp(CentreOf(2), MouseButton.Left);
+        var tapClock = Stopwatch.StartNew();
+        PumpUntilSelected(1, 2);
+        var selectedAfterMs = tapClock.ElapsedMilliseconds;
+        PumpFor(0.5, 2);
+        var tapTrough = samples.Min();
+
+        Console.WriteLine(
+            $"bubble probe: tap compressed to {compressed:0.###} (selected during hold = {selectedDuringHold}), " +
+            $"selected [{string.Join(",", selected)}] {selectedAfterMs}ms after release, " +
+            $"then trough {tapTrough:0.###}, settled {ScaleOf(2):0.###} " +
+            $"pressed-class {strip.KeyAt(2).Classes.Contains("emboss-press")}");
+        Capture(window, outputDir, "1-netw-bubble-tap");
+
+        samples.Clear();
+        window.MouseDown(CentreOf(3), MouseButton.Left);
+        var holdClock = Stopwatch.StartNew();
+        PumpUntilSelected(2, 3);
+        var autoPopMs = holdClock.ElapsedMilliseconds;
+        PumpFor(0.06, 3);
+        Capture(window, outputDir, "1-netw-bubble-held-pop");
+        PumpFor(0.5, 3);
+        var heldTrough = samples.Min();
+        window.MouseUp(CentreOf(3), MouseButton.Left);
+        Pump();
+
+        Console.WriteLine(
+            $"bubble probe: held auto-pop selected [{string.Join(",", selected)}] at {autoPopMs}ms while held, " +
+            $"trough {heldTrough:0.###} (deeper than tap = {heldTrough < tapTrough}), " +
+            $"settled {ScaleOf(3):0.###}, old key re-inflated to {ScaleOf(2):0.###}");
+        Capture(window, outputDir, "1-netw-bubble-held-settled");
+        window.Close();
+    }
+
+    private static void CaptureBubbleHandoffProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var network = (NetworkView)window.ViewHost.Content!;
+        var key = network.Tabs.KeyAt(2);
+        var point = key.TranslatePoint(new Point(key.Bounds.Width / 2, key.Bounds.Height / 2), window)!.Value;
+
+        window.MouseDown(point, MouseButton.Left);
+        var pressClock = Stopwatch.StartNew();
+        while (pressClock.Elapsed.TotalSeconds < 0.07)
+        {
+            Pump();
+            Thread.Sleep(8);
+        }
+        window.MouseUp(point, MouseButton.Left);
+        Pump();
+
+        if (window.ViewHost.Content is not DashboardView dashboard)
+        {
+            Console.Error.WriteLine(
+                $"bubble handoff: view is {window.ViewHost.Content?.GetType().Name}, did not swap at pop start");
+            window.Close();
+            return;
+        }
+
+        double ScaleOf(int index) => ((ScaleTransform)dashboard.Tabs.KeyAt(index).RenderTransform!).ScaleY;
+
+        Thread.Sleep(30);
+        Pump();
+        var incomingMidPop = ScaleOf(2);
+        var previousInflating = ScaleOf(0);
+        Capture(window, outputDir, "0-bubble-handoff-mid");
+
+        var settleClock = Stopwatch.StartNew();
+        while (settleClock.Elapsed.TotalSeconds < 1.5 && Math.Abs(ScaleOf(2) - 0.93) > 0.003)
+        {
+            Pump();
+            Thread.Sleep(8);
+        }
+
+        Console.WriteLine(
+            $"bubble handoff: swapped to dashboard at pop start, incoming tab at {incomingMidPop:0.###} " +
+            $"(mid-flight = {incomingMidPop < 0.999}), previous tab at {previousInflating:0.###}, " +
+            $"settled {ScaleOf(2):0.###} pressed-class {dashboard.Tabs.KeyAt(2).Classes.Contains("emboss-press")}");
+        window.Close();
     }
 
     /// <summary>

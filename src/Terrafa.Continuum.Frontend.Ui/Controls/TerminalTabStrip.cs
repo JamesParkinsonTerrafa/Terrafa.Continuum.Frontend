@@ -39,6 +39,7 @@ public class TerminalTabStrip : UserControl
 
     private readonly List<TextBlock> tabBlocks = [];
     private readonly List<SquircleBorder> tabKeys = [];
+    private readonly List<BubbleKeyAnimator> tabBubbles = [];
     private readonly List<Rectangle> tabSeparators = [];
     private readonly StackPanel tabRow;
     private readonly TextBlock hintBlock;
@@ -130,6 +131,7 @@ public class TerminalTabStrip : UserControl
         base.OnAttachedToVisualTree(e);
         HintSettings.Changed += UpdateVisuals;
         UpdateVisuals();
+        if (!TryContinueHandoff()) SyncBubbles(animated: false);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -146,8 +148,13 @@ public class TerminalTabStrip : UserControl
             RebuildTabs();
             return;
         }
-        if (change.Property == ActiveIndexProperty ||
-            change.Property == HintTextProperty ||
+        if (change.Property == ActiveIndexProperty)
+        {
+            UpdateVisuals();
+            SyncBubbles(animated: IsLoaded);
+            return;
+        }
+        if (change.Property == HintTextProperty ||
             change.Property == HintBrushProperty ||
             change.Property == RightContentProperty)
         {
@@ -160,6 +167,7 @@ public class TerminalTabStrip : UserControl
         tabRow.Children.Clear();
         tabBlocks.Clear();
         tabKeys.Clear();
+        tabBubbles.Clear();
         tabSeparators.Clear();
 
         for (var i = 0; i < Labels.Count; i++)
@@ -197,14 +205,80 @@ public class TerminalTabStrip : UserControl
                 Cursor = new Cursor(StandardCursorType.Hand),
                 Child = IsClosable ? WithCloseButton(block, index) : block
             };
-            key.PointerPressed += (_, _) => TabSelected?.Invoke(index);
+            var bubble = new BubbleKeyAnimator(key);
+            bubble.PopStarted += pressure => OnBubblePopStarted(index, pressure);
             tabBlocks.Add(block);
             tabKeys.Add(key);
+            tabBubbles.Add(bubble);
             tabRow.Children.Add(key);
         }
 
         UpdateVisuals();
+        SyncBubbles(animated: false);
     }
+
+    private void OnBubblePopStarted(int poppingIndex, double pressure)
+    {
+        for (var i = 0; i < tabBubbles.Count; i++)
+        {
+            if (i != poppingIndex && tabBubbles[i].IsPoppedOrPopping) tabBubbles[i].Inflate();
+        }
+        if (!IsClosable)
+        {
+            BubbleHandoff.Record(
+                Labels[poppingIndex], poppingIndex, ActiveIndex,
+                tabBubbles[poppingIndex].CurrentScale, pressure);
+        }
+        TabSelected?.Invoke(poppingIndex);
+    }
+
+    private bool TryContinueHandoff()
+    {
+        if (IsClosable) return false;
+        if (!BubbleHandoff.TryTake(Labels, ActiveIndex, out var handoff)) return false;
+        for (var i = 0; i < tabBubbles.Count; i++)
+        {
+            if (i == handoff.PoppingIndex)
+            {
+                tabBubbles[i].ContinuePop(handoff.Position, handoff.Pressure);
+            }
+            else if (i == handoff.PreviousIndex)
+            {
+                tabBubbles[i].RestPopped();
+                tabBubbles[i].Inflate();
+            }
+            else
+            {
+                tabBubbles[i].RestInflated();
+            }
+        }
+        return true;
+    }
+
+    private void SyncBubbles(bool animated)
+    {
+        for (var i = 0; i < tabBubbles.Count; i++)
+        {
+            var shouldBePopped = i == ActiveIndex;
+            if (!animated)
+            {
+                if (shouldBePopped) tabBubbles[i].RestPopped();
+                else tabBubbles[i].RestInflated();
+            }
+            else if (shouldBePopped)
+            {
+                if (!tabBubbles[i].IsPoppedOrPopping) tabBubbles[i].PopProgrammatic();
+            }
+            else
+            {
+                tabBubbles[i].Inflate();
+            }
+        }
+    }
+
+    internal SquircleBorder KeyAt(int index) => tabKeys[index];
+
+    internal BubbleKeyAnimator BubbleAt(int index) => tabBubbles[index];
 
     private Control WithCloseButton(TextBlock label, int index)
     {
@@ -244,8 +318,6 @@ public class TerminalTabStrip : UserControl
         for (var i = 0; i < tabBlocks.Count; i++)
         {
             var isActive = i == ActiveIndex;
-            tabKeys[i].Classes.Set("emboss", !isActive);
-            tabKeys[i].Classes.Set("emboss-press", isActive);
             tabBlocks[i].Foreground = isActive ? Palette.Amber : Palette.TextMuted;
             tabBlocks[i].FontWeight = isActive ? FontWeight.Bold : FontWeight.Normal;
         }

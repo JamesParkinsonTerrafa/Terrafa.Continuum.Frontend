@@ -17,6 +17,7 @@ public class SettingsFlyout : Panel
     internal Border PanelBorder { get; }
     internal Border GrainToggleRow { get; }
     internal Border ButtonToggleRow { get; }
+    internal Border BubbleToggleRow { get; }
     internal Border AppearanceToggleRow { get; }
     internal Slider IntensitySlider { get; }
     internal Slider SlopeSlider { get; }
@@ -24,6 +25,10 @@ public class SettingsFlyout : Panel
     internal Slider GrainSlider { get; }
     internal Slider IdleEmbossSlider { get; }
     internal Slider CornerRadiusSlider { get; }
+    internal Slider PopSpeedSlider { get; }
+    internal Slider PopForceSlider { get; }
+    internal Slider WobbleSlider { get; }
+    internal Slider HoldToPopSlider { get; }
     internal Slider SaturationSlider { get; }
     internal Slider NodeCornerRadiusSlider { get; }
     internal Slider HighlightSaturationSlider { get; }
@@ -31,9 +36,11 @@ public class SettingsFlyout : Panel
 
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
+    private readonly StackPanel bubbleBody;
     private readonly StackPanel appearanceBody;
     private readonly TextBlock grainArrow;
     private readonly TextBlock buttonArrow;
+    private readonly TextBlock bubbleArrow;
     private readonly TextBlock appearanceArrow;
     private readonly TextBlock darkLabel;
     private readonly TextBlock lightLabel;
@@ -59,10 +66,12 @@ public class SettingsFlyout : Panel
         hintsOffLabel = BuildToggleLabel("OFF");
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
+        bubbleArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         appearanceArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
         grainBody = BuildSectionBody();
         buttonBody = BuildSectionBody();
+        bubbleBody = BuildSectionBody();
         appearanceBody = BuildSectionBody();
 
         SaturationSlider = AddSliderRow(appearanceBody, "SATURATION", 0, 1, 0.05,
@@ -106,6 +115,24 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
+        PopSpeedSlider = AddSliderRow(bubbleBody, "POP SPEED", BubbleSettings.MinPopSpeed,
+            BubbleSettings.MaxPopSpeed, 0.05, BubbleSettings.PopSpeed, "0.00", BubbleSettings.SetPopSpeed);
+        PopForceSlider = AddSliderRow(bubbleBody, "POP FORCE", BubbleSettings.MinPopForce,
+            BubbleSettings.MaxPopForce, 0.05, BubbleSettings.PopForce, "0.00", BubbleSettings.SetPopForce);
+        WobbleSlider = AddSliderRow(bubbleBody, "WOBBLE", 0, 1, 0.05,
+            BubbleSettings.Wobble, "0.00", BubbleSettings.SetWobble);
+        HoldToPopSlider = AddSliderRow(bubbleBody, "HOLD TO POP", BubbleSettings.MinHoldSeconds,
+            BubbleSettings.MaxHoldSeconds, 0.05, BubbleSettings.HoldSeconds, "0.00", BubbleSettings.SetHoldSeconds);
+        bubbleBody.Children.Add(new TextBlock
+        {
+            Text = "Tabs pop like bubble wrap. SPEED is the tempo, FORCE how deep the pop crushes, " +
+                   "WOBBLE how springy the settle is. Hold a tab for HOLD TO POP seconds and it pops itself.",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
         IntensitySlider = AddSliderRow(grainBody, "INTENSITY", 0, GrainSettings.MaxIntensity, 1,
             GrainSettings.Intensity, "0", GrainSettings.SetIntensity);
         AddWavelengthRow();
@@ -126,6 +153,7 @@ public class SettingsFlyout : Panel
 
         AppearanceToggleRow = BuildSectionRow("APPEARANCE", appearanceArrow, appearanceBody);
         ButtonToggleRow = BuildSectionRow("BUTTON UI", buttonArrow, buttonBody);
+        BubbleToggleRow = BuildSectionRow("BUBBLE POP", bubbleArrow, bubbleBody);
         GrainToggleRow = BuildSectionRow("GRAIN EFFECTS", grainArrow, grainBody);
 
         var column = new StackPanel();
@@ -136,6 +164,8 @@ public class SettingsFlyout : Panel
         column.Children.Add(appearanceBody);
         column.Children.Add(ButtonToggleRow);
         column.Children.Add(buttonBody);
+        column.Children.Add(BubbleToggleRow);
+        column.Children.Add(bubbleBody);
         column.Children.Add(GrainToggleRow);
         column.Children.Add(grainBody);
 
