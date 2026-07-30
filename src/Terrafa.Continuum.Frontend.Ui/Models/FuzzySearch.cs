@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 /// <summary>Subsequence matcher — every query character must appear in order, runs score higher.</summary>

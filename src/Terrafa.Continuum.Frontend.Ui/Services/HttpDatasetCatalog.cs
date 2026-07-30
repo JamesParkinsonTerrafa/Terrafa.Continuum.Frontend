@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;

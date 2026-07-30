@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;

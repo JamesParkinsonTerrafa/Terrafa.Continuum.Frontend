@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 public sealed record FittedModel(Func<double, double> Predict, string Summary, bool CarriesNaN);

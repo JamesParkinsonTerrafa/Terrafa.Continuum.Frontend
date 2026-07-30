@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Terrafa.Continuum.Frontend.Themes;
 
 namespace Terrafa.Continuum.Frontend.Controls;

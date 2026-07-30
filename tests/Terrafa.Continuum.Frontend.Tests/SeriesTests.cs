@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using System.Net;
 using System.Text;
 using Terrafa.Continuum.Frontend.Models;

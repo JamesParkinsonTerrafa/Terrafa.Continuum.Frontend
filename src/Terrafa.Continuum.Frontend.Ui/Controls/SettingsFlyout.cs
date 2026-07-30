@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;

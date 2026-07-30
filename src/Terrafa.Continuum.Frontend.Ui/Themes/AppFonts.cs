@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 

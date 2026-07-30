@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Avalonia.Controls;
 
 namespace Terrafa.Continuum.Frontend.Themes;

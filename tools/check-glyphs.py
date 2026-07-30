@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 #!/usr/bin/env python3
 """Fail if the UI draws a character no embedded font can render.
 

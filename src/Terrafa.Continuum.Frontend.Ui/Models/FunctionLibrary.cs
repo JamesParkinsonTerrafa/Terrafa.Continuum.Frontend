@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Terrafa.Continuum.Analytics.Regression;
 
 namespace Terrafa.Continuum.Frontend.Models;

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 /// <summary>A tile and where it sits on the canvas.</summary>

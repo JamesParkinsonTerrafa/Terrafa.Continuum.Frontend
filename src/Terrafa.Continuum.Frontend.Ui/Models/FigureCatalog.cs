@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 public enum FigureOrigin

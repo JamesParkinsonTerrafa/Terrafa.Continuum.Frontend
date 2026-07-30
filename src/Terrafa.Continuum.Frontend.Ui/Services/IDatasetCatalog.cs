@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Terrafa Limited. All rights reserved.
+
 using Terrafa.Continuum.Frontend.Models;
 
 namespace Terrafa.Continuum.Frontend.Services;
