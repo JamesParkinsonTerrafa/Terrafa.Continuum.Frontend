@@ -30,6 +30,7 @@ public static class SnapshotRunner
 
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
+        CaptureRegressorProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
@@ -626,50 +627,72 @@ public static class SnapshotRunner
             Pump();
         }
 
+        Border GroupHeader(string name)
+        {
+            var header = view.LibraryList.Children.OfType<Border>()
+                .First(candidate => candidate.GetVisualDescendants().OfType<TextBlock>()
+                    .Any(text => text.Text == name));
+            header.BringIntoView();
+            Pump();
+            return header;
+        }
+
+        var expandedRows = view.LibraryList.Children.Count;
+        Click(Center(GroupHeader("aggregates")));
+        var collapsedRows = view.LibraryList.Children.Count;
+        Click(Center(GroupHeader("aggregates")));
+        Click(Center(GroupHeader("regression")));
+        Console.WriteLine(
+            $"tfn probe: aggregates collapse {expandedRows}→{collapsedRows}→{view.LibraryList.Children.Count} rows with regression folder closed");
+        Click(Center(GroupHeader("regression")));
+
         CreateFunctionTab();
-        Console.WriteLine($"tfn probe: blank stack has {view.StageRows.Count} stages");
+        Console.WriteLine($"tfn probe: blank tree has {view.NodeRows.Count} node row(s), h(x) = {view.RootFormula}");
 
         Click(Center(LibraryEntry("exp")));
-        Console.WriteLine($"tfn probe: left click added {view.StageRows.Count} stages (expected 0)");
+        Console.WriteLine($"tfn probe: left click alone changed nothing — h(x) = {view.RootFormula}");
 
         OpenMenu(LibraryEntry("exp"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
+        ClickMenuItem("APPLY TO OUTPUT");
+        Console.WriteLine($"tfn probe: after apply to output, h(x) = {view.RootFormula}");
 
-        var dragEntry = LibraryEntry("sum");
+        var dragEntry = LibraryEntry("add");
         var dragStart = Center(dragEntry);
-        var dragDrop = Center(view.StackHost);
+        var dragDrop = Center(view.NodeRows[0]);
         window.MouseDown(dragStart, MouseButton.Left);
         window.MouseMove(new Point(dragStart.X + 30, dragStart.Y + 10));
         window.MouseMove(dragDrop);
         window.MouseUp(dragDrop, MouseButton.Left);
         Pump();
-        Console.WriteLine($"tfn probe: after menu add + drag, {view.StageRows.Count} stages");
+        Console.WriteLine($"tfn probe: after drag wrap, h(x) = {view.RootFormula} across {view.NodeRows.Count} rows");
 
-        var secondRow = view.StageRows[1];
-        var reorderStart = Center(secondRow);
-        var reorderEnd = new Point(reorderStart.X, reorderStart.Y - 110);
-        window.MouseDown(reorderStart, MouseButton.Left);
-        window.MouseMove(new Point(reorderStart.X, reorderStart.Y - 55));
-        window.MouseMove(reorderEnd);
-        window.MouseUp(reorderEnd, MouseButton.Left);
-        Pump();
-        Console.WriteLine($"tfn probe: after reorder, {view.StackFooter.Text}");
+        OpenMenu(view.NodeRows[^1]);
+        ClickMenuItem("SET CONSTANT");
+        Console.WriteLine($"tfn probe: after set constant, h(x) = {view.RootFormula}");
+
+        OpenMenu(LibraryEntry("max"));
+        ClickMenuItem("APPLY TO OUTPUT");
+        OpenMenu(view.NodeRows[0]);
+        Capture(window, outputDir, "2-tfn-interact");
+        ClickMenuItem("ADD ARGUMENT");
+        Console.WriteLine($"tfn probe: aggregate grew, h(x) = {view.RootFormula}");
+
+        OpenMenu(view.NodeRows[0]);
+        ClickMenuItem("UNWRAP — LIFT u1");
+        Console.WriteLine($"tfn probe: after unwrap, h(x) = {view.RootFormula}");
+
+        OpenMenu(view.NodeRows[^1]);
+        ClickMenuItem("REMOVE");
+        Console.WriteLine($"tfn probe: after remove, h(x) = {view.RootFormula}");
 
         Click(Center(view.SaveButton));
-        Console.WriteLine($"tfn probe: library entries after save = {view.LibraryList.Children.Count}");
+        Console.WriteLine($"tfn probe: library rows after save = {view.LibraryList.Children.Count}");
 
         CreateFunctionTab();
         OpenMenu(LibraryEntry("fn_1"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
-        Console.WriteLine($"tfn probe: after composite add, {view.StackFooter.Text}");
+        ClickMenuItem("APPLY TO OUTPUT");
+        Console.WriteLine($"tfn probe: composite reused, {view.StackFooter.Text}");
 
-        OpenMenu(view.StageRows[0]);
-        Capture(window, outputDir, "2-tfn-interact");
-        ClickMenuItem("REMOVE FROM STACK");
-        Console.WriteLine($"tfn probe: after menu remove, {view.StageRows.Count} stages");
-
-        OpenMenu(LibraryEntry("fn_1"));
-        ClickMenuItem("ADD TO COMPOSITION STACK");
         TypeName("fn_1");
         Click(Center(view.SaveButton));
         Console.WriteLine($"tfn probe: overwrite dialog = {DialogMessage()}");
@@ -683,7 +706,53 @@ public static class SnapshotRunner
         ClickDialogButton("DISCARD");
         Console.WriteLine($"tfn probe: tabs after close = {view.StackTabs.Labels.Count}");
 
+        Click(Center(LibraryEntry("fit_linear")));
+        var estimatorItem = view.Overlay.GetVisualDescendants().OfType<TextBlock>()
+            .First(text => text.Text?.StartsWith("USE ON NETWORK") == true);
+        Console.WriteLine($"tfn probe: estimator menu offers → {estimatorItem.Text}");
+        Capture(window, outputDir, "2-tfn-estimator");
+        Click(Center(estimatorItem));
+
         window.Close();
+    }
+
+    private static void CaptureRegressorProbe(string outputDir)
+    {
+        var graph = NetworkGraph.Instance;
+        var root = Workspace.Instance.Find("SITE_ALPHA")!.Root.Path;
+        var regressor = graph.AddEstimator("fit_linear", 470, 620);
+        graph.Connect($"{root}.tank_farm.tank_01.level", regressor.Id);
+        graph.Connect($"{root}.tank_farm.tank_01.temp", regressor.Id);
+        graph.Connect($"{root}.tank_farm.tank_02.level", regressor.Id);
+        var figure = graph.AddFigure("predicted_temp", 902, 640);
+        graph.Connect(regressor.Id, figure.Id);
+
+        Console.WriteLine($"regressor probe: {graph.Title(regressor)}");
+        Console.WriteLine($"regressor probe: {graph.Evaluate(regressor)?.Note ?? "no result"}");
+
+        graph.SwapTrainingWires(regressor);
+        Console.WriteLine(
+            $"regressor probe: after swapping training wires — {graph.Evaluate(regressor)?.Note ?? "no result"}");
+        graph.SwapTrainingWires(regressor);
+
+        var committed = FigureCatalog.Instance.Find("predicted_temp");
+        Console.WriteLine(
+            $"regressor probe: fig.predicted_temp = {committed?.Display ?? "—"} · {committed?.Note ?? ""}");
+
+        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+        Capture(window, outputDir, "1-netw-regress");
+        window.Close();
+
+        NetworkGraph.Instance.Reset(seedDemo: true);
     }
 
     /// <summary>

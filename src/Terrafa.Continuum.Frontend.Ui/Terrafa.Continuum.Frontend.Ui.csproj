@@ -24,6 +24,9 @@
     <PackageReference Include="Amazon.Extensions.CognitoAuthentication" Version="3.1.5" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../Terrafa.Continuum.Analytics/Terrafa.Continuum.Analytics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Embedded so text renders identically on every head. The desktop build used to
          ask for Verdana and silently got whatever fontconfig chose on Linux. -->
     <AvaloniaResource Include="Assets/Fonts/*.otf" />

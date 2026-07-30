@@ -30,6 +30,10 @@ public sealed class NetworkNode
     /// <summary>A <see cref="FunctionLibrary"/> name applied after the combine; empty is identity.</summary>
     public string Stage { get; set; } = "";
 
+    public string Estimator { get; init; } = "";
+
+    public bool IsEstimator => Estimator.Length > 0;
+
     /// <summary>
     /// A transfer the app will not evaluate — the seeded hazard, whose frailty term is not
     /// identifiable from the leaves feeding it. A figure downstream of one keeps whatever it
@@ -40,7 +44,7 @@ public sealed class NetworkNode
     public string OpaqueTitle { get; init; } = "";
 }
 
-public sealed record NetworkEdge(string FromId, string ToId);
+public sealed record NetworkEdge(string FromId, string ToId, string Port = "");
 
 /// <summary>
 /// The network canvas as session state: which leaves have been placed, which transfers and figures
@@ -55,6 +59,13 @@ public sealed record NetworkEdge(string FromId, string ToId);
 /// </summary>
 public sealed class NetworkGraph
 {
+    public const string EstimatorPortX = "x";
+    public const string EstimatorPortY = "y";
+    public const string EstimatorPortPredict = "predict";
+
+    public static IReadOnlyList<string> EstimatorPorts { get; } =
+        [EstimatorPortX, EstimatorPortY, EstimatorPortPredict];
+
     public static NetworkGraph Instance { get; } = new();
 
     /// <summary>What "CHANGE FUNCTION" cycles through: identity, then the primitives.</summary>
@@ -113,6 +124,21 @@ public sealed class NetworkGraph
         return node;
     }
 
+    public NetworkNode AddEstimator(string estimatorName, double x, double y)
+    {
+        var node = new NetworkNode
+        {
+            Id = $"transfer:t{++nextTransfer}",
+            Kind = NetworkNodeKind.Transfer,
+            Estimator = estimatorName,
+            X = x,
+            Y = y
+        };
+        nodes.Add(node);
+        Publish();
+        return node;
+    }
+
     public NetworkNode AddFigure(string key, double x, double y)
     {
         if (Find(FigureId(key)) is { } existing) return existing;
@@ -157,15 +183,65 @@ public sealed class NetworkGraph
         if (Find(fromId) is not { } from || Find(toId) is not { } to) return false;
         if (from.Kind == NetworkNodeKind.Figure || to.Kind == NetworkNodeKind.Measure) return false;
         if (edges.Any(edge => edge.FromId == fromId && edge.ToId == toId)) return false;
+        if (to.IsEstimator && InputsOf(toId).Count() >= EstimatorPorts.Count) return false;
         return !Reaches(toId, fromId);
     }
 
     public bool Connect(string fromId, string toId)
     {
         if (!CanConnect(fromId, toId)) return false;
-        edges.Add(new NetworkEdge(fromId, toId));
+        var port = Find(toId) is { IsEstimator: true } ? NextFreePort(toId) : "";
+        edges.Add(new NetworkEdge(fromId, toId, port));
         Publish();
         return true;
+    }
+
+    private string NextFreePort(string toId)
+    {
+        var taken = edges.Where(edge => edge.ToId == toId).Select(edge => edge.Port).ToHashSet();
+        return EstimatorPorts.First(port => !taken.Contains(port));
+    }
+
+    public string? SourceOnPort(NetworkNode node, string port) =>
+        edges.FirstOrDefault(edge => edge.ToId == node.Id && edge.Port == port)?.FromId;
+
+    public string PortOf(string fromId, string toId) =>
+        edges.FirstOrDefault(edge => edge.FromId == fromId && edge.ToId == toId)?.Port ?? "";
+
+    public void SwapTrainingWires(NetworkNode node)
+    {
+        if (!node.IsEstimator) return;
+        var swapped = false;
+        for (var index = 0; index < edges.Count; index++)
+        {
+            if (edges[index].ToId != node.Id) continue;
+            var port = edges[index].Port switch
+            {
+                EstimatorPortX => EstimatorPortY,
+                EstimatorPortY => EstimatorPortX,
+                _ => edges[index].Port
+            };
+            if (port == edges[index].Port) continue;
+            edges[index] = edges[index] with { Port = port };
+            swapped = true;
+        }
+        if (swapped) Publish();
+    }
+
+    public void RotatePortRoles(NetworkNode node)
+    {
+        if (!node.IsEstimator) return;
+        var incomingIndexes = Enumerable.Range(0, edges.Count)
+            .Where(index => edges[index].ToId == node.Id)
+            .ToList();
+        if (incomingIndexes.Count < 2) return;
+        var ports = incomingIndexes.Select(index => edges[index].Port).ToList();
+        for (var position = 0; position < incomingIndexes.Count; position++)
+        {
+            var index = incomingIndexes[position];
+            edges[index] = edges[index] with { Port = ports[(position + 1) % ports.Count] };
+        }
+        Publish();
     }
 
     public void ClearInputs(string id)
@@ -184,7 +260,7 @@ public sealed class NetworkGraph
 
     public void CycleStage(NetworkNode transfer)
     {
-        if (transfer.Kind != NetworkNodeKind.Transfer || transfer.IsOpaque) return;
+        if (transfer.Kind != NetworkNodeKind.Transfer || transfer.IsOpaque || transfer.IsEstimator) return;
         var index = Array.IndexOf(StageCycle, transfer.Stage);
         transfer.Stage = StageCycle[(index + 1) % StageCycle.Length];
         Publish();
@@ -192,7 +268,7 @@ public sealed class NetworkGraph
 
     public void CycleCombiner(NetworkNode transfer)
     {
-        if (transfer.Kind != NetworkNodeKind.Transfer || transfer.IsOpaque) return;
+        if (transfer.Kind != NetworkNodeKind.Transfer || transfer.IsOpaque || transfer.IsEstimator) return;
         transfer.Combiner = transfer.Combiner switch
         {
             TransferCombiner.Sum => TransferCombiner.Mean,
@@ -209,10 +285,17 @@ public sealed class NetworkGraph
     {
         NetworkNodeKind.Measure => LeafTitle(node.Key),
         NetworkNodeKind.Figure => $"fig.{node.Key}",
-        _ => node.IsOpaque
-            ? node.OpaqueTitle
-            : TransferMath.Formula(node.Combiner, Stage(node), InputLabels(node))
+        _ when node.IsOpaque => node.OpaqueTitle,
+        _ when node.IsEstimator => TransferMath.EstimatorFormula(
+            node.Estimator,
+            SourceTitleOnPort(node, EstimatorPortX),
+            SourceTitleOnPort(node, EstimatorPortY),
+            SourceTitleOnPort(node, EstimatorPortPredict)),
+        _ => TransferMath.Formula(node.Combiner, Stage(node), InputLabels(node))
     };
+
+    public string? SourceTitleOnPort(NetworkNode node, string port) =>
+        SourceOnPort(node, port) is { } sourceId && Find(sourceId) is { } source ? Title(source) : null;
 
     public IReadOnlyList<string> InputLabels(NetworkNode node) =>
         InputsOf(node.Id).Select(id => Find(id) is { } source ? Title(source) : id).ToList();
@@ -221,6 +304,7 @@ public sealed class NetworkGraph
     public TransferResult? Evaluate(NetworkNode node)
     {
         if (node.Kind != NetworkNodeKind.Transfer || node.IsOpaque) return null;
+        if (node.IsEstimator) return EvaluateEstimatorNode(node, []);
         var terms = InputsOf(node.Id)
             .Select(id => Reading(id, []))
             .OfType<TransferInput>()
@@ -228,8 +312,25 @@ public sealed class NetworkGraph
         return TransferMath.Evaluate(node.Combiner, Stage(node), terms);
     }
 
+    public TransferInput? InputOnPort(NetworkNode node, string port) => ReadingOnPort(node, port, []);
+
+    private TransferResult? EvaluateEstimatorNode(NetworkNode node, HashSet<string> path)
+    {
+        if (FunctionLibrary.Instance.FindEstimator(node.Estimator) is not { } estimator) return null;
+        return TransferMath.EvaluateEstimator(
+            estimator,
+            ReadingOnPort(node, EstimatorPortX, path),
+            ReadingOnPort(node, EstimatorPortY, path),
+            ReadingOnPort(node, EstimatorPortPredict, path));
+    }
+
+    private TransferInput? ReadingOnPort(NetworkNode node, string port, HashSet<string> path) =>
+        SourceOnPort(node, port) is { } sourceId ? Reading(sourceId, path) : null;
+
     public LibraryFunction? Stage(NetworkNode node) =>
-        node.Stage.Length == 0 ? null : FunctionLibrary.Instance.Find(node.Stage);
+        node.Stage.Length == 0
+            ? null
+            : FunctionLibrary.Instance.Find(node.Stage) is { IsUnaryScalar: true } stage ? stage : null;
 
     // ── evaluation ───────────────────────────────────────────────────────────────────────────
 
@@ -305,8 +406,11 @@ public sealed class NetworkGraph
                 case NetworkNodeKind.Transfer:
                 {
                     if (node.IsOpaque) return null;
-                    var terms = InputsOf(id).Select(input => Reading(input, path)).OfType<TransferInput>().ToList();
-                    if (TransferMath.Evaluate(node.Combiner, Stage(node), terms) is not { } result) return null;
+                    var result = node.IsEstimator
+                        ? EvaluateEstimatorNode(node, path)
+                        : TransferMath.Evaluate(node.Combiner, Stage(node),
+                            InputsOf(id).Select(input => Reading(input, path)).OfType<TransferInput>().ToList());
+                    if (result is null) return null;
                     return new TransferInput(
                         Title(node), result.Value, result.Sigma, result.Unit,
                         result.History, result.SigmaHistory);

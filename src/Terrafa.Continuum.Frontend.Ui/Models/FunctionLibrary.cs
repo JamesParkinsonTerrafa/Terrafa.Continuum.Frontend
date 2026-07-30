@@ -1,28 +1,82 @@
+using Terrafa.Continuum.Analytics.Regression;
+
 namespace Terrafa.Continuum.Frontend.Models;
+
+public enum PortKind
+{
+    Scalar,
+    Array
+}
+
+public sealed record FunctionPort(string Name, PortKind Kind);
 
 public sealed class LibraryFunction
 {
     public required string Name { get; init; }
-    public required Func<double, double> Apply { get; init; }
-    public required Func<string, string> FormatApplied { get; init; }
+    public required IReadOnlyList<FunctionPort> Inputs { get; init; }
+    public required Func<IReadOnlyList<double>, double> Apply { get; init; }
+    public required Func<IReadOnlyList<string>, string> FormatApplied { get; init; }
     public string Note { get; init; } = "";
+    public string Group { get; init; } = "";
     public bool IsPrimitive { get; init; }
-    public IReadOnlyList<LibraryFunction> Components { get; init; } = [];
+    public CompositionNode? Definition { get; init; }
 
-    public string StageFormula => FormatApplied("u");
+    public bool HasArrayInput => Inputs.Any(port => port.Kind == PortKind.Array);
 
-    public string DisplayFormula => IsPrimitive || Components.Count == 0
-        ? StageFormula
-        : FunctionLibrary.ComposeFormula(Components, "u");
+    public bool IsUnaryScalar => Inputs is [{ Kind: PortKind.Scalar }];
+
+    public string ArityLabel => HasArrayInput ? "AGGREGATE" : Inputs.Count switch
+    {
+        1 => "UNARY",
+        2 => "BINARY",
+        _ => $"{Inputs.Count}-ARY"
+    };
+
+    public string SignatureText => HasArrayInput
+        ? $"({Inputs[0].Name}1 … {Inputs[0].Name}n) → y"
+        : $"({string.Join(", ", Inputs.Select(port => port.Name))}) → y";
+
+    public IReadOnlyList<string> PlaceholderArguments => HasArrayInput
+        ? [$"{Inputs[0].Name}1", "…", $"{Inputs[0].Name}n"]
+        : Inputs.Select(port => port.Name).ToArray();
+
+    public string DisplayFormula => Trim(
+        Definition is null ? FormatApplied(PlaceholderArguments) : Definition.Formula("x"));
+
+    public double ApplyUnary(double u) => IsUnaryScalar
+        ? Apply([u])
+        : throw new InvalidOperationException($"{Name} is {ArityLabel.ToLowerInvariant()}, not unary");
+
+    private static string Trim(string formula) =>
+        formula.Length > 60 ? formula[..57] + "…" : formula;
 }
 
 public sealed class FunctionLibrary
 {
+    public const string ArithmeticGroup = "arithmetic";
+    public const string LogExpGroup = "log / exp";
+    public const string PowerGroup = "power";
+    public const string ClipsGroup = "clips";
+    public const string TrigonometricGroup = "trigonometric";
+    public const string AggregatesGroup = "aggregates";
+    public const string CompositesGroup = "composites";
+    public const string RegressionGroup = "regression";
+
+    public static IReadOnlyList<string> PrimitiveGroups { get; } =
+        [ArithmeticGroup, LogExpGroup, PowerGroup, ClipsGroup, TrigonometricGroup, AggregatesGroup];
+
+    public static IReadOnlyList<string> EstimatorGroups { get; } = [RegressionGroup];
+
+    public static IReadOnlyList<string> PlannedGroups { get; } =
+        ["clustering", "optimisation"];
+
     public static FunctionLibrary Instance { get; } = new();
 
     private readonly List<LibraryFunction> userFunctions = [];
 
     public IReadOnlyList<LibraryFunction> Primitives { get; }
+
+    public IReadOnlyList<FunctionEstimator> Estimators { get; }
 
     public IReadOnlyList<LibraryFunction> UserFunctions => userFunctions;
 
@@ -30,18 +84,55 @@ public sealed class FunctionLibrary
     {
         Primitives =
         [
-            Primitive("square", u => u * u, inner => $"{Wrap(inner)}²", "C∞ · monotone on u>0"),
-            Primitive("reciprocal", u => 1 / u, inner => $"1/{Wrap(inner)}", "C¹ on u≠0 · pole flagged"),
-            Primitive("exp", Math.Exp, inner => $"exp({inner})", "C∞ · monotone"),
-            Primitive("log", Math.Log, inner => $"log({inner})", "domain u>0"),
-            Primitive("sqrt", Math.Sqrt, inner => $"√{Wrap(inner)}", "domain u≥0"),
-            Primitive("sum", u => u + 1.0, inner => $"{inner} + 1", "affine · c = 1.0"),
-            Primitive("multiply", u => 2.0 * u, inner => $"2·{Wrap(inner)}", "linear · c = 2.0"),
-            Primitive("clip", u => Math.Clamp(u, -1.0, 1.0), inner => $"clip({inner}, −1, 1)", "C⁰ · lo=−1 hi=1"),
-            Primitive("sin", Math.Sin, inner => $"sin({inner})", "C∞ · bounded"),
-            Primitive("tanh", Math.Tanh, inner => $"tanh({inner})", "C∞ · bounded"),
-            Primitive("negate", u => -u, inner => $"−{Wrap(inner)}", "linear")
+            Binary("add", ArithmeticGroup, (a, b) => a + b, (a, b) => $"{a} + {b}", "commutative"),
+            Binary("subtract", ArithmeticGroup, (a, b) => a - b, (a, b) => $"{a} − {WrapTerm(b)}", ""),
+            Binary("multiply", ArithmeticGroup, (a, b) => a * b, (a, b) => $"{WrapFactor(a)}·{WrapFactor(b)}", "commutative"),
+            Binary("divide", ArithmeticGroup, (a, b) => a / b, (a, b) => $"{WrapFactor(a)}/{WrapFactor(b)}", "pole at b=0 flagged"),
+            Unary("negate", ArithmeticGroup, u => -u, inner => $"−{Wrap(inner)}", "linear"),
+            Unary("log", LogExpGroup, Math.Log, inner => $"log({inner})", "domain u>0"),
+            Unary("exp", LogExpGroup, Math.Exp, inner => $"exp({inner})", "C∞ · monotone"),
+            Unary("square", PowerGroup, u => u * u, inner => $"{Wrap(inner)}²", "C∞ · monotone on u>0"),
+            Unary("sqrt", PowerGroup, Math.Sqrt, inner => $"√{Wrap(inner)}", "domain u≥0"),
+            Unary("reciprocal", PowerGroup, u => 1 / u, inner => $"1/{Wrap(inner)}", "C¹ on u≠0 · pole flagged"),
+            Unary("clip", ClipsGroup, u => Math.Clamp(u, -1.0, 1.0), inner => $"clip({inner}, −1, 1)", "C⁰ · lo=−1 hi=1"),
+            Unary("floor", ClipsGroup, Math.Floor, inner => $"⌊{inner}⌋", "piecewise constant · steps at integers"),
+            Unary("sin", TrigonometricGroup, Math.Sin, inner => $"sin({inner})", "C∞ · bounded"),
+            Unary("tanh", TrigonometricGroup, Math.Tanh, inner => $"tanh({inner})", "C∞ · bounded"),
+            Aggregate("max", values => values.Max(), "upper envelope of its arguments"),
+            Aggregate("min", values => values.Min(), "lower envelope of its arguments"),
+            Aggregate("mean", values => values.Average(), "equal-weight average")
         ];
+        Estimators =
+        [
+            new FunctionEstimator
+            {
+                Name = "fit_linear",
+                Group = RegressionGroup,
+                DisplayFormula = "y ≈ a + b·x",
+                Note = "least squares over two wired series · the fitted line predicts a third input · lives on the NETWORK canvas",
+                FitSeries = FitLine
+            }
+        ];
+    }
+
+    public IReadOnlyList<LibraryFunction> PrimitivesInGroup(string group) =>
+        Primitives.Where(function => function.Group == group).ToArray();
+
+    public IReadOnlyList<FunctionEstimator> EstimatorsInGroup(string group) =>
+        Estimators.Where(estimator => estimator.Group == group).ToArray();
+
+    public FunctionEstimator? FindEstimator(string name) =>
+        Estimators.FirstOrDefault(estimator => estimator.Name == name);
+
+    private static FittedModel FitLine(IReadOnlyList<double> xTrain, IReadOnlyList<double> yTrain)
+    {
+        var fit = LinearRegression.Fit(xTrain, yTrain);
+        var carriesNaN = double.IsNaN(fit.Slope) || double.IsNaN(fit.Intercept);
+        var summary = carriesNaN
+            ? "fit carries NaN — a training reading is not plottable"
+            : $"ŷ = {ConstantNode.Format(fit.Slope)}·x {(fit.Intercept < 0 ? "−" : "+")} " +
+              $"{ConstantNode.Format(Math.Abs(fit.Intercept))} · R² {ConstantNode.Format(fit.RSquared)} · n {yTrain.Count}";
+        return new FittedModel(fit.Predict, summary, carriesNaN);
     }
 
     public LibraryFunction? FindUserFunction(string name) =>
@@ -58,17 +149,19 @@ public sealed class FunctionLibrary
     public bool IsPrimitiveName(string name) =>
         Primitives.Any(function => function.Name == name);
 
-    public LibraryFunction SaveComposite(string name, IReadOnlyList<LibraryFunction> stages)
+    public LibraryFunction SaveComposite(string name, CompositionNode root)
     {
-        var components = stages.ToArray();
+        var definition = root.Clone();
         var composite = new LibraryFunction
         {
             Name = name,
-            Apply = x => ApplyStages(components, x),
-            FormatApplied = inner => $"{name}({inner})",
-            Note = $"composite · {components.Length} stage(s) · {ComposeFormula(components, "x")}",
+            Inputs = [new FunctionPort("x", PortKind.Scalar)],
+            Apply = arguments => definition.Evaluate(arguments[0]),
+            FormatApplied = arguments => $"{name}({arguments[0]})",
+            Note = $"composite · {definition.CountFunctionNodes()} node(s) · depth {definition.Depth()}",
+            Group = CompositesGroup,
             IsPrimitive = false,
-            Components = components
+            Definition = definition
         };
         var replacedIndex = userFunctions.FindIndex(function => function.Name == name);
         if (replacedIndex >= 0)
@@ -78,25 +171,49 @@ public sealed class FunctionLibrary
         return composite;
     }
 
-    public static double ApplyStages(IReadOnlyList<LibraryFunction> stages, double x)
+    private static LibraryFunction Unary(
+        string name, string group, Func<double, double> apply, Func<string, string> format, string note) => new()
     {
-        var value = x;
-        foreach (var stage in stages)
-            value = stage.Apply(value);
-        return value;
-    }
+        Name = name,
+        Inputs = [new FunctionPort("u", PortKind.Scalar)],
+        Apply = arguments => apply(arguments[0]),
+        FormatApplied = arguments => format(arguments[0]),
+        Note = note,
+        Group = group,
+        IsPrimitive = true
+    };
 
-    public static string ComposeFormula(IReadOnlyList<LibraryFunction> stages, string variable)
+    private static LibraryFunction Binary(
+        string name, string group, Func<double, double, double> apply, Func<string, string, string> format, string note) => new()
     {
-        var formula = variable;
-        foreach (var stage in stages)
-            formula = stage.FormatApplied(formula);
-        return formula.Length > 60 ? formula[..57] + "…" : formula;
-    }
+        Name = name,
+        Inputs = [new FunctionPort("a", PortKind.Scalar), new FunctionPort("b", PortKind.Scalar)],
+        Apply = arguments => apply(arguments[0], arguments[1]),
+        FormatApplied = arguments => format(arguments[0], arguments[1]),
+        Note = note,
+        Group = group,
+        IsPrimitive = true
+    };
 
-    private static LibraryFunction Primitive(
-        string name, Func<double, double> apply, Func<string, string> format, string note) =>
-        new() { Name = name, Apply = apply, FormatApplied = format, Note = note, IsPrimitive = true };
+    private static LibraryFunction Aggregate(
+        string name, Func<IReadOnlyList<double>, double> apply, string note) => new()
+    {
+        Name = name,
+        Inputs = [new FunctionPort("u", PortKind.Array)],
+        Apply = apply,
+        FormatApplied = arguments => $"{name}({string.Join(", ", arguments)})",
+        Note = note,
+        Group = AggregatesGroup,
+        IsPrimitive = true
+    };
 
     private static string Wrap(string inner) => inner.Length == 1 ? inner : $"({inner})";
+
+    private static string WrapTerm(string inner) => inner.Contains(" + ") || inner.Contains(" − ")
+        ? $"({inner})"
+        : inner;
+
+    private static string WrapFactor(string inner) => inner.Contains(' ')
+        ? $"({inner})"
+        : inner;
 }
