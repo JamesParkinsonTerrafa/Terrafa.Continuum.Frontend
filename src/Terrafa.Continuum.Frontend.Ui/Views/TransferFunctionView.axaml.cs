@@ -30,6 +30,7 @@ public partial class TransferFunctionView : UserControl
     private sealed record TreeRow(Panel Row, CompositionNode Node, FunctionNode? Parent, int Index);
 
     private readonly FunctionLibrary library = FunctionLibrary.Instance;
+    private readonly Action<int> navigate;
     private readonly List<FunctionDraft> drafts = [];
     private readonly List<TreeRow> treeRows = [];
     private readonly List<(FunctionNode Node, NodeCard Card)> functionCards = [];
@@ -58,6 +59,7 @@ public partial class TransferFunctionView : UserControl
     public TransferFunctionView(DataSnapshot snapshot, Action<int> navigate)
     {
         InitializeComponent();
+        this.navigate = navigate;
         Tabs.TabSelected += navigate;
 
         var initial = new FunctionDraft { Name = "fig.draft_h" };
@@ -97,10 +99,21 @@ public partial class TransferFunctionView : UserControl
         LibraryList.Children.Clear();
         foreach (var group in FunctionLibrary.PrimitiveGroups)
             AddLibraryGroup(group, library.PrimitivesInGroup(group));
+        foreach (var group in FunctionLibrary.EstimatorGroups)
+            AddEstimatorGroup(group, library.EstimatorsInGroup(group));
         foreach (var group in FunctionLibrary.PlannedGroups)
             AddLibraryGroup(group, []);
         if (library.UserFunctions.Count > 0)
             AddLibraryGroup(FunctionLibrary.CompositesGroup, library.UserFunctions);
+    }
+
+    private void AddEstimatorGroup(string group, IReadOnlyList<FunctionEstimator> estimators)
+    {
+        var collapsed = collapsedGroups.Contains(group);
+        LibraryList.Children.Add(CreateGroupHeader(group, estimators.Count, collapsed));
+        if (collapsed) return;
+        foreach (var estimator in estimators)
+            LibraryList.Children.Add(CreateEstimatorEntry(estimator));
     }
 
     private void AddLibraryGroup(string group, IReadOnlyList<LibraryFunction> functions)
@@ -284,6 +297,66 @@ public partial class TransferFunctionView : UserControl
             WrapNode(null, 0, function);
         else
             WrapNode(target.Parent, target.Index, function);
+    }
+
+    private Border CreateEstimatorEntry(FunctionEstimator estimator)
+    {
+        var tag = new TextBlock
+        {
+            Classes = { "tag" },
+            Text = $"ESTIMATOR · {estimator.ArityLabel}",
+            Foreground = Palette.Cyan
+        };
+        var signature = new TextBlock
+        {
+            Classes = { "tag" },
+            Text = estimator.SignatureText,
+            Foreground = Palette.TextFaint
+        };
+        var tagRow = new DockPanel();
+        DockPanel.SetDock(signature, Dock.Right);
+        tagRow.Children.Add(signature);
+        tagRow.Children.Add(tag);
+
+        var formula = new TextBlock
+        {
+            Text = $"{estimator.Name}: {estimator.DisplayFormula}",
+            FontSize = 11,
+            Margin = new Thickness(0, 2, 0, 0),
+            Foreground = Palette.CyanSoft
+        };
+        var body = new StackPanel { Children = { tagRow, formula } };
+        body.Children.Add(new TextBlock
+        {
+            Classes = { "tag" },
+            Text = estimator.Note,
+            Margin = new Thickness(0, 3, 0, 0),
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var entry = new Border
+        {
+            BorderBrush = Palette.Cyan,
+            BorderThickness = new Thickness(1),
+            Background = Palette.CyanFill,
+            Padding = new Thickness(9, 7),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = body
+        };
+        entry.PointerEntered += (_, _) => entry.Background = Palette.BgField;
+        entry.PointerExited += (_, _) => entry.Background = Palette.CyanFill;
+        entry.PointerPressed += (_, e) => OnEstimatorEntryPressed(estimator, e);
+        return entry;
+    }
+
+    private void OnEstimatorEntryPressed(FunctionEstimator estimator, PointerPressedEventArgs e)
+    {
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (!properties.IsLeftButtonPressed && !properties.IsRightButtonPressed) return;
+        e.Handled = true;
+        ShowMenu($"{estimator.Name} {estimator.SignatureText}", e.GetPosition(this),
+            ("USE ON NETWORK — WIRE x[], y[] + PREDICT", () => navigate(0)));
     }
 
     private TreeRow? RowAt(Point point)
@@ -1017,7 +1090,7 @@ public partial class TransferFunctionView : UserControl
     {
         if (Math.Abs(value) < 1e-9) return "0";
         return Math.Abs(value) >= 10000
-            ? value.ToString("0.#e+0", CultureInfo.InvariantCulture)
+            ? value.ToString("0.###e+0", CultureInfo.InvariantCulture)
             : value.ToString("0.###", CultureInfo.InvariantCulture);
     }
 

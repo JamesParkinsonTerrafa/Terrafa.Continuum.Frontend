@@ -98,6 +98,47 @@ public static class TransferMath
             BuildNote(combiner, stage, inputs.Count, head));
     }
 
+    public static TransferResult? EvaluateEstimator(
+        FunctionEstimator estimator, TransferInput? xTrain, TransferInput? yTrain, TransferInput? predict)
+    {
+        if (EstimatorObjection(xTrain, yTrain, predict) is not null) return null;
+
+        var model = estimator.FitSeries(xTrain!.History, yTrain!.History);
+        var note = model.CarriesNaN
+            ? model.Summary
+            : $"{model.Summary} · refit on every recompute · σ not derived — parameter uncertainty not carried";
+        return new TransferResult(
+            model.Predict(predict!.Value),
+            double.NaN,
+            yTrain.Unit,
+            predict.History.Select(model.Predict).ToList(),
+            [],
+            true,
+            note);
+    }
+
+    public static string? EstimatorObjection(TransferInput? xTrain, TransferInput? yTrain, TransferInput? predict)
+    {
+        var missing = new List<string>();
+        if (xTrain is null) missing.Add("x[]");
+        if (yTrain is null) missing.Add("y[]");
+        if (predict is null) missing.Add("predict");
+        if (missing.Count > 0)
+            return $"nothing usable on {string.Join(", ", missing)} — wire the port, or the leaf behind it carries no value";
+        if (xTrain!.History.Count != yTrain!.History.Count)
+        {
+            return $"training series differ — x[] carries {xTrain.History.Count} point(s), y[] {yTrain.History.Count}. " +
+                   "Series read from one dataset align row-by-row; pairing these by index would invent data";
+        }
+        return yTrain.History.Count < 2 ? "a line through fewer than two training points is not a fit" : null;
+    }
+
+    public static string EstimatorFormula(string name, string? xLabel, string? yLabel, string? predictLabel)
+    {
+        var formula = $"{name}({xLabel ?? "x[]"}, {yLabel ?? "y[]"})({predictLabel ?? "…"})";
+        return formula.Length > 34 ? formula[..33] + "…" : formula;
+    }
+
     /// <summary>The formula the card shows, e.g. "exp(sum(tank_01.level, tank_02.level))".</summary>
     public static string Formula(TransferCombiner combiner, LibraryFunction? stage, IEnumerable<string> labels)
     {

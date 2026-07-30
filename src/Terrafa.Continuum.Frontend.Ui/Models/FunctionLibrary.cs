@@ -1,3 +1,5 @@
+using Terrafa.Continuum.Analytics.Regression;
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 public enum PortKind
@@ -58,18 +60,23 @@ public sealed class FunctionLibrary
     public const string TrigonometricGroup = "trigonometric";
     public const string AggregatesGroup = "aggregates";
     public const string CompositesGroup = "composites";
+    public const string RegressionGroup = "regression";
 
     public static IReadOnlyList<string> PrimitiveGroups { get; } =
         [ArithmeticGroup, LogExpGroup, PowerGroup, ClipsGroup, TrigonometricGroup, AggregatesGroup];
 
+    public static IReadOnlyList<string> EstimatorGroups { get; } = [RegressionGroup];
+
     public static IReadOnlyList<string> PlannedGroups { get; } =
-        ["regression", "clustering", "optimisation"];
+        ["clustering", "optimisation"];
 
     public static FunctionLibrary Instance { get; } = new();
 
     private readonly List<LibraryFunction> userFunctions = [];
 
     public IReadOnlyList<LibraryFunction> Primitives { get; }
+
+    public IReadOnlyList<FunctionEstimator> Estimators { get; }
 
     public IReadOnlyList<LibraryFunction> UserFunctions => userFunctions;
 
@@ -95,10 +102,38 @@ public sealed class FunctionLibrary
             Aggregate("min", values => values.Min(), "lower envelope of its arguments"),
             Aggregate("mean", values => values.Average(), "equal-weight average")
         ];
+        Estimators =
+        [
+            new FunctionEstimator
+            {
+                Name = "fit_linear",
+                Group = RegressionGroup,
+                DisplayFormula = "y ≈ a + b·x",
+                Note = "least squares over two wired series · the fitted line predicts a third input · lives on the NETWORK canvas",
+                FitSeries = FitLine
+            }
+        ];
     }
 
     public IReadOnlyList<LibraryFunction> PrimitivesInGroup(string group) =>
         Primitives.Where(function => function.Group == group).ToArray();
+
+    public IReadOnlyList<FunctionEstimator> EstimatorsInGroup(string group) =>
+        Estimators.Where(estimator => estimator.Group == group).ToArray();
+
+    public FunctionEstimator? FindEstimator(string name) =>
+        Estimators.FirstOrDefault(estimator => estimator.Name == name);
+
+    private static FittedModel FitLine(IReadOnlyList<double> xTrain, IReadOnlyList<double> yTrain)
+    {
+        var fit = LinearRegression.Fit(xTrain, yTrain);
+        var carriesNaN = double.IsNaN(fit.Slope) || double.IsNaN(fit.Intercept);
+        var summary = carriesNaN
+            ? "fit carries NaN — a training reading is not plottable"
+            : $"ŷ = {ConstantNode.Format(fit.Slope)}·x {(fit.Intercept < 0 ? "−" : "+")} " +
+              $"{ConstantNode.Format(Math.Abs(fit.Intercept))} · R² {ConstantNode.Format(fit.RSquared)} · n {yTrain.Count}";
+        return new FittedModel(fit.Predict, summary, carriesNaN);
+    }
 
     public LibraryFunction? FindUserFunction(string name) =>
         userFunctions.FirstOrDefault(function => function.Name == name);

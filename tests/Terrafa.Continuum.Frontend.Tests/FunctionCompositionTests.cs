@@ -2,6 +2,7 @@ using Terrafa.Continuum.Frontend.Models;
 
 namespace Terrafa.Continuum.Frontend.Tests;
 
+[Collection("function library")]
 public class FunctionCompositionTests
 {
     private static readonly FunctionLibrary Library = FunctionLibrary.Instance;

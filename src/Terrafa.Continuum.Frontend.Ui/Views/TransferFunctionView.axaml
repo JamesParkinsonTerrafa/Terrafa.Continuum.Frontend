@@ -48,7 +48,7 @@
             </ScrollViewer>
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
-            <TextBlock Text="Primitives are fixed. Right-click the library to create a composite function."
+            <TextBlock Text="Primitives are fixed. Right-click to create a composite. Estimators fit live on the NETWORK canvas."
                        FontSize="10" LineHeight="15" TextWrapping="Wrap"
                        MaxLines="2" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextFaintBrush}"

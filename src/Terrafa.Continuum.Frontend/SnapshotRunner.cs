@@ -30,6 +30,7 @@ public static class SnapshotRunner
 
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
+        CaptureRegressorProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
@@ -642,7 +643,7 @@ public static class SnapshotRunner
         Click(Center(GroupHeader("aggregates")));
         Click(Center(GroupHeader("regression")));
         Console.WriteLine(
-            $"tfn probe: aggregates collapse {expandedRows}→{collapsedRows}→{view.LibraryList.Children.Count} rows with regression folder open");
+            $"tfn probe: aggregates collapse {expandedRows}→{collapsedRows}→{view.LibraryList.Children.Count} rows with regression folder closed");
         Click(Center(GroupHeader("regression")));
 
         CreateFunctionTab();
@@ -705,7 +706,53 @@ public static class SnapshotRunner
         ClickDialogButton("DISCARD");
         Console.WriteLine($"tfn probe: tabs after close = {view.StackTabs.Labels.Count}");
 
+        Click(Center(LibraryEntry("fit_linear")));
+        var estimatorItem = view.Overlay.GetVisualDescendants().OfType<TextBlock>()
+            .First(text => text.Text?.StartsWith("USE ON NETWORK") == true);
+        Console.WriteLine($"tfn probe: estimator menu offers → {estimatorItem.Text}");
+        Capture(window, outputDir, "2-tfn-estimator");
+        Click(Center(estimatorItem));
+
         window.Close();
+    }
+
+    private static void CaptureRegressorProbe(string outputDir)
+    {
+        var graph = NetworkGraph.Instance;
+        var root = Workspace.Instance.Find("SITE_ALPHA")!.Root.Path;
+        var regressor = graph.AddEstimator("fit_linear", 470, 620);
+        graph.Connect($"{root}.tank_farm.tank_01.level", regressor.Id);
+        graph.Connect($"{root}.tank_farm.tank_01.temp", regressor.Id);
+        graph.Connect($"{root}.tank_farm.tank_02.level", regressor.Id);
+        var figure = graph.AddFigure("predicted_temp", 902, 640);
+        graph.Connect(regressor.Id, figure.Id);
+
+        Console.WriteLine($"regressor probe: {graph.Title(regressor)}");
+        Console.WriteLine($"regressor probe: {graph.Evaluate(regressor)?.Note ?? "no result"}");
+
+        graph.SwapTrainingWires(regressor);
+        Console.WriteLine(
+            $"regressor probe: after swapping training wires — {graph.Evaluate(regressor)?.Note ?? "no result"}");
+        graph.SwapTrainingWires(regressor);
+
+        var committed = FigureCatalog.Instance.Find("predicted_temp");
+        Console.WriteLine(
+            $"regressor probe: fig.predicted_temp = {committed?.Display ?? "—"} · {committed?.Note ?? ""}");
+
+        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+        Capture(window, outputDir, "1-netw-regress");
+        window.Close();
+
+        NetworkGraph.Instance.Reset(seedDemo: true);
     }
 
     /// <summary>
