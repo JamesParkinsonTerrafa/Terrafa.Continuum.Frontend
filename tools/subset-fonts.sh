@@ -21,9 +21,9 @@ DEJAVU_VERSION=2.37
 NOTO_MATH_URL=https://github.com/notofonts/notofonts.github.io/raw/main/fonts/NotoSansMath/hinted/ttf/NotoSansMath-Regular.ttf
 
 # Latin-1, Greek, phonetic modifiers, punctuation, super/subscripts, arrows, operators,
-# box drawing, geometric shapes, misc symbols, dingbats, braille.
+# misc technical (floor/ceiling), box drawing, geometric shapes, misc symbols, dingbats, braille.
 DEJAVU_RANGES="U+00A0-00FF,U+0370-03FF,U+1D2C-1D6A,U+2000-206F,U+2070-209F,\
-U+2190-21FF,U+2200-22FF,U+2500-257F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+2800-28FF"
+U+2190-21FF,U+2200-22FF,U+2300-23FF,U+2500-257F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+2800-28FF"
 
 # Mathematical Alphanumeric Symbols — the script capitals in the transfer-function notation.
 NOTO_MATH_RANGES="U+1D400-1D7FF"
