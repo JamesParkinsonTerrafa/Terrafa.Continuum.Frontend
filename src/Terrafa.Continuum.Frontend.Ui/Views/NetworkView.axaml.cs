@@ -49,12 +49,16 @@ public partial class NetworkView : UserControl
         AsOfText.Text = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm").ToUpperInvariant() + " ▸ LIVE";
         EventCountText.Text = $"EVENTS {snapshot.EventCount:N0} · APPEND-ONLY";
 
-        Diagram.ConnectionStyle = (source, target) =>
-            source.Card.Variant == NodeCardVariant.Measure
+        Diagram.ConnectionStyle = (source, target) => graph.PortOf(source.Id, target.Id) switch
+        {
+            NetworkGraph.EstimatorPortX or NetworkGraph.EstimatorPortY => (Palette.Cyan, [4, 4], 0.85),
+            NetworkGraph.EstimatorPortPredict => (Palette.Green, null, 0.85),
+            _ => source.Card.Variant == NodeCardVariant.Measure
                 ? (source.Card.AccentOverride ?? Palette.Cyan, null, 0.7)
                 : target.Card.Variant == NodeCardVariant.Provisional
                     ? (Palette.Purple, [6, 5], 0.8)
-                    : (Palette.Green, null, 0.8);
+                    : (Palette.Green, null, 0.8)
+        };
         Diagram.MenuProvider = BuildNodeMenu;
         Diagram.CanConnect = (source, target) => graph.CanConnect(source.Id, target.Id);
         Diagram.Connected += OnConnected;
@@ -161,6 +165,7 @@ public partial class NetworkView : UserControl
             : node.Id.ToUpperInvariant();
 
         if (node.IsOpaque) return BuildOpaqueTransferCard(node, tag);
+        if (node.IsEstimator) return BuildEstimatorCard(node, tag);
 
         var result = graph.Evaluate(node);
         return new NodeCard
@@ -202,6 +207,73 @@ public partial class NetworkView : UserControl
             Width = 250,
             ExtraContent = extra
         };
+    }
+
+    private NodeCard BuildEstimatorCard(NetworkNode node, string tag)
+    {
+        var result = graph.Evaluate(node);
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Transfer,
+            TagText = $"REGRESSOR · {tag}",
+            TagRight = "fit ▸ predict",
+            Title = graph.Title(node),
+            TitleSize = 12,
+            ValueMain = result is null || double.IsNaN(result.Value)
+                ? ""
+                : $"{MeasureNumerics.Format(result.Value)} {result.Unit}".Trim(),
+            Width = 250,
+            AccentOverride = Palette.Cyan,
+            FillOverride = Palette.CyanFill,
+            ExtraContent = EstimatorExtra(node, result)
+        };
+    }
+
+    private Control EstimatorExtra(NetworkNode node, TransferResult? result)
+    {
+        var extra = new TextBlock
+        {
+            FontSize = 9,
+            LineHeight = 14,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextMuted
+        };
+
+        var inlines = new List<Inline>();
+        foreach (var port in NetworkGraph.EstimatorPorts)
+        {
+            var source = graph.SourceTitleOnPort(node, port);
+            var label = port switch
+            {
+                NetworkGraph.EstimatorPortX => "train x[]",
+                NetworkGraph.EstimatorPortY => "train y[]",
+                _ => "predict"
+            };
+            inlines.Add(new Run($"{label} ← ") { Foreground = Palette.TextFaint });
+            inlines.Add(source is null
+                ? new Run("—") { Foreground = Palette.Amber }
+                : new Run(source)
+                {
+                    Foreground = port == NetworkGraph.EstimatorPortPredict ? Palette.Green : Palette.Cyan
+                });
+            inlines.Add(new LineBreak());
+        }
+
+        if (result is null)
+        {
+            var objection = TransferMath.EstimatorObjection(
+                graph.InputOnPort(node, NetworkGraph.EstimatorPortX),
+                graph.InputOnPort(node, NetworkGraph.EstimatorPortY),
+                graph.InputOnPort(node, NetworkGraph.EstimatorPortPredict));
+            inlines.Add(new Run(objection ?? "estimator missing from the library") { Foreground = Palette.Amber });
+        }
+        else
+        {
+            inlines.Add(new Run(result.Note));
+        }
+
+        extra.Inlines = [.. inlines];
+        return extra;
     }
 
     private static Control TransferExtra(TransferResult? result, int inputCount)
@@ -304,6 +376,14 @@ public partial class NetworkView : UserControl
                 ("CLEAR INPUTS", () => ClearInputs(node.Id)),
                 ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
             ],
+            _ when model.IsEstimator =>
+            [
+                ("SWAP TRAINING WIRES x[] ↔ y[]", () => Mutate(() => graph.SwapTrainingWires(model))),
+                ("ROTATE PORT ROLES", () => Mutate(() => graph.RotatePortRoles(model))),
+                ("MODIFY FUNCTION", () => navigate(1)),
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
             _ =>
             [
                 ("CHANGE FUNCTION", () => Mutate(() => graph.CycleStage(model))),
@@ -342,6 +422,12 @@ public partial class NetworkView : UserControl
             "combines its inputs and carries their σ",
             Palette.Amber,
             point => Mutate(() => graph.AddTransfer(point.X - 125, point.Y - 40))));
+
+        BuildList.Children.Add(BuildElementRow(
+            "REGRESSOR",
+            "fits y[] on x[] from two wired series · predicts a third input · refits on every recompute",
+            Palette.Cyan,
+            point => Mutate(() => graph.AddEstimator("fit_linear", point.X - 125, point.Y - 40))));
 
         BuildList.Children.Add(BuildElementRow(
             "DASHBOARD FIG",
@@ -724,6 +810,7 @@ public partial class NetworkView : UserControl
                 $"{subtree.Dataset.ToLowerInvariant()} leaf"));
         }
         LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, false, "TRANSFER — density dν/dµ"));
+        LegendPanel.Children.Add(LegendRow(Palette.Cyan, Palette.CyanFill, true, "REGRESSOR — training wires dashed"));
         LegendPanel.Children.Add(LegendRow(Palette.Green, Palette.GreenFill, false, "FIGURE — projection E[X|𝒢]"));
         LegendPanel.Children.Add(LegendRow(Palette.Purple, null, true, "PROVISIONAL — under-determined"));
     }

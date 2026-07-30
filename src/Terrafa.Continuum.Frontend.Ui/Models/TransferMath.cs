@@ -98,13 +98,54 @@ public static class TransferMath
             BuildNote(combiner, stage, inputs.Count, head));
     }
 
+    public static TransferResult? EvaluateEstimator(
+        FunctionEstimator estimator, TransferInput? xTrain, TransferInput? yTrain, TransferInput? predict)
+    {
+        if (EstimatorObjection(xTrain, yTrain, predict) is not null) return null;
+
+        var model = estimator.FitSeries(xTrain!.History, yTrain!.History);
+        var note = model.CarriesNaN
+            ? model.Summary
+            : $"{model.Summary} · refit on every recompute · σ not derived — parameter uncertainty not carried";
+        return new TransferResult(
+            model.Predict(predict!.Value),
+            double.NaN,
+            yTrain.Unit,
+            predict.History.Select(model.Predict).ToList(),
+            [],
+            true,
+            note);
+    }
+
+    public static string? EstimatorObjection(TransferInput? xTrain, TransferInput? yTrain, TransferInput? predict)
+    {
+        var missing = new List<string>();
+        if (xTrain is null) missing.Add("x[]");
+        if (yTrain is null) missing.Add("y[]");
+        if (predict is null) missing.Add("predict");
+        if (missing.Count > 0)
+            return $"nothing usable on {string.Join(", ", missing)} — wire the port, or the leaf behind it carries no value";
+        if (xTrain!.History.Count != yTrain!.History.Count)
+        {
+            return $"training series differ — x[] carries {xTrain.History.Count} point(s), y[] {yTrain.History.Count}. " +
+                   "Series read from one dataset align row-by-row; pairing these by index would invent data";
+        }
+        return yTrain.History.Count < 2 ? "a line through fewer than two training points is not a fit" : null;
+    }
+
+    public static string EstimatorFormula(string name, string? xLabel, string? yLabel, string? predictLabel)
+    {
+        var formula = $"{name}({xLabel ?? "x[]"}, {yLabel ?? "y[]"})({predictLabel ?? "…"})";
+        return formula.Length > 34 ? formula[..33] + "…" : formula;
+    }
+
     /// <summary>The formula the card shows, e.g. "exp(sum(tank_01.level, tank_02.level))".</summary>
     public static string Formula(TransferCombiner combiner, LibraryFunction? stage, IEnumerable<string> labels)
     {
         var joined = string.Join(", ", labels);
         if (joined.Length == 0) joined = "…";
         var inner = $"{Verb(combiner)}({joined})";
-        var formula = stage is null ? inner : stage.FormatApplied(inner);
+        var formula = stage is null ? inner : stage.FormatApplied([inner]);
         return formula.Length > 34 ? formula[..33] + "…" : formula;
     }
 
@@ -162,20 +203,20 @@ public static class TransferMath
     /// </summary>
     private static Step Apply(LibraryFunction stage, Step input)
     {
-        var value = stage.Apply(input.Value);
+        var value = stage.ApplyUnary(input.Value);
         if (double.IsNaN(input.Sigma) || input.Sigma <= 0)
             return new Step(value, double.NaN, IsAffine(stage, input.Value, StepSize(input.Value)));
 
         if (IsAffine(stage, input.Value, StepSize(input.Value)))
         {
             var h = StepSize(input.Value);
-            var slope = (stage.Apply(input.Value + h) - stage.Apply(input.Value - h)) / (2 * h);
+            var slope = (stage.ApplyUnary(input.Value + h) - stage.ApplyUnary(input.Value - h)) / (2 * h);
             return new Step(value, Math.Abs(slope) * input.Sigma, true);
         }
 
         var offset = SigmaPointSpread * input.Sigma;
-        var low = stage.Apply(input.Value - offset);
-        var high = stage.Apply(input.Value + offset);
+        var low = stage.ApplyUnary(input.Value - offset);
+        var high = stage.ApplyUnary(input.Value + offset);
         var mean = CentreWeight * value + WingWeight * (low + high);
         var variance = CentreWeight * Square(value - mean) +
                        WingWeight * (Square(low - mean) + Square(high - mean));
@@ -185,9 +226,9 @@ public static class TransferMath
     /// <summary>Affine iff the second difference vanishes — checked at the scale of the reading.</summary>
     private static bool IsAffine(LibraryFunction stage, double value, double h)
     {
-        var curvature = stage.Apply(value + h) + stage.Apply(value - h) - 2 * stage.Apply(value);
+        var curvature = stage.ApplyUnary(value + h) + stage.ApplyUnary(value - h) - 2 * stage.ApplyUnary(value);
         if (double.IsNaN(curvature)) return false;
-        var scale = Math.Max(Math.Abs(stage.Apply(value)), 1e-9);
+        var scale = Math.Max(Math.Abs(stage.ApplyUnary(value)), 1e-9);
         return Math.Abs(curvature) <= scale * 1e-9;
     }
 
