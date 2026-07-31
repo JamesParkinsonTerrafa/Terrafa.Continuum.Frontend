@@ -14,6 +14,7 @@ public class App : Application
     public override void Initialize()
     {
         ThemeManager.Initialize(Resources);
+        TypographySettings.RegisterResources(Resources);
         HintSettings.RegisterResources(Resources);
         BuilderModeSettings.RegisterResources(Resources);
         ButtonSettings.RegisterResources(Resources);
@@ -27,6 +28,10 @@ public class App : Application
         // Demo data until someone signs in on the DATA SOURCES screen, the real service after.
         // The object is the same either way, so nothing downstream has to know which is in force.
         IDatasetCatalog catalog = new SessionDatasetCatalog();
+
+        // Workspace restore re-mounts saved datasets through the same catalogue the screens read,
+        // so its caches are shared and the demo/live swap applies to the restore too.
+        UserStateSync.Catalog = catalog;
 
         switch (ApplicationLifetime)
         {

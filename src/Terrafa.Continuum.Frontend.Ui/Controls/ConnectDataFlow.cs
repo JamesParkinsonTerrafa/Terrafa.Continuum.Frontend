@@ -54,8 +54,8 @@ public static class ConnectDataFlow
         {
             Text = "Everything on screen right now is demo data. Connect an account to read your own "
                    + "datasets from the live catalogue.",
-            FontSize = 11,
-            LineHeight = 17,
+            FontSize = TypographySettings.Size(11),
+            LineHeight = TypographySettings.Size(17),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextSub
         });
@@ -87,8 +87,8 @@ public static class ConnectDataFlow
         var password = Field("PASSWORD", isPassword: true);
         var status = new TextBlock
         {
-            FontSize = 10,
-            LineHeight = 15,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Red,
             IsVisible = false
@@ -98,8 +98,8 @@ public static class ConnectDataFlow
         body.Children.Add(new TextBlock
         {
             Text = "Sign in with the credentials we issued you.",
-            FontSize = 11,
-            LineHeight = 17,
+            FontSize = TypographySettings.Size(11),
+            LineHeight = TypographySettings.Size(17),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextSub
         });
@@ -171,8 +171,8 @@ public static class ConnectDataFlow
         var company = Field("COMPANY");
         var status = new TextBlock
         {
-            FontSize = 10,
-            LineHeight = 15,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Red,
             IsVisible = false
@@ -183,8 +183,8 @@ public static class ConnectDataFlow
         {
             Text = "Tell us who you are and we will set up an account. This opens your mail app with "
                    + $"the message ready to send to {AuthOptions.ContactEmail}.",
-            FontSize = 11,
-            LineHeight = 17,
+            FontSize = TypographySettings.Size(11),
+            LineHeight = TypographySettings.Size(17),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextSub
         });
@@ -281,7 +281,7 @@ public static class ConnectDataFlow
         stack.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint
         });
@@ -295,15 +295,15 @@ public static class ConnectDataFlow
         column.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 12,
+            FontSize = TypographySettings.Size(12),
             LetterSpacing = 1,
             Foreground = Palette.TextBright
         });
         column.Children.Add(new TextBlock
         {
             Text = detail,
-            FontSize = 10,
-            LineHeight = 15,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextFaint
         });
@@ -334,7 +334,7 @@ public static class ConnectDataFlow
     private static Control ContactFooter() => new TextBlock
     {
         Text = $"Questions? {AuthOptions.ContactEmail}",
-        FontSize = 10,
+        FontSize = TypographySettings.Size(10),
         Margin = new Thickness(0, 2, 0, 0),
         Foreground = Palette.TextFaint
     };

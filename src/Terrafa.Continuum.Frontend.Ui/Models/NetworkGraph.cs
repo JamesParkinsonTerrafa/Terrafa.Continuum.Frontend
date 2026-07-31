@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Terrafa Limited. All rights reserved.
 
+using Terrafa.Continuum.Frontend.Themes;
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 public enum NetworkNodeKind
@@ -81,6 +83,12 @@ public sealed class NetworkGraph
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised for mutations no screen redraws for — a card drag — but that durable state must
+    /// still record. See <see cref="Dashboard.Edited"/>.
+    /// </summary>
+    public event Action? Edited;
+
     public IReadOnlyList<NetworkNode> Nodes => nodes;
 
     public IReadOnlyList<NetworkEdge> Edges => edges;
@@ -102,10 +110,21 @@ public sealed class NetworkGraph
 
     // ── building ─────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Where a newly placed node lands: on the nearest gridline while snap is on.</summary>
+    private static double Placed(double value) =>
+        SnapSettings.Enabled ? SnapSettings.Snap(value) : value;
+
     public NetworkNode PlaceMeasure(string path, double x, double y)
     {
         if (Find(path) is { } existing) return existing;
-        var node = new NetworkNode { Id = path, Kind = NetworkNodeKind.Measure, Key = path, X = x, Y = y };
+        var node = new NetworkNode
+        {
+            Id = path,
+            Kind = NetworkNodeKind.Measure,
+            Key = path,
+            X = Placed(x),
+            Y = Placed(y)
+        };
         nodes.Add(node);
         Publish();
         return node;
@@ -118,8 +137,8 @@ public sealed class NetworkGraph
             Id = $"transfer:t{++nextTransfer}",
             Kind = NetworkNodeKind.Transfer,
             Combiner = TransferCombiner.Sum,
-            X = x,
-            Y = y
+            X = Placed(x),
+            Y = Placed(y)
         };
         nodes.Add(node);
         Publish();
@@ -133,8 +152,8 @@ public sealed class NetworkGraph
             Id = $"transfer:t{++nextTransfer}",
             Kind = NetworkNodeKind.Transfer,
             Estimator = estimatorName,
-            X = x,
-            Y = y
+            X = Placed(x),
+            Y = Placed(y)
         };
         nodes.Add(node);
         Publish();
@@ -149,8 +168,8 @@ public sealed class NetworkGraph
             Id = FigureId(key),
             Kind = NetworkNodeKind.Figure,
             Key = key,
-            X = x,
-            Y = y
+            X = Placed(x),
+            Y = Placed(y)
         };
         nodes.Add(node);
         Publish();
@@ -258,6 +277,28 @@ public sealed class NetworkGraph
         if (Find(id) is not { } node) return;
         node.X = x;
         node.Y = y;
+        Edited?.Invoke();
+    }
+
+    /// <summary>
+    /// Replaces the canvas with loaded state, then recomputes and announces once. The transfer
+    /// counter resumes past the highest loaded id so a new transfer cannot collide with one the
+    /// load brought back.
+    /// </summary>
+    public void Load(IEnumerable<NetworkNode> loadedNodes, IEnumerable<NetworkEdge> loadedEdges)
+    {
+        suspended++;
+        nodes.Clear();
+        edges.Clear();
+        nodes.AddRange(loadedNodes);
+        edges.AddRange(loadedEdges);
+        nextTransfer = nodes
+            .Select(node => node.Id.StartsWith("transfer:t", StringComparison.Ordinal)
+                && int.TryParse(node.Id["transfer:t".Length..], out var index) ? index : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        suspended--;
+        Publish();
     }
 
     public void CycleStage(NetworkNode transfer)
@@ -487,12 +528,13 @@ public sealed class NetworkGraph
 
         suspended++;
 
-        var level01 = PlaceMeasure($"{root}.tank_farm.tank_01.level", 70, 118);
-        var level02 = PlaceMeasure($"{root}.tank_farm.tank_02.level", 70, 258);
-        var temp01 = PlaceMeasure($"{root}.tank_farm.tank_01.temp", 70, 418);
-        var spoilage = PlaceMeasure($"{root}.tank_farm.tank_01.spoilage", 70, 558);
+        // Laid out in grid multiples, so the canvas opens already sitting on the snap grid.
+        var level01 = PlaceMeasure($"{root}.tank_farm.tank_01.level", 75, 125);
+        var level02 = PlaceMeasure($"{root}.tank_farm.tank_02.level", 75, 250);
+        var temp01 = PlaceMeasure($"{root}.tank_farm.tank_01.temp", 75, 425);
+        var spoilage = PlaceMeasure($"{root}.tank_farm.tank_01.spoilage", 75, 550);
 
-        var transfer1 = AddTransfer(450, 172);
+        var transfer1 = AddTransfer(450, 175);
         var transfer2 = new NetworkNode
         {
             Id = $"transfer:t{++nextTransfer}",
@@ -500,12 +542,12 @@ public sealed class NetworkGraph
             IsOpaque = true,
             OpaqueTitle = "hazard λ₀(t)·exp(θᵀx)",
             X = 450,
-            Y = 468
+            Y = 475
         };
         nodes.Add(transfer2);
 
-        var inventory = AddFigure("total_inventory", 866, 190);
-        var expiry = AddFigure("expiry_risk", 866, 472);
+        var inventory = AddFigure("total_inventory", 875, 200);
+        var expiry = AddFigure("expiry_risk", 875, 475);
 
         Connect(level01.Id, transfer1.Id);
         Connect(level02.Id, transfer1.Id);

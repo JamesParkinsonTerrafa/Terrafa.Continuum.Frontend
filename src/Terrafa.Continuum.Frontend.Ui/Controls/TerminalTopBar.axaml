@@ -15,29 +15,43 @@
         <StackPanel Orientation="Horizontal" Spacing="6">
           <controls:SpurGearIcon Fill="{DynamicResource TextMutedBrush}"
                                  VerticalAlignment="Center" />
-          <TextBlock Text="SETTINGS" FontSize="9" LetterSpacing="1"
+          <TextBlock Text="SETTINGS" FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
                      VerticalAlignment="Center"
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </controls:SquircleBorder>
-      <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="14,0,0,0"
-                 Text="READ ONLY · SETTINGS ▸ BUILDER MODE TO MAKE CHANGES"
-                 FontSize="9" LetterSpacing="1"
-                 Foreground="{DynamicResource TextMutedBrush}"
-                 IsVisible="{DynamicResource BuilderHintVisible}" />
+      <controls:SquircleBorder x:Name="ModeButton" Classes="emboss" DockPanel.Dock="Right"
+                               Margin="14,0,0,0" Padding="10,5"
+                               Background="{StaticResource EmbossSurfaceBrush}"
+                               VerticalAlignment="Center" Cursor="Hand">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="MODE" FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
+                     VerticalAlignment="Center"
+                     Foreground="{StaticResource TextMutedBrush}" />
+          <TextBlock x:Name="PlainLabel" Text="PLAIN" FontSize="{DynamicResource FontSize9}"
+                     LetterSpacing="1" VerticalAlignment="Center" />
+          <TextBlock Text="/" FontSize="{DynamicResource FontSize9}" VerticalAlignment="Center"
+                     Foreground="{StaticResource TextGhostBrush}" />
+          <TextBlock x:Name="TechnicalLabel" Text="TECHNICAL" FontSize="{DynamicResource FontSize9}"
+                     LetterSpacing="1" VerticalAlignment="Center" />
+        </StackPanel>
+      </controls:SquircleBorder>
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
       <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-        <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="12" FontWeight="Bold"
+        <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="{DynamicResource FontSize12}" FontWeight="Bold"
                    LetterSpacing="2" Cursor="Hand" />
-        <TextBlock Text="CONTINUUM CORE" FontSize="12" LetterSpacing="1"
+        <TextBlock Text="CONTINUUM CORE" FontSize="{DynamicResource FontSize12}" LetterSpacing="1"
                    Foreground="{StaticResource TextMutedBrush}" />
-        <TextBlock Text="│" FontSize="12" Foreground="{StaticResource TextGhostBrush}" />
-        <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="12"
+        <TextBlock Text="│" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextGhostBrush}" />
+        <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                    Foreground="{StaticResource AmberBrush}" />
-        <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="12"
+        <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                    Foreground="{StaticResource TextMutedBrush}" />
+        <TextBlock Text="· NORTHGATE TERMINALS, A FICTIONAL EUROPEAN TERMINAL AND BLENDER · 12 TANKS · 18 MONTHS OF HISTORY"
+                   FontSize="{DynamicResource FontSize12}"
+                   Foreground="{StaticResource TextFaintBrush}" />
       </StackPanel>
     </DockPanel>
   </Border>

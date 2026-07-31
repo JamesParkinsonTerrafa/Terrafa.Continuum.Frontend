@@ -34,6 +34,7 @@ public partial class NetworkView : UserControl
     private readonly Dictionary<string, RailRow> railRows = [];
     private readonly Dictionary<string, DiagramNode> placed = [];
     private readonly HashSet<string> collapsedSubtrees = [];
+    private readonly HashSet<string> canvasHoverPaths = [];
     private RailDrag? railDrag;
     private Border? railGhost;
 
@@ -47,7 +48,6 @@ public partial class NetworkView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
         AsOfText.Text = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm").ToUpperInvariant() + " ▸ LIVE";
         EventCountText.Text = $"EVENTS {snapshot.EventCount:N0} · APPEND-ONLY";
 
@@ -65,6 +65,7 @@ public partial class NetworkView : UserControl
         Diagram.CanConnect = (source, target) => graph.CanConnect(source.Id, target.Id);
         Diagram.Connected += OnConnected;
         Diagram.NodeMoved += OnNodeMoved;
+        Diagram.NodeHoverChanged += OnDiagramNodeHover;
 
         BuildBuildList();
         Render();
@@ -74,6 +75,39 @@ public partial class NetworkView : UserControl
         PointerReleased += (_, e) => OnRailDragReleased(e);
 
         NoiseOverlay.Attach(this);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        SnapSettings.Changed += SyncSnap;
+        // Snap may have been switched on while this screen was off show.
+        SyncSnap();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        SnapSettings.Changed -= SyncSnap;
+    }
+
+    /// <summary>
+    /// Going from free placement to the grid locks every node to its nearest gridline, the same
+    /// contract as the dashboard. A no-op when everything already sits on the grid.
+    /// </summary>
+    private void SyncSnap()
+    {
+        if (!SnapSettings.Enabled) return;
+        var moved = false;
+        foreach (var node in graph.Nodes)
+        {
+            var x = SnapSettings.Snap(node.X);
+            var y = SnapSettings.Snap(node.Y);
+            if (x == node.X && y == node.Y) continue;
+            graph.Move(node.Id, x, y);
+            moved = true;
+        }
+        if (moved) Render();
     }
 
     // ── canvas ───────────────────────────────────────────────────────────────────────────────
@@ -87,6 +121,7 @@ public partial class NetworkView : UserControl
     {
         Diagram.Clear();
         placed.Clear();
+        canvasHoverPaths.Clear();
 
         foreach (var node in graph.Nodes)
         {
@@ -127,12 +162,25 @@ public partial class NetworkView : UserControl
         graph.Move(node.Id, position.X, position.Y);
     }
 
-    private NodeCard BuildCard(NetworkNode node) => node.Kind switch
+    /// <summary>Ten grid cells — every card on this canvas is the same width.</summary>
+    private const double CardWidth = SnapSettings.GridSize * 10;
+
+    private NodeCard BuildCard(NetworkNode node)
     {
-        NetworkNodeKind.Measure => BuildLeafCard(node),
-        NetworkNodeKind.Figure => BuildFigureCard(node),
-        _ => BuildTransferCard(node)
-    };
+        var card = node.Kind switch
+        {
+            NetworkNodeKind.Measure => BuildLeafCard(node),
+            NetworkNodeKind.Figure => BuildFigureCard(node),
+            _ => BuildTransferCard(node)
+        };
+        // One size, in whole grid units, and opaque against the canvas — with a snapped top-left
+        // that keeps every edge of every card on a gridline, with no gridline showing through.
+        // Heights step in double cells, so cards grow in fewer, more deliberate increments.
+        card.Width = CardWidth;
+        card.GridHeight = SnapSettings.GridSize * 2;
+        card.Backdrop = Palette.BgDeep;
+        return card;
+    }
 
     private NodeCard BuildLeafCard(NetworkNode node)
     {
@@ -145,7 +193,6 @@ public partial class NetworkView : UserControl
             Variant = NodeCardVariant.Measure,
             TagText = "MEASURE · LEAF",
             TagRight = subtree?.Dataset.ToLowerInvariant() ?? "",
-            Width = 220,
             Title = NetworkGraph.LeafTitle(node.Key),
             ValueMain = reading?.Display ?? "—",
             ValueAccent = reading?.SigmaDisplay ?? "",
@@ -181,14 +228,13 @@ public partial class NetworkView : UserControl
             ValueAccent = result is { } value && value.HasVariance
                 ? $"± {MeasureNumerics.FormatSigma(value.Sigma)}"
                 : "",
-            Width = 250,
             ExtraContent = TransferExtra(result, graph.InputsOf(node.Id).Count())
         };
     }
 
     private static NodeCard BuildOpaqueTransferCard(NetworkNode node, string tag)
     {
-        var extra = new TextBlock { FontSize = 9, LineHeight = 14, Foreground = Palette.TextMuted };
+        var extra = new TextBlock { FontSize = TypographySettings.Size(9), LineHeight = TypographySettings.Size(14), Foreground = Palette.TextMuted };
         extra.Inlines =
         [
             new Run("ν ≪ µ "),
@@ -206,7 +252,6 @@ public partial class NetworkView : UserControl
             TagRight = "dν/dµ",
             Title = node.OpaqueTitle,
             TitleSize = 12,
-            Width = 250,
             ExtraContent = extra
         };
     }
@@ -224,7 +269,6 @@ public partial class NetworkView : UserControl
             ValueMain = result is null || double.IsNaN(result.Value)
                 ? ""
                 : $"{MeasureNumerics.Format(result.Value)} {result.Unit}".Trim(),
-            Width = 250,
             AccentOverride = Palette.Cyan,
             FillOverride = Palette.CyanFill,
             ExtraContent = EstimatorExtra(node, result)
@@ -235,8 +279,8 @@ public partial class NetworkView : UserControl
     {
         var extra = new TextBlock
         {
-            FontSize = 9,
-            LineHeight = 14,
+            FontSize = TypographySettings.Size(9),
+            LineHeight = TypographySettings.Size(14),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextMuted
         };
@@ -282,8 +326,8 @@ public partial class NetworkView : UserControl
     {
         var extra = new TextBlock
         {
-            FontSize = 9,
-            LineHeight = 14,
+            FontSize = TypographySettings.Size(9),
+            LineHeight = TypographySettings.Size(14),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextMuted
         };
@@ -330,7 +374,6 @@ public partial class NetworkView : UserControl
                 Variant = NodeCardVariant.Provisional,
                 TagText = "DASHBOARD FIG · MISSING",
                 Title = $"fig.{node.Key}",
-                Width = 270,
                 Note = "not in the figure catalogue"
             };
         }
@@ -349,7 +392,6 @@ public partial class NetworkView : UserControl
             ValueMain = figure.Display,
             ValueAccent = figure.SigmaDisplay,
             ValueSize = 16,
-            Width = 270,
             Note = figure.Note
         };
     }
@@ -444,11 +486,11 @@ public partial class NetworkView : UserControl
         {
             Children =
             {
-                new TextBlock { Text = label, FontSize = 10, LetterSpacing = 1, Foreground = accent },
+                new TextBlock { Text = label, FontSize = TypographySettings.Size(10), LetterSpacing = 1, Foreground = accent },
                 new TextBlock
                 {
                     Text = detail,
-                    FontSize = 9,
+                    FontSize = TypographySettings.Size(9),
                     Margin = new Thickness(0, 3, 0, 0),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Palette.TextFaint
@@ -501,7 +543,7 @@ public partial class NetworkView : UserControl
         MeasureList.Children.Add(new TextBlock
         {
             Text = "nothing mounted — open 6) DATA SOURCES",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.TextFaint
         });
     }
@@ -513,14 +555,14 @@ public partial class NetworkView : UserControl
         var sigma = new TextBlock
         {
             Text = reading.SigmaKind,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.TextFaint
         };
         DockPanel.SetDock(sigma, Dock.Right);
         row.Children.Add(sigma);
 
-        var checkBlock = new TextBlock { Text = "[ ]", FontSize = 11 };
-        var nameBlock = new TextBlock { Text = measure.Name, FontSize = 11 };
+        var checkBlock = new TextBlock { Text = "[ ]", FontSize = TypographySettings.Size(11) };
+        var nameBlock = new TextBlock { Text = measure.Name, FontSize = TypographySettings.Size(11) };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         label.Children.Add(checkBlock);
         label.Children.Add(nameBlock);
@@ -537,8 +579,16 @@ public partial class NetworkView : UserControl
         var railRow = new RailRow(
             measure, subtree, NetworkGraph.LeafTitle(measure.Path), shell, checkBlock, nameBlock);
         railRows[measure.Path] = railRow;
-        shell.PointerEntered += (_, _) => UpdateRailRow(railRow, hover: true);
-        shell.PointerExited += (_, _) => UpdateRailRow(railRow, hover: false);
+        shell.PointerEntered += (_, _) =>
+        {
+            UpdateRailRow(railRow, hover: true);
+            SetNodeHighlight(railRow, true);
+        };
+        shell.PointerExited += (_, _) =>
+        {
+            UpdateRailRow(railRow, hover: false);
+            SetNodeHighlight(railRow, false);
+        };
         shell.PointerPressed += (_, e) => BeginMeasureDrag(railRow, e);
         shell.PointerMoved += (_, e) => OnRailDragMoved(e);
         shell.PointerReleased += (_, e) => OnRailDragReleased(e);
@@ -555,7 +605,7 @@ public partial class NetworkView : UserControl
         var caret = new TextBlock
         {
             Text = collapsed ? "▸" : "▾",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -569,14 +619,14 @@ public partial class NetworkView : UserControl
         var name = new TextBlock
         {
             Text = $"{subtree.Dataset.ToLowerInvariant()} /",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = accent,
             VerticalAlignment = VerticalAlignment.Center
         };
         var count = new TextBlock
         {
             Text = $"{subtree.Leaves.Count(leaf => graph.Contains(leaf.Path))} placed",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -613,7 +663,7 @@ public partial class NetworkView : UserControl
     private static TextBlock RailHeader(string text, double indent, IBrush brush) => new()
     {
         Text = text,
-        FontSize = 11,
+        FontSize = TypographySettings.Size(11),
         Foreground = brush,
         Margin = new Thickness(indent, 0, 0, 0)
     };
@@ -621,15 +671,34 @@ public partial class NetworkView : UserControl
     private void UpdateRailRow(RailRow row, bool hover = false)
     {
         var isPlaced = graph.Contains(row.Node.Path);
-        var highlighted = hover && !isPlaced;
         var brush = isPlaced
             ? SubtreeAccents.Stroke(row.Subtree.AccentIndex)
-            : highlighted ? Palette.TextSub : Palette.TextFaint;
+            : hover ? Palette.TextSub : Palette.TextFaint;
         row.CheckBlock.Text = isPlaced ? "[x]" : "[ ]";
         row.CheckBlock.Foreground = brush;
         row.NameBlock.Foreground = brush;
-        row.Shell.Background = highlighted ? Palette.BgField : Brushes.Transparent;
+        // Lit while the pointer is on the row, and while it is on the row's box on the canvas —
+        // the same light in both directions, so either side finds the other.
+        row.Shell.Background = hover || canvasHoverPaths.Contains(row.Node.Path)
+            ? Palette.BgField
+            : Brushes.Transparent;
         row.Shell.Cursor = new Cursor(isPlaced ? StandardCursorType.Arrow : StandardCursorType.Hand);
+    }
+
+    /// <summary>Rail row hovered — light the leaf's box on the canvas, if it is placed.</summary>
+    private void SetNodeHighlight(RailRow row, bool on)
+    {
+        if (placed.TryGetValue(row.Node.Path, out var node)) node.Card.IsHighlighted = on;
+    }
+
+    /// <summary>Canvas box hovered — light its rail row and bring it into view.</summary>
+    private void OnDiagramNodeHover(DiagramNode node, bool hovering)
+    {
+        if (!railRows.TryGetValue(node.Id, out var row)) return;
+        if (hovering) canvasHoverPaths.Add(node.Id);
+        else canvasHoverPaths.Remove(node.Id);
+        UpdateRailRow(row);
+        if (hovering) row.Shell.BringIntoView();
     }
 
     // ── figure naming ────────────────────────────────────────────────────────────────────────
@@ -644,10 +713,10 @@ public partial class NetworkView : UserControl
             wireFrom is null ? "figure" : Slug(NetworkGraph.LeafTitle(wireFrom)));
 
         var box = new TextBox { Classes = { "field" }, Text = suggestion, Watermark = "figure name" };
-        var preview = new TextBlock { FontSize = 11, Foreground = Palette.Green };
+        var preview = new TextBlock { FontSize = TypographySettings.Size(11), Foreground = Palette.Green };
         var warning = new TextBlock
         {
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Margin = new Thickness(0, 4, 0, 0),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Amber
@@ -680,7 +749,7 @@ public partial class NetworkView : UserControl
             Text = wireFrom is null
                 ? "nothing yet — drag a wire into its left port once it lands"
                 : NetworkGraph.LeafTitle(wireFrom),
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Text
         }));
@@ -716,7 +785,7 @@ public partial class NetworkView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1.5,
             Foreground = Palette.TextFaint
         });
@@ -796,7 +865,7 @@ public partial class NetworkView : UserControl
         BorderThickness = new Thickness(1),
         Background = Palette.CanvasNoteBackdrop,
         Padding = new Thickness(8, 4),
-        Child = new TextBlock { Text = leafTitle, FontSize = 10, Foreground = accent }
+        Child = new TextBlock { Text = leafTitle, FontSize = TypographySettings.Size(10), Foreground = accent }
     };
 
     // ── legend ───────────────────────────────────────────────────────────────────────────────
@@ -834,7 +903,7 @@ public partial class NetworkView : UserControl
         row.Children.Add(new TextBlock
         {
             Text = text,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 0.5,
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center

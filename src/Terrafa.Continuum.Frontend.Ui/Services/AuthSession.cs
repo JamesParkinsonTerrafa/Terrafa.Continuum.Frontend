@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Terrafa Limited. All rights reserved.
 
+using Avalonia.Threading;
+
 namespace Terrafa.Continuum.Frontend.Services;
 
 /// <summary>
@@ -8,9 +10,10 @@ namespace Terrafa.Continuum.Frontend.Services;
 /// signing in changes what every one of them shows.
 ///
 /// <para>
-/// The token is held in memory only. Nothing is written to disk, so closing the app signs out:
-/// persisting it would mean putting a bearer token somewhere a wasm bundle shares with every
-/// other page on its origin, for the sake of skipping a login box.
+/// Access and id tokens are held in memory only. The refresh token — revocable server-side, and
+/// useless without the pool's client id — is handed to <see cref="Store"/> so a restart can renew
+/// the session without a login box; each head supplies the safest store it has (the keychain on
+/// desktop, localStorage on the web head), and the default stores nothing.
 /// </para>
 /// </summary>
 public sealed class AuthSession(IAuthenticator authenticator)
@@ -21,6 +24,8 @@ public sealed class AuthSession(IAuthenticator authenticator)
     private AuthTokens? tokens;
     private DateTimeOffset renewAfter;
     private Task<string?>? renewing;
+
+    public ISecretStore Store { get; set; } = new NullSecretStore();
 
     /// <summary>Raised on sign-in and sign-out. Screens rebuild against the catalogue this selects.</summary>
     public event Action? Changed;
@@ -44,19 +49,66 @@ public sealed class AuthSession(IAuthenticator authenticator)
             renewing = null;
         }
         Username = username;
-        Changed?.Invoke();
+        if (issued.RefreshToken is not null)
+            await SaveCredentialAsync(new StoredCredential(username, issued.RefreshToken));
+        RaiseChanged();
+    }
+
+    public async Task TryRestoreAsync()
+    {
+        StoredCredential? credential;
+        try
+        {
+            credential = await Store.LoadAsync();
+        }
+        catch
+        {
+            return;
+        }
+        if (credential is null) return;
+
+        lock (gate)
+        {
+            if (tokens is not null) return;
+        }
+
+        AuthTokens issued;
+        try
+        {
+            issued = await authenticator.RefreshAsync(credential.RefreshToken);
+        }
+        catch
+        {
+            await ClearCredentialAsync();
+            return;
+        }
+
+        lock (gate)
+        {
+            if (tokens is not null) return;
+            tokens = issued with { RefreshToken = issued.RefreshToken ?? credential.RefreshToken };
+            renewAfter = Expiry(issued);
+            renewing = null;
+        }
+        Username = credential.Username;
+        if (issued.RefreshToken is not null && issued.RefreshToken != credential.RefreshToken)
+            await SaveCredentialAsync(credential with { RefreshToken = issued.RefreshToken });
+        RaiseChanged();
     }
 
     public void SignOut()
     {
+        string? refreshToken;
         lock (gate)
         {
             if (tokens is null) return;
+            refreshToken = tokens.RefreshToken;
             tokens = null;
             renewing = null;
         }
         Username = null;
-        Changed?.Invoke();
+        _ = ForgetCredentialAsync(refreshToken);
+        RaiseChanged();
     }
 
     /// <summary>
@@ -97,11 +149,14 @@ public sealed class AuthSession(IAuthenticator authenticator)
             var issued = await authenticator.RefreshAsync(refreshToken);
             lock (gate)
             {
-                // Cognito does not reissue the refresh token on this flow, so the old one is kept.
+                // Cognito does not reissue the refresh token on this flow unless rotation is
+                // enabled, so the old one is kept when nothing new arrives.
                 tokens = issued with { RefreshToken = issued.RefreshToken ?? refreshToken };
                 renewAfter = Expiry(issued);
                 renewing = null;
             }
+            if (issued.RefreshToken is not null && issued.RefreshToken != refreshToken && Username is not null)
+                await SaveCredentialAsync(new StoredCredential(Username, issued.RefreshToken));
             return issued.AccessToken;
         }
         catch (AuthException)
@@ -111,6 +166,43 @@ public sealed class AuthSession(IAuthenticator authenticator)
             SignOut();
             return null;
         }
+    }
+
+    private async Task SaveCredentialAsync(StoredCredential credential)
+    {
+        try
+        {
+            await Store.SaveAsync(credential);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task ClearCredentialAsync()
+    {
+        try
+        {
+            await Store.ClearAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task ForgetCredentialAsync(string? refreshToken)
+    {
+        await ClearCredentialAsync();
+        if (refreshToken is not null)
+            await authenticator.RevokeAsync(refreshToken);
+    }
+
+    private void RaiseChanged()
+    {
+        var handlers = Changed;
+        if (handlers is null) return;
+        if (Dispatcher.UIThread.CheckAccess()) handlers();
+        else Dispatcher.UIThread.Post(() => handlers());
     }
 
     private static DateTimeOffset Expiry(AuthTokens issued) =>

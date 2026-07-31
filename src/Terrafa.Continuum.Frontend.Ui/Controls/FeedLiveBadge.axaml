@@ -20,10 +20,10 @@
     </Style>
   </UserControl.Styles>
   <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-    <TextBlock Text="{Binding TimeText, ElementName=Root}" FontSize="12"
+    <TextBlock Text="{Binding TimeText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-      <TextBlock Text="FEED LIVE" FontSize="12" Foreground="{StaticResource GreenBrush}"
+      <TextBlock Text="FEED LIVE" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource GreenBrush}"
                  VerticalAlignment="Center" />
       <Ellipse Classes="pulse" Width="8" Height="8" Fill="{StaticResource GreenBrush}"
                VerticalAlignment="Center" />

@@ -58,7 +58,18 @@ public class NodeCard : UserControl
     public static readonly StyledProperty<IBrush?> AccentOverrideProperty =
         AvaloniaProperty.Register<NodeCard, IBrush?>(nameof(AccentOverride));
 
+    public static readonly StyledProperty<bool> IsHighlightedProperty =
+        AvaloniaProperty.Register<NodeCard, bool>(nameof(IsHighlighted));
+
+    public static readonly StyledProperty<IBrush?> BackdropProperty =
+        AvaloniaProperty.Register<NodeCard, IBrush?>(nameof(Backdrop));
+
+    public static readonly StyledProperty<double> GridHeightProperty =
+        AvaloniaProperty.Register<NodeCard, double>(nameof(GridHeight));
+
+    private readonly Rectangle backdrop;
     private readonly Rectangle frame;
+    private readonly Rectangle halo;
     private readonly TextBlock tagBlock;
     private readonly TextBlock tagRightBlock;
     private readonly DockPanel tagRow;
@@ -71,10 +82,19 @@ public class NodeCard : UserControl
 
     public NodeCard()
     {
+        backdrop = new Rectangle { IsVisible = false };
         frame = new Rectangle { StrokeThickness = 1 };
+        // Drawn on the frame itself rather than floating outside it — the card is clipped to
+        // its bounds by the canvas, so an outer ring would never reach the screen.
+        halo = new Rectangle
+        {
+            StrokeThickness = 2.5,
+            IsVisible = false,
+            IsHitTestVisible = false
+        };
 
-        tagBlock = new TextBlock { FontSize = 9, LetterSpacing = 1 };
-        tagRightBlock = new TextBlock { FontSize = 9, LetterSpacing = 1 };
+        tagBlock = new TextBlock { FontSize = TypographySettings.Size(9), LetterSpacing = 1 };
+        tagRightBlock = new TextBlock { FontSize = TypographySettings.Size(9), LetterSpacing = 1 };
         tagRow = new DockPanel();
         DockPanel.SetDock(tagRightBlock, Dock.Right);
         tagRow.Children.Add(tagRightBlock);
@@ -87,7 +107,7 @@ public class NodeCard : UserControl
         valueBlock.Inlines = [valueMainRun, new Run(" "), valueAccentRun];
         noteBlock = new TextBlock
         {
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             Margin = new Thickness(0, 3, 0, 0),
             Foreground = Palette.TextFaint,
             TextWrapping = TextWrapping.Wrap
@@ -102,8 +122,10 @@ public class NodeCard : UserControl
         body.Children.Add(extraHost);
 
         var layers = new Panel();
+        layers.Children.Add(backdrop);
         layers.Children.Add(frame);
         layers.Children.Add(body);
+        layers.Children.Add(halo);
         Content = layers;
 
         UpdateVisuals();
@@ -182,6 +204,38 @@ public class NodeCard : UserControl
         set => SetValue(AccentOverrideProperty, value);
     }
 
+    /// <summary>Draws the find-me halo — set while the card's row in a side rail is hovered, and vice versa.</summary>
+    public bool IsHighlighted
+    {
+        get => GetValue(IsHighlightedProperty);
+        set => SetValue(IsHighlightedProperty, value);
+    }
+
+    /// <summary>
+    /// An opaque base painted beneath the translucent variant fill — set to the canvas background
+    /// where something drawn behind the card (the placement gridlines) must not show through it.
+    /// </summary>
+    public IBrush? Backdrop
+    {
+        get => GetValue(BackdropProperty);
+        set => SetValue(BackdropProperty, value);
+    }
+
+    /// <summary>When set, the card's height rounds up to the next multiple — whole grid cells.</summary>
+    public double GridHeight
+    {
+        get => GetValue(GridHeightProperty);
+        set => SetValue(GridHeightProperty, value);
+    }
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var size = base.MeasureOverride(availableSize);
+        if (GridHeight > 0)
+            size = size.WithHeight(Math.Ceiling(size.Height / GridHeight) * GridHeight);
+        return size;
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -203,21 +257,32 @@ public class NodeCard : UserControl
             change.Property == ValueMainProperty || change.Property == ValueAccentProperty ||
             change.Property == NoteProperty || change.Property == TitleSizeProperty ||
             change.Property == ValueSizeProperty || change.Property == ExtraContentProperty ||
-            change.Property == FillOverrideProperty || change.Property == AccentOverrideProperty)
+            change.Property == FillOverrideProperty || change.Property == AccentOverrideProperty ||
+            change.Property == IsHighlightedProperty || change.Property == BackdropProperty)
         {
             UpdateVisuals();
         }
+        if (change.Property == GridHeightProperty) InvalidateMeasure();
     }
 
     private void UpdateVisuals()
     {
         var style = ResolveStyle(Variant);
         var accent = AccentOverride ?? style.Accent;
+        backdrop.RadiusX = AppearanceSettings.NodeCornerRadius;
+        backdrop.RadiusY = AppearanceSettings.NodeCornerRadius;
+        backdrop.Fill = Backdrop;
+        backdrop.IsVisible = Backdrop is not null;
         frame.RadiusX = AppearanceSettings.NodeCornerRadius;
         frame.RadiusY = AppearanceSettings.NodeCornerRadius;
         frame.Stroke = AppearanceSettings.Toned(accent);
         frame.Fill = FillOverride ?? AppearanceSettings.Toned(style.Fill);
         frame.StrokeDashArray = style.Dashed ? [4, 3] : null;
+
+        halo.RadiusX = AppearanceSettings.NodeCornerRadius;
+        halo.RadiusY = AppearanceSettings.NodeCornerRadius;
+        halo.Stroke = Palette.Amber;
+        halo.IsVisible = IsHighlighted;
 
         tagBlock.Text = TagText;
         tagBlock.Foreground = AppearanceSettings.Toned(
@@ -227,15 +292,15 @@ public class NodeCard : UserControl
         tagRightBlock.IsVisible = TagRight.Length > 0;
 
         titleBlock.Text = Title;
-        titleBlock.FontSize = TitleSize;
+        titleBlock.FontSize = TypographySettings.Size(TitleSize);
         titleBlock.Foreground = AppearanceSettings.Toned(style.TitleBrush);
         titleBlock.IsVisible = Title.Length > 0;
 
         valueMainRun.Text = ValueMain;
-        valueBlock.FontSize = ValueSize;
+        valueBlock.FontSize = TypographySettings.Size(ValueSize);
         valueAccentRun.Text = ValueAccent;
         valueAccentRun.Foreground = AppearanceSettings.Toned(accent);
-        valueAccentRun.FontSize = Math.Max(ValueSize - 3, 9);
+        valueAccentRun.FontSize = TypographySettings.Size(Math.Max(ValueSize - 3, 9));
         valueBlock.IsVisible = ValueMain.Length > 0;
 
         noteBlock.Text = Note;

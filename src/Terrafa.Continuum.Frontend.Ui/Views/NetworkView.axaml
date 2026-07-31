@@ -8,23 +8,19 @@
   <Panel>
   <DockPanel>
     <controls:TerminalTopBar DockPanel.Dock="Top"
-                             CommandText="NETW &lt;GO&gt;"
-                             SubtitleText="MODEL NETWORK">
-      <controls:TerminalTopBar.RightContent>
-        <controls:FeedLiveBadge x:Name="FeedBadge" />
-      </controls:TerminalTopBar.RightContent>
-    </controls:TerminalTopBar>
+                             CommandText="NETW"
+                             SubtitleText="MODEL NETWORK" />
 
     <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="0">
       <controls:TerminalTabStrip.RightContent>
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <TextBlock Text="AS-OF" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+          <TextBlock Text="AS-OF" FontSize="{DynamicResource FontSize11}" Foreground="{StaticResource TextMutedBrush}"
                      VerticalAlignment="Center" />
           <Border Background="{StaticResource BgFieldBrush}"
                   BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="8,3">
-            <TextBlock x:Name="AsOfText" FontSize="11" Foreground="{StaticResource TextBrush}" />
+            <TextBlock x:Name="AsOfText" FontSize="{DynamicResource FontSize11}" Foreground="{StaticResource TextBrush}" />
           </Border>
-          <TextBlock Text="filtration 𝓕ₜ — values shown use events ≤ t only" FontSize="11"
+          <TextBlock Text="filtration 𝓕ₜ — values shown use events ≤ t only" FontSize="{DynamicResource FontSize11}"
                      Foreground="{StaticResource TextFaintBrush}" Margin="8,0,0,0"
                      VerticalAlignment="Center"
                      IsVisible="{DynamicResource HintsVisible}" />
@@ -35,14 +31,14 @@
     <controls:TerminalStatusBar DockPanel.Dock="Bottom">
       <controls:TerminalStatusBar.LeftContent>
         <StackPanel Orientation="Horizontal" Spacing="18">
-          <TextBlock x:Name="EventCountText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
-          <TextBlock x:Name="FigureCountText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
-          <TextBlock Text="STATE = FOLD(LOG) · REPLAY ✓" FontSize="10" Foreground="{StaticResource TextFaintBrush}"
+          <TextBlock x:Name="EventCountText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock x:Name="FigureCountText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock Text="STATE = FOLD(LOG) · REPLAY ✓" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}"
                      IsVisible="{DynamicResource HintsVisible}" />
         </StackPanel>
       </controls:TerminalStatusBar.LeftContent>
       <controls:TerminalStatusBar.RightContent>
-        <TextBlock Text="σ PROPAGATION: JACOBIAN · MC FALLBACK ARMED" FontSize="10"
+        <TextBlock Text="σ PROPAGATION: JACOBIAN · MC FALLBACK ARMED" FontSize="{DynamicResource FontSize10}"
                    Foreground="{StaticResource TextFaintBrush}"
                    IsVisible="{DynamicResource HintsVisible}" />
       </controls:TerminalStatusBar.RightContent>
@@ -76,7 +72,7 @@
         </controls:PanelBox.InnerContent>
         <controls:PanelBox.FooterContent>
           <TextBlock Text="Only selected leaves enter the network. Selecting a leaf enlarges 𝒢 — every estimate it feeds sharpens."
-                     FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                     FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                      MaxLines="3" TextTrimming="CharacterEllipsis"
                      Foreground="{StaticResource TextFaintBrush}"
                      IsVisible="{DynamicResource HintsVisible}" />

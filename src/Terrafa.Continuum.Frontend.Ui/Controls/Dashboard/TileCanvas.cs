@@ -40,13 +40,17 @@ public sealed class TilePlacement
 /// </summary>
 public class TileCanvas : Border
 {
-    private const double MinTileWidth = 220;
-    private const double MinTileHeight = 150;
+    private const double MinTileWidth = Models.Dashboard.MinTileWidth;
+    private const double MinTileHeight = Models.Dashboard.MinTileHeight;
     private const double GripSize = 14;
+    private const double MinZoom = 0.4;
+    private const double MaxZoom = 2.5;
 
     private readonly Canvas world;
     private readonly Canvas menuLayer;
+    private readonly GridLayer grid;
     private readonly TranslateTransform pan = new();
+    private readonly ScaleTransform zoom = new();
     private readonly List<TilePlacement> placements = [];
 
     private TilePlacement? draggingTile;
@@ -76,15 +80,58 @@ public class TileCanvas : Border
         Background = Brushes.Transparent;
         ClipToBounds = true;
 
-        world = new Canvas { RenderTransform = pan };
+        // Scale before translate, so the pan stays in viewport pixels whatever the zoom.
+        world = new Canvas
+        {
+            RenderTransform = new TransformGroup { Children = { zoom, pan } },
+            RenderTransformOrigin = RelativePoint.TopLeft
+        };
         menuLayer = new Canvas { IsVisible = false, Background = Brushes.Transparent };
         menuLayer.PointerPressed += OnMenuLayerPressed;
 
-        Child = new Panel { Children = { world, menuLayer } };
+        grid = new GridLayer(pan, zoom) { IsHitTestVisible = false, IsVisible = SnapSettings.ShowGridLines };
+        Child = new Panel { Children = { grid, world, menuLayer } };
 
         PointerPressed += OnBackgroundPressed;
         PointerMoved += OnBackgroundMoved;
         PointerReleased += OnBackgroundReleased;
+        PointerWheelChanged += OnWheel;
+    }
+
+    /// <summary>Zooms about the pointer: the spot under the cursor stays under the cursor.</summary>
+    private void OnWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var target = Math.Clamp(zoom.ScaleX * Math.Pow(1.12, e.Delta.Y), MinZoom, MaxZoom);
+        if (Math.Abs(target - zoom.ScaleX) > 0.0001)
+        {
+            var anchor = e.GetPosition(this);
+            var worldPoint = ViewportToWorld(anchor);
+            zoom.ScaleX = target;
+            zoom.ScaleY = target;
+            pan.X = anchor.X - worldPoint.X * target;
+            pan.Y = anchor.Y - worldPoint.Y * target;
+            grid.InvalidateVisual();
+        }
+        e.Handled = true;
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        SnapSettings.Changed += OnSnapSettingChanged;
+        OnSnapSettingChanged();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        SnapSettings.Changed -= OnSnapSettingChanged;
+    }
+
+    private void OnSnapSettingChanged()
+    {
+        grid.IsVisible = SnapSettings.ShowGridLines;
+        grid.InvalidateVisual();
     }
 
     public TilePlacement AddTile(DashboardTile tile, Control content, Point position, Size size)
@@ -140,7 +187,18 @@ public class TileCanvas : Border
     public TilePlacement? Find(DashboardTile tile) =>
         placements.FirstOrDefault(placement => placement.Tile == tile);
 
-    public Point ViewportToWorld(Point viewportPoint) => new(viewportPoint.X - pan.X, viewportPoint.Y - pan.Y);
+    /// <summary>Moves a tile already on the canvas — the sync path when the board's geometry changes under it.</summary>
+    public void Reposition(DashboardTile tile, Point position, Size size)
+    {
+        if (Find(tile) is not { } placement) return;
+        Canvas.SetLeft(placement.Container, position.X);
+        Canvas.SetTop(placement.Container, position.Y);
+        placement.Container.Width = Math.Max(size.Width, MinTileWidth);
+        placement.Container.Height = Math.Max(size.Height, MinTileHeight);
+    }
+
+    public Point ViewportToWorld(Point viewportPoint) =>
+        new((viewportPoint.X - pan.X) / zoom.ScaleX, (viewportPoint.Y - pan.Y) / zoom.ScaleY);
 
     /// <summary>Marks one tile as the edited one, so the canvas shows what the right-hand pane is on.</summary>
     public void SetSelected(DashboardTile? tile)
@@ -199,8 +257,17 @@ public class TileCanvas : Border
     {
         if (draggingTile != placement) return;
         var current = e.GetPosition(world);
-        Canvas.SetLeft(placement.Container, dragTileStart.X + (current.X - dragPointerStart.X));
-        Canvas.SetTop(placement.Container, dragTileStart.Y + (current.Y - dragPointerStart.Y));
+        var x = dragTileStart.X + (current.X - dragPointerStart.X);
+        var y = dragTileStart.Y + (current.Y - dragPointerStart.Y);
+        // The magnetic feel: near a gridline the tile leans toward it, but the hard lock
+        // waits for release so the drag never fights the pointer.
+        if (SnapSettings.Enabled)
+        {
+            x = SnapSettings.Magnetize(x);
+            y = SnapSettings.Magnetize(y);
+        }
+        Canvas.SetLeft(placement.Container, x);
+        Canvas.SetTop(placement.Container, y);
     }
 
     private void OnTileReleased(TilePlacement placement, PointerReleasedEventArgs e)
@@ -209,6 +276,11 @@ public class TileCanvas : Border
         draggingTile = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        if (SnapSettings.Enabled)
+        {
+            Canvas.SetLeft(placement.Container, SnapSettings.Snap(Canvas.GetLeft(placement.Container)));
+            Canvas.SetTop(placement.Container, SnapSettings.Snap(Canvas.GetTop(placement.Container)));
+        }
         TileMoved?.Invoke(placement.Tile);
     }
 
@@ -227,10 +299,18 @@ public class TileCanvas : Border
     {
         if (resizingTile != placement) return;
         var current = e.GetPosition(world);
-        placement.Container.Width =
-            Math.Max(MinTileWidth, resizeStart.Width + (current.X - resizePointerStart.X));
-        placement.Container.Height =
-            Math.Max(MinTileHeight, resizeStart.Height + (current.Y - resizePointerStart.Y));
+        var width = Math.Max(MinTileWidth, resizeStart.Width + (current.X - resizePointerStart.X));
+        var height = Math.Max(MinTileHeight, resizeStart.Height + (current.Y - resizePointerStart.Y));
+        // It is the dragged edges that feel the grid, not the raw size — a tile whose left
+        // edge sits on a line then keeps its right edge on one too.
+        if (SnapSettings.Enabled)
+        {
+            var position = placement.Position;
+            width = Math.Max(MinTileWidth, SnapSettings.Magnetize(position.X + width) - position.X);
+            height = Math.Max(MinTileHeight, SnapSettings.Magnetize(position.Y + height) - position.Y);
+        }
+        placement.Container.Width = width;
+        placement.Container.Height = height;
         e.Handled = true;
     }
 
@@ -240,6 +320,15 @@ public class TileCanvas : Border
         resizingTile = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        if (SnapSettings.Enabled)
+        {
+            var position = placement.Position;
+            placement.Container.Width =
+                SnapSettings.SnapAtLeast(position.X + placement.Container.Width, position.X + MinTileWidth) - position.X;
+            placement.Container.Height =
+                SnapSettings.SnapAtLeast(position.Y + placement.Container.Height, position.Y + MinTileHeight) - position.Y;
+        }
+        TileMoved?.Invoke(placement.Tile);
     }
 
     private void OnBackgroundPressed(object? sender, PointerPressedEventArgs e)
@@ -258,6 +347,7 @@ public class TileCanvas : Border
         var current = e.GetPosition(this);
         pan.X = panStart.X + (current.X - panPointerStart.X);
         pan.Y = panStart.Y + (current.Y - panPointerStart.Y);
+        grid.InvalidateVisual();
     }
 
     private void OnBackgroundReleased(object? sender, PointerReleasedEventArgs e)

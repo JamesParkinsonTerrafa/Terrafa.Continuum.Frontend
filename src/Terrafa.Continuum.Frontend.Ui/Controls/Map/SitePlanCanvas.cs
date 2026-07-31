@@ -121,7 +121,7 @@ public sealed class SitePlanCanvas : Border
 
         caption = new TextBlock
         {
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint,
             Background = Palette.ZoneLabelBackdrop,
@@ -131,7 +131,7 @@ public sealed class SitePlanCanvas : Border
         caption.SizeChanged += (_, _) => PlaceCaption();
         planLayer.Children.Add(caption);
 
-        noteBlock = new TextBlock { FontSize = 9, Foreground = Palette.Purple };
+        noteBlock = new TextBlock { FontSize = TypographySettings.Size(9), Foreground = Palette.Purple };
         noteShell = new Border
         {
             Background = Palette.CanvasNoteBackdrop,
@@ -169,6 +169,9 @@ public sealed class SitePlanCanvas : Border
     public event Action<IStorageFile>? FileDropped;
 
     public event Action<MapPin?>? SelectionChanged;
+
+    /// <summary>Raised as the pointer enters (true) and leaves (false) a pin card, for rail highlighting.</summary>
+    public event Action<MapPin, bool>? PinHoverChanged;
 
     public Func<MapPin, IReadOnlyList<(string Label, Action Action)>>? MenuProvider { get; set; }
 
@@ -245,7 +248,7 @@ public sealed class SitePlanCanvas : Border
         var labelBlock = new TextBlock
         {
             Text = label,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = stroke,
             Background = Palette.ZoneLabelBackdrop,
             Padding = new Thickness(6, 1),
@@ -323,6 +326,8 @@ public sealed class SitePlanCanvas : Border
         container.PointerPressed += (_, e) => OnPinPressed(pin, e);
         container.PointerMoved += (_, e) => OnPinMoved(pin, e);
         container.PointerReleased += (_, e) => OnPinReleased(pin, e);
+        container.PointerEntered += (_, _) => PinHoverChanged?.Invoke(pin, true);
+        container.PointerExited += (_, _) => PinHoverChanged?.Invoke(pin, false);
         container.PointerCaptureLost += (_, _) => dragging = null;
         container.SizeChanged += (_, _) => RefreshLeaders();
 

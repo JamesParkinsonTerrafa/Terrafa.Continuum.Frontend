@@ -38,12 +38,16 @@ public static class SnapshotRunner
         CaptureInteractionProbe(outputDir);
         CaptureBubbleProbe(outputDir);
         CaptureBubbleHandoffProbe(outputDir);
+        CaptureNavReorderProbe(outputDir);
         CaptureRegressorProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
         CaptureDashboardProbe(outputDir);
         CaptureFigureProbe(outputDir);
+        CaptureScaleProbe(outputDir);
+        CaptureSnapProbe(outputDir);
+        CaptureZoomAndHighlightProbe(outputDir);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -569,7 +573,7 @@ public static class SnapshotRunner
         window.MouseUp(point, MouseButton.Left);
         Pump();
 
-        if (window.ViewHost.Content is not DashboardView dashboard)
+        if (window.ViewHost.Content is not TransferFunctionView incoming)
         {
             Console.Error.WriteLine(
                 $"bubble handoff: view is {window.ViewHost.Content?.GetType().Name}, did not swap at pop start");
@@ -577,12 +581,12 @@ public static class SnapshotRunner
             return;
         }
 
-        double ScaleOf(int index) => ((ScaleTransform)dashboard.Tabs.KeyAt(index).RenderTransform!).ScaleY;
+        double ScaleOf(int index) => ((ScaleTransform)incoming.Tabs.KeyAt(index).RenderTransform!).ScaleY;
 
         Thread.Sleep(30);
         Pump();
         var incomingMidPop = ScaleOf(2);
-        var previousInflating = ScaleOf(0);
+        var previousInflating = ScaleOf(3);
         Capture(window, outputDir, "0-bubble-handoff-mid");
 
         var settleClock = Stopwatch.StartNew();
@@ -593,10 +597,66 @@ public static class SnapshotRunner
         }
 
         Console.WriteLine(
-            $"bubble handoff: swapped to dashboard at pop start, incoming tab at {incomingMidPop:0.###} " +
+            $"bubble handoff: swapped to transfer function at pop start, incoming tab at {incomingMidPop:0.###} " +
             $"(mid-flight = {incomingMidPop < 0.999}), previous tab at {previousInflating:0.###}, " +
-            $"settled {ScaleOf(2):0.###} pressed-class {dashboard.Tabs.KeyAt(2).Classes.Contains("emboss-press")}");
+            $"settled {ScaleOf(2):0.###} pressed-class {incoming.Tabs.KeyAt(2).Classes.Contains("emboss-press")}");
         window.Close();
+    }
+
+    /// <summary>
+    /// Dragging a nav key sideways reorders the tabs instead of selecting one: the leftmost tab
+    /// is dragged right, the number prefixes stay 1..6 by position, no navigation happens on
+    /// release, and the leftmost key then opens whichever screen now sits there — on every
+    /// screen's strip, since the order is shared.
+    /// </summary>
+    private static void CaptureNavReorderProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var network = (NetworkView)window.ViewHost.Content!;
+        var key = network.Tabs.KeyAt(0);
+        var start = key.TranslatePoint(new Point(key.Bounds.Width / 2, key.Bounds.Height / 2), window)!.Value;
+
+        // The drag runs along the strip's axis — down the side when tabs are vertical.
+        var vertical = TabLayoutSettings.Vertical;
+        var reach = vertical ? 160.0 : 420.0;
+        Point Along(double travel) =>
+            vertical ? new Point(start.X, start.Y + travel) : new Point(start.X + travel, start.Y);
+
+        window.MouseDown(start, MouseButton.Left);
+        for (var travel = 0.0; travel <= reach; travel += 15)
+        {
+            window.MouseMove(Along(travel));
+            Pump();
+        }
+        window.MouseUp(Along(reach), MouseButton.Left);
+        Pump();
+
+        Console.WriteLine(
+            $"nav reorder: order [{string.Join(" ", NavOrderSettings.OrderFor(6))}], " +
+            $"view after drag = {window.ViewHost.Content?.GetType().Name}");
+        Capture(window, outputDir, "0-nav-reorder");
+
+        var first = network.Tabs.KeyAt(0);
+        var firstPoint = first
+            .TranslatePoint(new Point(first.Bounds.Width / 2, first.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(firstPoint, MouseButton.Left);
+        window.MouseUp(firstPoint, MouseButton.Left);
+        Pump();
+        Console.WriteLine(
+            $"nav reorder: leftmost key now opens {window.ViewHost.Content?.GetType().Name}");
+        Capture(window, outputDir, "0-nav-reorder-followed");
+        window.Close();
+
+        // Later probes select screens by nav position — put the default order back.
+        NavOrderSettings.Set(NavOrderSettings.Default);
     }
 
     /// <summary>
@@ -712,6 +772,158 @@ public static class SnapshotRunner
 
         Capture(window, outputDir, "3-dash-figure");
         window.Close();
+    }
+
+    /// <summary>
+    /// The two sizing settings. TEXT SIZE rebuilds the screens with every font run through the
+    /// scale; UI SCALE shrinks the whole plate, which has to stay pinned to the top-left — the
+    /// menu bar and the logo hold the corner, and the slack is empty background.
+    /// </summary>
+    private static void CaptureScaleProbe(string outputDir)
+    {
+        TypographySettings.SetScale(1.2);
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+        Capture(window, outputDir, "0-textsize-120");
+
+        TypographySettings.SetScale(1.0);
+        UiScaleSettings.SetScale(0.8);
+        Pump();
+        Capture(window, outputDir, "0-uiscale-080");
+
+        UiScaleSettings.SetScale(1.0);
+        window.Close();
+    }
+
+    /// <summary>
+    /// The dashboard grid. A drag released near a gridline locks to it; placements made with snap
+    /// off lock to their nearest gridline the moment the setting comes back on.
+    /// </summary>
+    private static void CaptureSnapProbe(string outputDir)
+    {
+        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        void DragTileBy(DashboardTile tile, double dx, double dy)
+        {
+            var start = view.Canvas.Find(tile)!.Container.TranslatePoint(new Point(60, 12), window)!.Value;
+            var end = new Point(start.X + dx, start.Y + dy);
+            window.MouseDown(start, MouseButton.Left);
+            window.MouseMove(new Point(start.X + dx / 2, start.Y + dy / 2));
+            window.MouseMove(end);
+            window.MouseUp(end, MouseButton.Left);
+            Pump();
+        }
+
+        var board = Dashboard.Instance;
+        var seeded = board.Placements.All(placement =>
+            placement.X % SnapSettings.GridSize == 0 && placement.Y % SnapSettings.GridSize == 0 &&
+            placement.Width % SnapSettings.GridSize == 0 && placement.Height % SnapSettings.GridSize == 0);
+        Console.WriteLine($"snap probe: seeded board opens on the grid = {seeded}");
+
+        var first = board.Placements[0];
+        var origin = (first.X, first.Y);
+        DragTileBy(first.Tile, 63, 47);
+        Console.WriteLine($"snap probe: dragged from {origin} by (63, 47) → landed ({first.X}, {first.Y})");
+
+        SnapSettings.SetEnabled(false);
+        var second = board.Placements[1];
+        DragTileBy(second.Tile, 37, 23);
+        Console.WriteLine($"snap probe: free drag left the tile at ({second.X}, {second.Y})");
+
+        SnapSettings.SetEnabled(true);
+        Pump();
+        var aligned = board.Placements.All(placement =>
+            placement.X % SnapSettings.GridSize == 0 && placement.Y % SnapSettings.GridSize == 0);
+        Console.WriteLine($"snap probe: snap back on → every tile on the grid = {aligned}");
+
+        Capture(window, outputDir, "3-dash-snap");
+
+        // Visual-only switch: the gridlines go, the snapping stays.
+        SnapSettings.SetShowGridLines(false);
+        Pump();
+        Capture(window, outputDir, "3-dash-nogridlines");
+        SnapSettings.SetShowGridLines(true);
+
+        window.Close();
+        Dashboard.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>
+    /// Wheel zoom on the network canvas, anchored to the pointer, and the two-way highlight:
+    /// hovering a rail row halos the leaf's box on the canvas, hovering the box lights the row.
+    /// </summary>
+    private static void CaptureZoomAndHighlightProbe(string outputDir)
+    {
+        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        var seededAligned = NetworkGraph.Instance.Nodes.All(candidate =>
+            candidate.X % SnapSettings.GridSize == 0 && candidate.Y % SnapSettings.GridSize == 0);
+        Console.WriteLine($"network snap probe: seeded network opens on the grid = {seededAligned}");
+
+        var node = view.Diagram.Nodes.First(candidate => candidate.Id.EndsWith("tank_01.level", StringComparison.Ordinal));
+        var card = (NodeCard)node.Card;
+
+        var dragStart = view.Diagram.TranslatePoint(
+            view.Diagram.WorldToViewport(view.Diagram.NodePositionOf(node)), window)!.Value + new Point(60, 10);
+        var dragEnd = new Point(dragStart.X + 58, dragStart.Y + 33);
+        window.MouseDown(dragStart, MouseButton.Left);
+        window.MouseMove(new Point(dragStart.X + 30, dragStart.Y + 16));
+        window.MouseMove(dragEnd);
+        window.MouseUp(dragEnd, MouseButton.Left);
+        Pump();
+        var model = NetworkGraph.Instance.Find(node.Id)!;
+        Console.WriteLine($"network snap probe: drag of (58, 33) landed on ({model.X}, {model.Y})");
+
+        var railRow = view.MeasureList.Children.OfType<Border>()
+            .First(shell => shell.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "level"));
+        var rowPoint = railRow.TranslatePoint(
+            new Point(railRow.Bounds.Width / 2, railRow.Bounds.Height / 2), window)!.Value;
+        window.MouseMove(rowPoint);
+        Pump();
+        Console.WriteLine($"highlight probe: rail hover halos the canvas card = {card.IsHighlighted}");
+        Capture(window, outputDir, "1-netw-highlight");
+
+        var nodePoint = view.Diagram.TranslatePoint(
+            view.Diagram.WorldToViewport(view.Diagram.NodeCenter(node)), window)!.Value;
+        window.MouseMove(nodePoint);
+        Pump();
+        Console.WriteLine(
+            $"highlight probe: canvas hover lights the rail row = {ReferenceEquals(railRow.Background, Palette.BgField)}");
+
+        var before = view.Diagram.WorldToViewport(view.Diagram.NodeCenter(node));
+        window.MouseWheel(new Point(700, 500), new Vector(0, 3));
+        Pump();
+        var after = view.Diagram.WorldToViewport(view.Diagram.NodeCenter(node));
+        Console.WriteLine($"zoom probe: node centre {before} → {after} after three wheel notches in");
+        Capture(window, outputDir, "1-netw-zoom");
+        window.Close();
+
+        // The drag above moved a seeded node — later frames must not inherit it.
+        NetworkGraph.Instance.Reset(seedDemo: true);
     }
 
     private static void CaptureTransferFunctionProbe(string outputDir)

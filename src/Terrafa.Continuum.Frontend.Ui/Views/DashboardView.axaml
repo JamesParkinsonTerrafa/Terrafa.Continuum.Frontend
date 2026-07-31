@@ -8,28 +8,24 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="DASH &lt;GO&gt;"
-                               SubtitleText="SITE ALPHA · LIVE STATE">
-        <controls:TerminalTopBar.RightContent>
-          <controls:FeedLiveBadge x:Name="FeedBadge" />
-        </controls:TerminalTopBar.RightContent>
-      </controls:TerminalTopBar>
+                               CommandText="DASH"
+                               SubtitleText="LIVE STATE" />
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="2"
-                                 HintText="drag a tile onto the canvas · double-click a tile to wire it · drag the background to pan" />
+                                 HintText="drag a tile onto the canvas · double-click a tile to wire it · drag the background to pan · scroll to zoom · tiles snap to the grid on release" />
 
       <controls:TerminalStatusBar DockPanel.Dock="Bottom">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18"
                       IsVisible="{DynamicResource HintsVisible}">
-            <TextBlock Text="FREE-PLACEMENT TILE CANVAS" FontSize="10"
+            <TextBlock Text="FREE-PLACEMENT TILE CANVAS" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
-            <TextBlock Text="EVERY CHART FORM CARRIES ITS BOUNDS" FontSize="10"
+            <TextBlock Text="EVERY CHART FORM CARRIES ITS BOUNDS" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>
         <controls:TerminalStatusBar.RightContent>
-          <TextBlock x:Name="StatusRight" FontSize="10"
+          <TextBlock x:Name="StatusRight" FontSize="{DynamicResource FontSize10}"
                      Foreground="{StaticResource TextFaintBrush}" />
         </controls:TerminalStatusBar.RightContent>
       </controls:TerminalStatusBar>
@@ -46,7 +42,7 @@
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <TextBlock Text="Drag an element onto the canvas. It lands empty — double-click it to wire its sources."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        MaxLines="3" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextFaintBrush}"
                        IsVisible="{DynamicResource HintsVisible}" />
@@ -60,20 +56,27 @@
         <controls:PanelBox x:Name="EditorBox" Title="TILE EDITOR" FooterHeight="54">
           <controls:PanelBox.HeaderRightContent>
             <controls:SquircleBorder x:Name="VarianceToggle" Classes="emboss" Padding="9,4"
-                                     Background="{StaticResource EmbossSurfaceBrush}" Cursor="Hand">
-              <TextBlock x:Name="VarianceToggleText" FontSize="10" LetterSpacing="1" />
+                                     Background="{StaticResource EmbossSurfaceBrush}" Cursor="Hand"
+                                     ToolTip.Tip="Master switch for the ±σ bounds every tile draws">
+              <TextBlock x:Name="VarianceToggleText" FontSize="{DynamicResource FontSize10}" LetterSpacing="1" />
             </controls:SquircleBorder>
           </controls:PanelBox.HeaderRightContent>
           <controls:PanelBox.InnerContent>
             <DockPanel>
               <controls:TerminalTabStrip x:Name="EditorTabs" DockPanel.Dock="Top" IsClosable="True" />
+              <Border DockPanel.Dock="Top" Padding="12,8"
+                      BorderBrush="{StaticResource RowSeparatorBrush}" BorderThickness="0,0,0,1">
+                <TextBlock x:Name="VarianceNoteText" FontSize="{DynamicResource FontSize10}"
+                           LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
+                           Foreground="{StaticResource TextFaintBrush}" />
+              </Border>
               <ScrollViewer>
                 <StackPanel x:Name="EditorBody" Margin="12,10" Spacing="10" />
               </ScrollViewer>
             </DockPanel>
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
-            <TextBlock x:Name="EditorFooter" FontSize="10" LineHeight="15" TextWrapping="Wrap"
+            <TextBlock x:Name="EditorFooter" FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        MaxLines="3" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextMutedBrush}" />
           </controls:PanelBox.FooterContent>

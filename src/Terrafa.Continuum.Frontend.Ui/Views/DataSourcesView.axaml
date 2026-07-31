@@ -31,12 +31,8 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="DATA &lt;GO&gt;"
-                               SubtitleText="SOURCE CATALOGUE">
-        <controls:TerminalTopBar.RightContent>
-          <controls:FeedLiveBadge x:Name="FeedBadge" />
-        </controls:TerminalTopBar.RightContent>
-      </controls:TerminalTopBar>
+                               CommandText="DATA"
+                               SubtitleText="SOURCE CATALOGUE" />
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="5"
                                  HintText="a dataset mounts as its own subtree — containment never crosses datasets, only equality &amp; adjacency do" />
@@ -44,13 +40,13 @@
       <controls:TerminalStatusBar DockPanel.Dock="Bottom">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
-            <TextBlock x:Name="SyncText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
-            <TextBlock Text="MOUNTS ARE EVENTS — APPEND-ONLY, REVERSIBLE BY REPLAY" FontSize="10"
+            <TextBlock x:Name="SyncText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
+            <TextBlock Text="MOUNTS ARE EVENTS — APPEND-ONLY, REVERSIBLE BY REPLAY" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>
         <controls:TerminalStatusBar.RightContent>
-          <TextBlock Text="NO DATASET IS EVER RE-SHAPED TO FIT ANOTHER" FontSize="10"
+          <TextBlock Text="NO DATASET IS EVER RE-SHAPED TO FIT ANOTHER" FontSize="{DynamicResource FontSize10}"
                      Foreground="{StaticResource TextFaintBrush}" />
         </controls:TerminalStatusBar.RightContent>
       </controls:TerminalStatusBar>
@@ -74,7 +70,7 @@
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <TextBlock Text="Folders are topics, not containment. A dataset's own tree is fixed by contract — mounting adds it beside yours, never inside it."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        Foreground="{StaticResource TextFaintBrush}" />
           </controls:PanelBox.FooterContent>
         </controls:PanelBox>
@@ -91,10 +87,10 @@
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <StackPanel Spacing="6">
-              <TextBlock x:Name="MountedSummary" FontSize="10" LineHeight="15" TextWrapping="Wrap"
+              <TextBlock x:Name="MountedSummary" FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                          Foreground="{StaticResource TextMutedBrush}" />
               <TextBlock Text="Every mount enlarges 𝒢 — figures downstream re-sharpen on commit."
-                         FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                         FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                          Foreground="{StaticResource TextFaintBrush}" />
             </StackPanel>
           </controls:PanelBox.FooterContent>

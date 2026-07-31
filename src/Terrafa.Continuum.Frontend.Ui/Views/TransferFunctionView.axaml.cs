@@ -129,7 +129,7 @@ public partial class TransferFunctionView : UserControl
             LibraryList.Children.Add(new TextBlock
             {
                 Text = "no functions yet",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Margin = new Thickness(17, 0, 0, 0),
                 Foreground = Palette.TextGhost
             });
@@ -145,14 +145,14 @@ public partial class TransferFunctionView : UserControl
         var caret = new TextBlock
         {
             Text = collapsed ? "▸" : "▾",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
         };
         var label = new TextBlock
         {
             Text = group,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             Foreground = Palette.TextSub,
             VerticalAlignment = VerticalAlignment.Center
@@ -160,7 +160,7 @@ public partial class TransferFunctionView : UserControl
         var countBlock = new TextBlock
         {
             Text = $"({count})",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -211,7 +211,7 @@ public partial class TransferFunctionView : UserControl
         var formula = new TextBlock
         {
             Text = $"{function.Name}: {function.DisplayFormula}",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Margin = new Thickness(0, 2, 0, 0),
             Foreground = function.IsPrimitive ? Palette.TextMuted : Palette.PurpleSoft
         };
@@ -323,7 +323,7 @@ public partial class TransferFunctionView : UserControl
         var formula = new TextBlock
         {
             Text = $"{estimator.Name}: {estimator.DisplayFormula}",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Margin = new Thickness(0, 2, 0, 0),
             Foreground = Palette.CyanSoft
         };
@@ -471,7 +471,7 @@ public partial class TransferFunctionView : UserControl
         {
             var prefix = new TextBlock
             {
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0)
             };
@@ -543,7 +543,7 @@ public partial class TransferFunctionView : UserControl
 
     private Control CreateRowButton(string glyph, IBrush hoverBrush, Action action)
     {
-        var text = new TextBlock { Text = glyph, FontSize = 10, Foreground = Palette.TextFaint };
+        var text = new TextBlock { Text = glyph, FontSize = TypographySettings.Size(10), Foreground = Palette.TextFaint };
         var button = new Border
         {
             Background = Brushes.Transparent,
@@ -681,7 +681,7 @@ public partial class TransferFunctionView : UserControl
             Child = new TextBlock
             {
                 Text = header.ToUpperInvariant(),
-                FontSize = 9,
+                FontSize = TypographySettings.Size(9),
                 LetterSpacing = 1,
                 Foreground = Palette.TextFaint
             }
@@ -712,7 +712,7 @@ public partial class TransferFunctionView : UserControl
         var itemText = new TextBlock
         {
             Text = label,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             Foreground = Palette.Text
         };
@@ -792,8 +792,8 @@ public partial class TransferFunctionView : UserControl
                     new TextBlock
                     {
                         Text = message,
-                        FontSize = 13,
-                        LineHeight = 19,
+                        FontSize = TypographySettings.Size(13),
+                        LineHeight = TypographySettings.Size(19),
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 10, 0, 0),
                         Foreground = Palette.Text
@@ -813,7 +813,7 @@ public partial class TransferFunctionView : UserControl
         var text = new TextBlock
         {
             Text = label,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             FontWeight = isPrimary ? FontWeight.Bold : FontWeight.Normal,
             Foreground = isPrimary ? Brushes.Black : Palette.TextSub
@@ -1000,7 +1000,7 @@ public partial class TransferFunctionView : UserControl
             Child = new TextBlock
             {
                 Text = $"{function.Name} {function.SignatureText}",
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 Foreground = Palette.AmberSoft
             }
         };

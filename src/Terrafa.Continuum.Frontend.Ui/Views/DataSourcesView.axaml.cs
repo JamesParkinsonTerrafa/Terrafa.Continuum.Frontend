@@ -58,7 +58,6 @@ public partial class DataSourcesView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
         SyncText.Text = $"CATALOGUE READING {Source}";
 
         SearchBox.PropertyChanged += (_, e) =>
@@ -109,7 +108,7 @@ public partial class DataSourcesView : UserControl
         var label = new TextBlock
         {
             Text = "CONNECT REAL DATA",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             LetterSpacing = 1,
             FontWeight = FontWeight.Bold,
             Foreground = Brushes.Black,
@@ -144,7 +143,7 @@ public partial class DataSourcesView : UserControl
         var who = new TextBlock
         {
             Text = session.Username ?? "connected",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.Text,
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center
@@ -152,7 +151,7 @@ public partial class DataSourcesView : UserControl
         var signOut = new TextBlock
         {
             Text = "SIGN OUT",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center,
@@ -364,7 +363,7 @@ public partial class DataSourcesView : UserControl
             : new TextBlock
             {
                 Text = catalogue.Count == 0 ? "loading catalogue…" : "no dataset matches that search",
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 Margin = new Thickness(14, 12),
                 Foreground = Palette.TextFaint
             });
@@ -373,8 +372,8 @@ public partial class DataSourcesView : UserControl
     private static Control Note(string text) => new TextBlock
     {
         Text = text,
-        FontSize = 10,
-        LineHeight = 15,
+        FontSize = TypographySettings.Size(10),
+        LineHeight = TypographySettings.Size(15),
         Margin = new Thickness(14, 12),
         TextWrapping = TextWrapping.Wrap,
         Foreground = Palette.Red
@@ -400,14 +399,14 @@ public partial class DataSourcesView : UserControl
         var caret = new TextBlock
         {
             Text = collapsed ? "▸" : "▾",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
         };
         var label = new TextBlock
         {
             Text = topic,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             Foreground = Palette.TextSub,
             VerticalAlignment = VerticalAlignment.Center
@@ -415,7 +414,7 @@ public partial class DataSourcesView : UserControl
         var count = new TextBlock
         {
             Text = shown == total ? $"({total})" : $"({shown}/{total})",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -424,7 +423,7 @@ public partial class DataSourcesView : UserControl
         var mountedBlock = new TextBlock
         {
             Text = mounted > 0 ? $"{mounted} mounted" : "",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.Cyan,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -474,14 +473,14 @@ public partial class DataSourcesView : UserControl
         var name = new TextBlock
         {
             Text = dataset,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = subtree is null ? Palette.TextMuted : Palette.Text,
             VerticalAlignment = VerticalAlignment.Center
         };
         var state = new TextBlock
         {
             Text = subtree is null ? "" : "MOUNTED",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.Cyan,
             VerticalAlignment = VerticalAlignment.Center
@@ -534,7 +533,7 @@ public partial class DataSourcesView : UserControl
                 : new TextBlock
                 {
                     Text = "double-click a dataset in the catalogue to fetch its schema",
-                    FontSize = 11,
+                    FontSize = TypographySettings.Size(11),
                     Margin = new Thickness(16, 16),
                     Foreground = Palette.TextFaint
                 });
@@ -550,7 +549,7 @@ public partial class DataSourcesView : UserControl
     private Control EmptyPreviewHeader() => new TextBlock
     {
         Text = "NO DATASET OPEN",
-        FontSize = 12,
+        FontSize = TypographySettings.Size(12),
         LetterSpacing = 1,
         Foreground = Palette.TextFaint
     };
@@ -572,14 +571,14 @@ public partial class DataSourcesView : UserControl
         var title = new TextBlock
         {
             Text = schema.Dataset,
-            FontSize = 15,
+            FontSize = TypographySettings.Size(15),
             Foreground = Palette.TextBright,
             VerticalAlignment = VerticalAlignment.Center
         };
         var topic = new TextBlock
         {
             Text = $"· {TopicOf(schema.Dataset).ToLowerInvariant()}",
-            FontSize = 12,
+            FontSize = TypographySettings.Size(12),
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -636,7 +635,7 @@ public partial class DataSourcesView : UserControl
         row.Children.Add(new TextBlock
         {
             Text = "SERIES",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
@@ -644,7 +643,7 @@ public partial class DataSourcesView : UserControl
         row.Children.Add(new TextBlock
         {
             Text = $"{schema.RowsPerPoint} rows per axis point — a chart needs one; fix the table, and these leaves will carry series",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.Amber,
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -663,7 +662,7 @@ public partial class DataSourcesView : UserControl
         var label = new TextBlock
         {
             Text = "X AXIS",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
@@ -682,7 +681,7 @@ public partial class DataSourcesView : UserControl
             row.Children.Add(new TextBlock
             {
                 Text = "no orderable column — this dataset has no series to plot",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Foreground = Palette.TextFaint,
                 VerticalAlignment = VerticalAlignment.Center
             });
@@ -708,7 +707,7 @@ public partial class DataSourcesView : UserControl
             Text = xAxis is null
                 ? "rows arrive unordered — pick the column the readings run along"
                 : $"rows sorted by {xAxis}, newest {DataFeedOptions.SeriesRows} kept",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = xAxis is null ? Palette.Amber : Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -738,7 +737,7 @@ public partial class DataSourcesView : UserControl
                 Child = new TextBlock
                 {
                     Text = candidate,
-                    FontSize = 11,
+                    FontSize = TypographySettings.Size(11),
                     Foreground = candidate == chosen ? Palette.TextBright : Palette.Text
                 }
             };
@@ -767,8 +766,8 @@ public partial class DataSourcesView : UserControl
         {
             Text = "Athena returns rows in no particular order, so the service is asked to sort on " +
                    "this column. Every leaf in the subtree is read along the same axis.",
-            FontSize = 10,
-            LineHeight = 15,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextFaint
         });
@@ -793,14 +792,14 @@ public partial class DataSourcesView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint
         });
         stack.Children.Add(new TextBlock
         {
             Text = value,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.Text,
             TextWrapping = TextWrapping.Wrap
         });
@@ -816,7 +815,7 @@ public partial class DataSourcesView : UserControl
         row.Children.Add(new TextBlock
         {
             Text = "PATH",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
@@ -836,7 +835,7 @@ public partial class DataSourcesView : UserControl
         var block = new TextBlock
         {
             Text = text,
-            FontSize = size,
+            FontSize = TypographySettings.Size(size),
             Width = width,
             Foreground = brush,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -861,7 +860,7 @@ public partial class DataSourcesView : UserControl
         var label = new TextBlock
         {
             Text = isLeaf ? node.Name : $"{node.Name} /",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Margin = new Thickness(16 + depth * RowIndent, 0, 0, 0),
             Foreground = isLeaf ? Palette.Cyan : Palette.Text,
             VerticalAlignment = VerticalAlignment.Center
@@ -939,8 +938,8 @@ public partial class DataSourcesView : UserControl
             Text = workspace.IsMounted(schema.Dataset)
                 ? $"{schema.Dataset} is already mounted — this grafts the branch onto the existing subtree."
                 : $"{schema.Dataset} mounts as its own subtree beside yours. Its contract is fixed; leaves may be added later, never re-shaped.",
-            FontSize = 10,
-            LineHeight = 15,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextFaint
         });
@@ -961,7 +960,7 @@ public partial class DataSourcesView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint
         });
@@ -974,7 +973,7 @@ public partial class DataSourcesView : UserControl
             Child = new TextBlock
             {
                 Text = value,
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Palette.Text
             }
@@ -1010,14 +1009,14 @@ public partial class DataSourcesView : UserControl
         var name = new TextBlock
         {
             Text = subtree.Dataset.ToLowerInvariant() + "/",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.Text,
             VerticalAlignment = VerticalAlignment.Center
         };
         var detail = new TextBlock
         {
             Text = $"{subtree.LeafCount} leaves · {subtree.Cadence}",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -1025,7 +1024,7 @@ public partial class DataSourcesView : UserControl
         var remove = new TextBlock
         {
             Text = "UNMOUNT",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center,

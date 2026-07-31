@@ -34,14 +34,14 @@ public class OverlayDialog : Panel
 
         titleBlock = new TextBlock
         {
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 2,
             FontWeight = FontWeight.Bold,
             Foreground = Palette.Amber,
             VerticalAlignment = VerticalAlignment.Center
         };
         bodyHost = new ContentControl { Margin = new Thickness(18, 16, 18, 4) };
-        confirmText = new TextBlock { FontSize = 11, FontWeight = FontWeight.Bold, Foreground = Brushes.Black };
+        confirmText = new TextBlock { FontSize = TypographySettings.Size(11), FontWeight = FontWeight.Bold, Foreground = Brushes.Black };
         confirmButton = new Border
         {
             Background = Palette.Amber,
@@ -97,7 +97,7 @@ public class OverlayDialog : Panel
         var closeBlock = new TextBlock
         {
             Text = "✕",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center,
             Cursor = new Cursor(StandardCursorType.Hand)
@@ -128,7 +128,7 @@ public class OverlayDialog : Panel
         var cancelText = new TextBlock
         {
             Text = "CANCEL",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             LetterSpacing = 1,
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
