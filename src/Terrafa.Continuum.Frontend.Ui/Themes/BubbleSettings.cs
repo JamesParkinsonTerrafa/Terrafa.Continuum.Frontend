@@ -24,15 +24,29 @@ public static class BubbleSettings
 
     public static double HoldSeconds { get; private set; } = DefaultHoldSeconds;
 
-    public static void SetPopSpeed(double value) =>
+    public static event Action? Changed;
+
+    public static void SetPopSpeed(double value)
+    {
         PopSpeed = Math.Clamp(value, MinPopSpeed, MaxPopSpeed);
+        Changed?.Invoke();
+    }
 
-    public static void SetPopForce(double value) =>
+    public static void SetPopForce(double value)
+    {
         PopForce = Math.Clamp(value, MinPopForce, MaxPopForce);
+        Changed?.Invoke();
+    }
 
-    public static void SetWobble(double value) =>
+    public static void SetWobble(double value)
+    {
         Wobble = Math.Clamp(value, 0, 1);
+        Changed?.Invoke();
+    }
 
-    public static void SetHoldSeconds(double value) =>
+    public static void SetHoldSeconds(double value)
+    {
         HoldSeconds = Math.Clamp(value, MinHoldSeconds, MaxHoldSeconds);
+        Changed?.Invoke();
+    }
 }

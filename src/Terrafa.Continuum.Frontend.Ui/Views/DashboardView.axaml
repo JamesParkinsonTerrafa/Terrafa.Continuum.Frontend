@@ -8,12 +8,8 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="DASH &lt;GO&gt;"
-                               SubtitleText="SITE ALPHA · LIVE STATE">
-        <controls:TerminalTopBar.RightContent>
-          <controls:FeedLiveBadge x:Name="FeedBadge" />
-        </controls:TerminalTopBar.RightContent>
-      </controls:TerminalTopBar>
+                               CommandText="DASH"
+                               SubtitleText="LIVE STATE" />
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="2"
                                  HintText="drag a tile onto the canvas · double-click a tile to wire it · drag the background to pan · scroll to zoom · tiles snap to the grid on release" />

@@ -83,6 +83,12 @@ public sealed class NetworkGraph
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised for mutations no screen redraws for — a card drag — but that durable state must
+    /// still record. See <see cref="Dashboard.Edited"/>.
+    /// </summary>
+    public event Action? Edited;
+
     public IReadOnlyList<NetworkNode> Nodes => nodes;
 
     public IReadOnlyList<NetworkEdge> Edges => edges;
@@ -271,6 +277,28 @@ public sealed class NetworkGraph
         if (Find(id) is not { } node) return;
         node.X = x;
         node.Y = y;
+        Edited?.Invoke();
+    }
+
+    /// <summary>
+    /// Replaces the canvas with loaded state, then recomputes and announces once. The transfer
+    /// counter resumes past the highest loaded id so a new transfer cannot collide with one the
+    /// load brought back.
+    /// </summary>
+    public void Load(IEnumerable<NetworkNode> loadedNodes, IEnumerable<NetworkEdge> loadedEdges)
+    {
+        suspended++;
+        nodes.Clear();
+        edges.Clear();
+        nodes.AddRange(loadedNodes);
+        edges.AddRange(loadedEdges);
+        nextTransfer = nodes
+            .Select(node => node.Id.StartsWith("transfer:t", StringComparison.Ordinal)
+                && int.TryParse(node.Id["transfer:t".Length..], out var index) ? index : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        suspended--;
+        Publish();
     }
 
     public void CycleStage(NetworkNode transfer)

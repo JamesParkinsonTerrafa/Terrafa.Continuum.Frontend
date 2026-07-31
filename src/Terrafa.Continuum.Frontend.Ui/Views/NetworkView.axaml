@@ -8,12 +8,8 @@
   <Panel>
   <DockPanel>
     <controls:TerminalTopBar DockPanel.Dock="Top"
-                             CommandText="NETW &lt;GO&gt;"
-                             SubtitleText="MODEL NETWORK">
-      <controls:TerminalTopBar.RightContent>
-        <controls:FeedLiveBadge x:Name="FeedBadge" />
-      </controls:TerminalTopBar.RightContent>
-    </controls:TerminalTopBar>
+                             CommandText="NETW"
+                             SubtitleText="MODEL NETWORK" />
 
     <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="0">
       <controls:TerminalTabStrip.RightContent>

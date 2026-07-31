@@ -4,14 +4,21 @@ using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Browser;
 using Terrafa.Continuum.Frontend;
+using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
 
 [assembly: SupportedOSPlatform("browser")]
 
 internal static class Program
 {
-    private static Task Main(string[] args) =>
-        BuildAvaloniaApp().StartBrowserAppAsync("out");
+    private static Task Main(string[] args)
+    {
+        AuthSession.Instance.Store = new LocalStorageSecretStore();
+        UserStateSync.Store = new HttpUserStateStore();
+        UserStateSync.Start();
+        _ = AuthSession.Instance.TryRestoreAsync();
+        return BuildAvaloniaApp().StartBrowserAppAsync("out");
+    }
 
     // No UsePlatformDetect: the browser backend is the only one linked in, and the fonts
     // have to be registered here exactly as the desktop head does it.

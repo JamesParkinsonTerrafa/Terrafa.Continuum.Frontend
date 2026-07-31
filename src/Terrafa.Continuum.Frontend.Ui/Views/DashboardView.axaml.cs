@@ -57,7 +57,6 @@ public partial class DashboardView : UserControl
         // paint the values the figures were declared with.
         _ = NetworkGraph.Instance;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
 
         Canvas.MenuProvider = BuildTileMenu;
         Canvas.TileActivated += OpenEditor;
@@ -571,6 +570,7 @@ public partial class DashboardView : UserControl
         box.TextChanged += (_, _) =>
         {
             tile.Name = box.Text ?? "";
+            board.NotifyEdited();
             EditorTabs.Labels = openEditors.Select(open => open.Name).ToArray();
             EditorTabs.ActiveIndex = activeEditorIndex;
             RefreshTile(tile);
@@ -611,6 +611,7 @@ public partial class DashboardView : UserControl
                 e.Handled = true;
                 if (tile.Kind == captured) return;
                 tile.Kind = captured;
+                board.NotifyEdited();
                 RefreshTile(tile);
                 BuildEditorBody();
             };
@@ -746,6 +747,7 @@ public partial class DashboardView : UserControl
         {
             e.Handled = true;
             tile.Sources[index] = tile.Sources[index] with { SigmaFigureKey = key };
+            board.NotifyEdited();
             RefreshTile(tile);
             UpdateStatus();
             BuildEditorBody();
@@ -802,6 +804,7 @@ public partial class DashboardView : UserControl
             e.Handled = true;
             if (existing >= 0) tile.Sources.RemoveAt(existing);
             else tile.Sources.Add(source);
+            board.NotifyEdited();
             RefreshTile(tile);
             UpdateStatus();
             BuildEditorBody();

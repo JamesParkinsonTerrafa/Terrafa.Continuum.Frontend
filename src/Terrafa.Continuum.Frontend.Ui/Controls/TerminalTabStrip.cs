@@ -17,6 +17,9 @@ public class TerminalTabStrip : UserControl
 
     private const double ClosableLabelMaxWidth = 150;
 
+    /// <summary>Travel along the strip's axis before a press on a nav key becomes a reorder drag.</summary>
+    private const double DragThreshold = 6;
+
     public static readonly StyledProperty<IReadOnlyList<string>> LabelsProperty =
         AvaloniaProperty.Register<TerminalTabStrip, IReadOnlyList<string>>(nameof(Labels), NavigationLabels);
 
@@ -46,17 +49,27 @@ public class TerminalTabStrip : UserControl
     private readonly StackPanel tabRow;
     private readonly TextBlock hintBlock;
     private readonly ContentControl rightHost;
+    private readonly StackPanel rightRow;
+    private readonly DockPanel layout;
+    private readonly Border chrome;
+
+    // Display position -> index into Labels. Identity except on the nav strip, where it mirrors
+    // NavOrderSettings; everything below the public surface works in display positions, and the
+    // screen index only appears at the ActiveIndex / TabSelected boundary.
+    private List<int> order = [];
+    private readonly List<string> displayLabels = [];
+
+    // The key the pointer went down on keeps the capture for the whole drag, while the dragged
+    // tab's slot walks away from it as labels swap underneath — hence two positions.
+    private int grabPos = -1;
+    private int dragPos = -1;
+    private bool dragReordering;
+    private double dragPressAxis;
+    private bool committingOrder;
 
     public TerminalTabStrip()
     {
-        Height = 40;
-
-        tabRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 5,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        tabRow = new StackPanel { Spacing = 5 };
 
         hintBlock = new TextBlock
         {
@@ -65,10 +78,8 @@ public class TerminalTabStrip : UserControl
         };
         rightHost = new ContentControl { VerticalAlignment = VerticalAlignment.Center };
 
-        // 9 on the left so the first tab key sits as far from the window edge as it does from the
-        // top of the strip; the right stays at 14 to line up with the bar above.
-        var layout = new DockPanel { Margin = new Thickness(9, 0, 14, 0) };
-        var rightRow = new StackPanel
+        layout = new DockPanel();
+        rightRow = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
@@ -76,19 +87,55 @@ public class TerminalTabStrip : UserControl
         };
         rightRow.Children.Add(hintBlock);
         rightRow.Children.Add(rightHost);
-        DockPanel.SetDock(rightRow, Dock.Right);
         layout.Children.Add(rightRow);
         layout.Children.Add(tabRow);
 
-        Content = new Border
+        chrome = new Border
         {
             Background = Palette.BgBar,
             BorderBrush = Palette.Border,
-            BorderThickness = new Thickness(0, 0, 0, 1),
             ClipToBounds = true,
             Child = layout
         };
+        Content = chrome;
 
+        ApplyChrome();
+        RebuildTabs();
+    }
+
+    /// <summary>Vertical layout applies to the shared nav strip only — ad-hoc strips (closable
+    /// document tabs and the like) keep their inline horizontal shape.</summary>
+    private bool IsVertical => IsNavStrip && TabLayoutSettings.Vertical;
+
+    /// <summary>Everything about the strip's shell that depends on its orientation.</summary>
+    private void ApplyChrome()
+    {
+        var vertical = IsVertical;
+        DockPanel.SetDock(this, vertical ? Dock.Left : Dock.Top);
+        Height = vertical ? double.NaN : 40;
+
+        chrome.BorderThickness = vertical ? new Thickness(0, 0, 1, 0) : new Thickness(0, 0, 0, 1);
+
+        tabRow.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
+        tabRow.VerticalAlignment = vertical ? VerticalAlignment.Top : VerticalAlignment.Center;
+
+        // 9 on the near edge so the first tab key sits as far from the window edge as it does
+        // from the start of the strip; the far side stays at 14 to line up with the bar alongside.
+        layout.Margin = vertical ? new Thickness(9, 9, 9, 9) : new Thickness(9, 0, 14, 0);
+
+        rightRow.Orientation = vertical ? Orientation.Vertical : Orientation.Horizontal;
+        DockPanel.SetDock(rightRow, vertical ? Dock.Bottom : Dock.Right);
+        rightRow.HorizontalAlignment = vertical ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        rightRow.Margin = vertical ? new Thickness(0, 8, 0, 0) : default;
+        hintBlock.TextWrapping = vertical ? TextWrapping.Wrap : TextWrapping.NoWrap;
+        // The bottom-of-strip extras must not widen the column past the tabs above them.
+        rightRow.MaxWidth = vertical ? 170 : double.PositiveInfinity;
+    }
+
+    private void OnTabLayoutChanged()
+    {
+        if (!IsNavStrip) return;
+        ApplyChrome();
         RebuildTabs();
     }
 
@@ -132,6 +179,12 @@ public class TerminalTabStrip : UserControl
     {
         base.OnAttachedToVisualTree(e);
         HintSettings.Changed += UpdateVisuals;
+        NavOrderSettings.Changed += OnNavOrderChanged;
+        TabLayoutSettings.Changed += OnTabLayoutChanged;
+        ApplyChrome();
+        // A cached screen reattaches with the order it was built under — catch up on a reorder
+        // made from another screen's strip while this one was off the tree.
+        if (IsNavStrip && !order.SequenceEqual(NavOrderSettings.OrderFor(Labels.Count))) RebuildTabs();
         UpdateVisuals();
         if (!TryContinueHandoff()) SyncBubbles(animated: false);
     }
@@ -140,13 +193,29 @@ public class TerminalTabStrip : UserControl
     {
         base.OnDetachedFromVisualTree(e);
         HintSettings.Changed -= UpdateVisuals;
+        NavOrderSettings.Changed -= OnNavOrderChanged;
+        TabLayoutSettings.Changed -= OnTabLayoutChanged;
     }
+
+    /// <summary>The shared navigation strip, as opposed to a strip given its own labels.</summary>
+    private bool IsNavStrip => ReferenceEquals(Labels, NavigationLabels);
+
+    private void OnNavOrderChanged()
+    {
+        if (committingOrder || !IsNavStrip) return;
+        RebuildTabs();
+    }
+
+    private int ToDisplay(int labelIndex) => order.IndexOf(labelIndex);
+
+    private int ToScreen(int displayPos) => order[displayPos];
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (change.Property == LabelsProperty || change.Property == IsClosableProperty)
         {
+            ApplyChrome();
             RebuildTabs();
             return;
         }
@@ -171,26 +240,42 @@ public class TerminalTabStrip : UserControl
         tabKeys.Clear();
         tabBubbles.Clear();
         tabSeparators.Clear();
+        grabPos = -1;
+        dragPos = -1;
+        dragReordering = false;
+
+        order = IsNavStrip
+            ? [.. NavOrderSettings.OrderFor(Labels.Count)]
+            : [.. Enumerable.Range(0, Labels.Count)];
+        RefreshDisplayLabels();
 
         for (var i = 0; i < Labels.Count; i++)
         {
             var index = i;
             if (i > 0)
             {
-                var separator = new Rectangle
-                {
-                    Width = 1,
-                    Height = 14,
-                    Fill = Palette.TextGhost,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
+                var separator = IsVertical
+                    ? new Rectangle
+                    {
+                        Width = 14,
+                        Height = 1,
+                        Fill = Palette.TextGhost,
+                        HorizontalAlignment = HorizontalAlignment.Center
+                    }
+                    : new Rectangle
+                    {
+                        Width = 1,
+                        Height = 14,
+                        Fill = Palette.TextGhost,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
                 tabSeparators.Add(separator);
                 tabRow.Children.Add(separator);
             }
 
             var block = new TextBlock
             {
-                Text = Labels[i],
+                Text = displayLabels[i],
                 FontSize = TypographySettings.Size(11),
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -209,6 +294,13 @@ public class TerminalTabStrip : UserControl
             };
             var bubble = new BubbleKeyAnimator(key);
             bubble.PopStarted += pressure => OnBubblePopStarted(index, pressure);
+            if (IsNavStrip)
+            {
+                key.PointerPressed += (_, e) => OnKeyPressed(index, e);
+                key.PointerMoved += (_, e) => OnKeyMoved(index, e);
+                key.PointerReleased += (_, _) => EndDrag();
+                key.PointerCaptureLost += (_, _) => EndDrag();
+            }
             tabBlocks.Add(block);
             tabKeys.Add(key);
             tabBubbles.Add(bubble);
@@ -217,6 +309,91 @@ public class TerminalTabStrip : UserControl
 
         UpdateVisuals();
         SyncBubbles(animated: false);
+    }
+
+    /// <summary>
+    /// The label shown at each display position: the tab's name under the position's number, so
+    /// the keys stay 1..6 left to right however the names are arranged.
+    /// </summary>
+    private void RefreshDisplayLabels()
+    {
+        displayLabels.Clear();
+        for (var pos = 0; pos < order.Count; pos++)
+        {
+            var label = Labels[order[pos]];
+            displayLabels.Add(IsNavStrip ? $"{pos + 1}) {NameOf(label)}" : label);
+        }
+    }
+
+    private static string NameOf(string label)
+    {
+        var cut = label.IndexOf(") ", StringComparison.Ordinal);
+        return cut < 0 ? label : label[(cut + 2)..];
+    }
+
+    private void OnKeyPressed(int pos, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(tabRow).Properties.IsLeftButtonPressed) return;
+        grabPos = pos;
+        dragPos = pos;
+        dragReordering = false;
+        dragPressAxis = AxisPosition(e);
+    }
+
+    /// <summary>Pointer position along the strip's run direction — X across, Y down the side.</summary>
+    private double AxisPosition(PointerEventArgs e)
+    {
+        var position = e.GetPosition(tabRow);
+        return IsVertical ? position.Y : position.X;
+    }
+
+    private double AxisCenter(SquircleBorder key) =>
+        IsVertical ? key.Bounds.Center.Y : key.Bounds.Center.X;
+
+    private void OnKeyMoved(int pos, PointerEventArgs e)
+    {
+        if (grabPos < 0 || pos != grabPos) return;
+        var axis = AxisPosition(e);
+
+        if (!dragReordering)
+        {
+            if (Math.Abs(axis - dragPressAxis) < DragThreshold) return;
+            dragReordering = true;
+            tabBubbles[grabPos].CancelPress();
+        }
+
+        // The keys never move — crossing a neighbour's midpoint swaps the labels underneath, and
+        // the drag continues from the neighbouring key.
+        while (dragPos + 1 < tabKeys.Count && axis > AxisCenter(tabKeys[dragPos + 1]))
+            SwapWithNext(dragPos++);
+        while (dragPos > 0 && axis < AxisCenter(tabKeys[dragPos - 1]))
+            SwapWithNext(--dragPos);
+    }
+
+    private void SwapWithNext(int pos)
+    {
+        (order[pos], order[pos + 1]) = (order[pos + 1], order[pos]);
+        RefreshDisplayLabels();
+        tabBlocks[pos].Text = displayLabels[pos];
+        tabBlocks[pos + 1].Text = displayLabels[pos + 1];
+        UpdateVisuals();
+        SyncBubbles(animated: false);
+    }
+
+    private void EndDrag()
+    {
+        if (grabPos < 0) return;
+        var reordered = dragReordering;
+        grabPos = -1;
+        dragPos = -1;
+        dragReordering = false;
+        if (!reordered) return;
+
+        // This strip already shows the new order — suppress its own Changed rebuild, which would
+        // tear down the keys mid-release.
+        committingOrder = true;
+        NavOrderSettings.Set(order);
+        committingOrder = false;
     }
 
     private void OnBubblePopStarted(int poppingIndex, double pressure)
@@ -228,16 +405,16 @@ public class TerminalTabStrip : UserControl
         if (!IsClosable)
         {
             BubbleHandoff.Record(
-                Labels[poppingIndex], poppingIndex, ActiveIndex,
+                displayLabels[poppingIndex], poppingIndex, ToDisplay(ActiveIndex),
                 tabBubbles[poppingIndex].CurrentScale, pressure);
         }
-        TabSelected?.Invoke(poppingIndex);
+        TabSelected?.Invoke(ToScreen(poppingIndex));
     }
 
     private bool TryContinueHandoff()
     {
         if (IsClosable) return false;
-        if (!BubbleHandoff.TryTake(Labels, ActiveIndex, out var handoff)) return false;
+        if (!BubbleHandoff.TryTake(displayLabels, ToDisplay(ActiveIndex), out var handoff)) return false;
         for (var i = 0; i < tabBubbles.Count; i++)
         {
             if (i == handoff.PoppingIndex)
@@ -259,9 +436,10 @@ public class TerminalTabStrip : UserControl
 
     private void SyncBubbles(bool animated)
     {
+        var activePos = ToDisplay(ActiveIndex);
         for (var i = 0; i < tabBubbles.Count; i++)
         {
-            var shouldBePopped = i == ActiveIndex;
+            var shouldBePopped = i == activePos;
             if (!animated)
             {
                 if (shouldBePopped) tabBubbles[i].RestPopped();
@@ -317,15 +495,16 @@ public class TerminalTabStrip : UserControl
 
     private void UpdateVisuals()
     {
+        var activePos = ToDisplay(ActiveIndex);
         for (var i = 0; i < tabBlocks.Count; i++)
         {
-            var isActive = i == ActiveIndex;
+            var isActive = i == activePos;
             tabBlocks[i].Foreground = isActive ? Palette.Amber : Palette.TextMuted;
             tabBlocks[i].FontWeight = isActive ? FontWeight.Bold : FontWeight.Normal;
         }
         for (var i = 0; i < tabSeparators.Count; i++)
         {
-            tabSeparators[i].IsVisible = ActiveIndex != i && ActiveIndex != i + 1;
+            tabSeparators[i].IsVisible = activePos != i && activePos != i + 1;
         }
         hintBlock.Text = HintText;
         hintBlock.Foreground = HintBrush ?? Palette.TextFaint;

@@ -8,7 +8,7 @@ namespace Terrafa.Continuum.Analytics.Regression;
 /// <summary>
 /// A fitted line. <see cref="Predict"/> evaluated at each drawn x is what overlays the trend on a
 /// chart; <see cref="RSquared"/> is there for the caller to show, so the line never asserts more
-/// than the points behind it do.
+/// than the points behind it do.5
 /// </summary>
 public sealed record LinearFit(double Intercept, double Slope, double RSquared)
 {

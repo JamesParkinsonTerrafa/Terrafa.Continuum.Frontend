@@ -46,6 +46,14 @@ public sealed class Dashboard
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised for mutations that no screen needs to redraw for — a drag, a source rewire on the
+    /// tile already showing it — but that durable state must still record. Kept apart from
+    /// <see cref="Changed"/> so persistence can hear every edit without the inactive screens
+    /// rebuilding on each drag.
+    /// </summary>
+    public event Action? Edited;
+
     public IReadOnlyList<DashboardPlacement> Placements => placements;
 
     public IEnumerable<DashboardTile> Tiles => placements.Select(placement => placement.Tile);
@@ -105,6 +113,18 @@ public sealed class Dashboard
         placement.Y = y;
         placement.Width = width;
         placement.Height = height;
+        Edited?.Invoke();
+    }
+
+    /// <summary>Says an in-place tile edit happened — a rename or a source rewire.</summary>
+    public void NotifyEdited() => Edited?.Invoke();
+
+    /// <summary>Replaces the board with loaded state, announcing once.</summary>
+    public void Load(IEnumerable<DashboardPlacement> loaded)
+    {
+        placements.Clear();
+        placements.AddRange(loaded);
+        Changed?.Invoke();
     }
 
     public string NextName(TileKind kind)

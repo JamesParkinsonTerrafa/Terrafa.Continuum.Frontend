@@ -58,7 +58,6 @@ public partial class DataSourcesView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
         SyncText.Text = $"CATALOGUE READING {Source}";
 
         SearchBox.PropertyChanged += (_, e) =>

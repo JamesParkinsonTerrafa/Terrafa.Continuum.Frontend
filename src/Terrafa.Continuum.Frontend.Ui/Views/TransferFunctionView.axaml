@@ -8,7 +8,7 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="TFN &lt;GO&gt;"
+                               CommandText="TFN"
                                SubtitleText="TRANSFER FUNCTION EDITOR">
         <controls:TerminalTopBar.RightContent>
           <TextBlock x:Name="TopBarStatus"

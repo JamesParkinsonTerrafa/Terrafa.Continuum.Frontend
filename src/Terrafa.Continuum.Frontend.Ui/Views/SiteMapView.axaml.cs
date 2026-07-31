@@ -56,7 +56,6 @@ public partial class SiteMapView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
 
         Plan.MenuProvider = BuildPinMenu;
         Plan.SelectionChanged += ShowSelectedPin;

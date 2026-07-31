@@ -18,6 +18,9 @@ public interface IAuthenticator
 
     /// <summary>Exchanges a refresh token for a new access token, without re-prompting.</summary>
     Task<AuthTokens> RefreshAsync(string refreshToken);
+
+    /// <summary>Best-effort revocation of a refresh token on sign-out. Never throws.</summary>
+    Task RevokeAsync(string refreshToken);
 }
 
 /// <summary>A sign-in that did not succeed, with a message already fit to show the user.</summary>
@@ -93,6 +96,24 @@ public sealed class CognitoAuthenticator : IAuthenticator
                 return result.AuthenticationResult;
             },
             "Could not renew the session");
+
+    public async Task RevokeAsync(string refreshToken)
+    {
+        if (!AuthOptions.IsConfigured) return;
+        try
+        {
+            await _provider.RevokeTokenAsync(new RevokeTokenRequest
+            {
+                Token = refreshToken,
+                ClientId = AuthOptions.ClientId,
+            });
+        }
+        catch
+        {
+            // Revocation is hygiene, not correctness: the stored copy is already gone, and a pool
+            // whose app client has revocation disabled answers this call with an error.
+        }
+    }
 
     private static async Task<AuthTokens> RunAsync(Func<Task<AuthenticationResultType?>> call, string what)
     {

@@ -20,11 +20,22 @@
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </controls:SquircleBorder>
-      <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="14,0,0,0"
-                 Text="READ ONLY · SETTINGS ▸ BUILDER MODE TO MAKE CHANGES"
-                 FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
-                 Foreground="{DynamicResource TextMutedBrush}"
-                 IsVisible="{DynamicResource BuilderHintVisible}" />
+      <controls:SquircleBorder x:Name="ModeButton" Classes="emboss" DockPanel.Dock="Right"
+                               Margin="14,0,0,0" Padding="10,5"
+                               Background="{StaticResource EmbossSurfaceBrush}"
+                               VerticalAlignment="Center" Cursor="Hand">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="MODE" FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
+                     VerticalAlignment="Center"
+                     Foreground="{StaticResource TextMutedBrush}" />
+          <TextBlock x:Name="PlainLabel" Text="PLAIN" FontSize="{DynamicResource FontSize9}"
+                     LetterSpacing="1" VerticalAlignment="Center" />
+          <TextBlock Text="/" FontSize="{DynamicResource FontSize9}" VerticalAlignment="Center"
+                     Foreground="{StaticResource TextGhostBrush}" />
+          <TextBlock x:Name="TechnicalLabel" Text="TECHNICAL" FontSize="{DynamicResource FontSize9}"
+                     LetterSpacing="1" VerticalAlignment="Center" />
+        </StackPanel>
+      </controls:SquircleBorder>
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
@@ -38,6 +49,9 @@
                    Foreground="{StaticResource AmberBrush}" />
         <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                    Foreground="{StaticResource TextMutedBrush}" />
+        <TextBlock Text="· NORTHGATE TERMINALS, A FICTIONAL EUROPEAN TERMINAL AND BLENDER · 12 TANKS · 18 MONTHS OF HISTORY"
+                   FontSize="{DynamicResource FontSize12}"
+                   Foreground="{StaticResource TextFaintBrush}" />
       </StackPanel>
     </DockPanel>
   </Border>

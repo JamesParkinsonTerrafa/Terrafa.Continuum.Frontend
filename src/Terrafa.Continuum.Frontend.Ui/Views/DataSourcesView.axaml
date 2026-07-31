@@ -31,12 +31,8 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="DATA &lt;GO&gt;"
-                               SubtitleText="SOURCE CATALOGUE">
-        <controls:TerminalTopBar.RightContent>
-          <controls:FeedLiveBadge x:Name="FeedBadge" />
-        </controls:TerminalTopBar.RightContent>
-      </controls:TerminalTopBar>
+                               CommandText="DATA"
+                               SubtitleText="SOURCE CATALOGUE" />
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="5"
                                  HintText="a dataset mounts as its own subtree — containment never crosses datasets, only equality &amp; adjacency do" />

@@ -76,6 +76,9 @@ public sealed class FunctionLibrary
 
     private readonly List<LibraryFunction> userFunctions = [];
 
+    /// <summary>Raised when the saved composites change — the durable part of the library.</summary>
+    public event Action? Changed;
+
     public IReadOnlyList<LibraryFunction> Primitives { get; }
 
     public IReadOnlyList<FunctionEstimator> Estimators { get; }
@@ -153,8 +156,30 @@ public sealed class FunctionLibrary
 
     public LibraryFunction SaveComposite(string name, CompositionNode root)
     {
+        var composite = BuildComposite(name, root);
+        var replacedIndex = userFunctions.FindIndex(function => function.Name == name);
+        if (replacedIndex >= 0)
+            userFunctions[replacedIndex] = composite;
+        else
+            userFunctions.Add(composite);
+        Changed?.Invoke();
+        return composite;
+    }
+
+    /// <summary>Replaces the saved composites with loaded state, announcing once.</summary>
+    public void LoadUserFunctions(IEnumerable<LibraryFunction> loaded)
+    {
+        userFunctions.Clear();
+        userFunctions.AddRange(loaded);
+        Changed?.Invoke();
+    }
+
+    /// <summary>A composite as <see cref="SaveComposite"/> builds it, without registering it —
+    /// durable-state restore builds them ahead so one composite can reference another.</summary>
+    public static LibraryFunction BuildComposite(string name, CompositionNode root)
+    {
         var definition = root.Clone();
-        var composite = new LibraryFunction
+        return new LibraryFunction
         {
             Name = name,
             Inputs = [new FunctionPort("x", PortKind.Scalar)],
@@ -165,12 +190,6 @@ public sealed class FunctionLibrary
             IsPrimitive = false,
             Definition = definition
         };
-        var replacedIndex = userFunctions.FindIndex(function => function.Name == name);
-        if (replacedIndex >= 0)
-            userFunctions[replacedIndex] = composite;
-        else
-            userFunctions.Add(composite);
-        return composite;
     }
 
     private static LibraryFunction Unary(

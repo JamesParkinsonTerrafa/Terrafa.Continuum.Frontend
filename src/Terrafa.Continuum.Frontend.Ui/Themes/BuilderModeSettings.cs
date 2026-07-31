@@ -32,6 +32,5 @@ public static class BuilderModeSettings
     {
         if (registeredResources is null) return;
         registeredResources["BuilderPanelsVisible"] = Enabled;
-        registeredResources["BuilderHintVisible"] = !Enabled;
     }
 }

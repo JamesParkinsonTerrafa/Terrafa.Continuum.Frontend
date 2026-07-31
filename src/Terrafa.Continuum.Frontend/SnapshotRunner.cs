@@ -38,6 +38,7 @@ public static class SnapshotRunner
         CaptureInteractionProbe(outputDir);
         CaptureBubbleProbe(outputDir);
         CaptureBubbleHandoffProbe(outputDir);
+        CaptureNavReorderProbe(outputDir);
         CaptureRegressorProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
@@ -572,7 +573,7 @@ public static class SnapshotRunner
         window.MouseUp(point, MouseButton.Left);
         Pump();
 
-        if (window.ViewHost.Content is not DashboardView dashboard)
+        if (window.ViewHost.Content is not TransferFunctionView incoming)
         {
             Console.Error.WriteLine(
                 $"bubble handoff: view is {window.ViewHost.Content?.GetType().Name}, did not swap at pop start");
@@ -580,12 +581,12 @@ public static class SnapshotRunner
             return;
         }
 
-        double ScaleOf(int index) => ((ScaleTransform)dashboard.Tabs.KeyAt(index).RenderTransform!).ScaleY;
+        double ScaleOf(int index) => ((ScaleTransform)incoming.Tabs.KeyAt(index).RenderTransform!).ScaleY;
 
         Thread.Sleep(30);
         Pump();
         var incomingMidPop = ScaleOf(2);
-        var previousInflating = ScaleOf(0);
+        var previousInflating = ScaleOf(3);
         Capture(window, outputDir, "0-bubble-handoff-mid");
 
         var settleClock = Stopwatch.StartNew();
@@ -596,10 +597,66 @@ public static class SnapshotRunner
         }
 
         Console.WriteLine(
-            $"bubble handoff: swapped to dashboard at pop start, incoming tab at {incomingMidPop:0.###} " +
+            $"bubble handoff: swapped to transfer function at pop start, incoming tab at {incomingMidPop:0.###} " +
             $"(mid-flight = {incomingMidPop < 0.999}), previous tab at {previousInflating:0.###}, " +
-            $"settled {ScaleOf(2):0.###} pressed-class {dashboard.Tabs.KeyAt(2).Classes.Contains("emboss-press")}");
+            $"settled {ScaleOf(2):0.###} pressed-class {incoming.Tabs.KeyAt(2).Classes.Contains("emboss-press")}");
         window.Close();
+    }
+
+    /// <summary>
+    /// Dragging a nav key sideways reorders the tabs instead of selecting one: the leftmost tab
+    /// is dragged right, the number prefixes stay 1..6 by position, no navigation happens on
+    /// release, and the leftmost key then opens whichever screen now sits there — on every
+    /// screen's strip, since the order is shared.
+    /// </summary>
+    private static void CaptureNavReorderProbe(string outputDir)
+    {
+        var window = new MainWindow(new StaticDataFeed())
+        {
+            Width = 1280,
+            Height = 840,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        var network = (NetworkView)window.ViewHost.Content!;
+        var key = network.Tabs.KeyAt(0);
+        var start = key.TranslatePoint(new Point(key.Bounds.Width / 2, key.Bounds.Height / 2), window)!.Value;
+
+        // The drag runs along the strip's axis — down the side when tabs are vertical.
+        var vertical = TabLayoutSettings.Vertical;
+        var reach = vertical ? 160.0 : 420.0;
+        Point Along(double travel) =>
+            vertical ? new Point(start.X, start.Y + travel) : new Point(start.X + travel, start.Y);
+
+        window.MouseDown(start, MouseButton.Left);
+        for (var travel = 0.0; travel <= reach; travel += 15)
+        {
+            window.MouseMove(Along(travel));
+            Pump();
+        }
+        window.MouseUp(Along(reach), MouseButton.Left);
+        Pump();
+
+        Console.WriteLine(
+            $"nav reorder: order [{string.Join(" ", NavOrderSettings.OrderFor(6))}], " +
+            $"view after drag = {window.ViewHost.Content?.GetType().Name}");
+        Capture(window, outputDir, "0-nav-reorder");
+
+        var first = network.Tabs.KeyAt(0);
+        var firstPoint = first
+            .TranslatePoint(new Point(first.Bounds.Width / 2, first.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(firstPoint, MouseButton.Left);
+        window.MouseUp(firstPoint, MouseButton.Left);
+        Pump();
+        Console.WriteLine(
+            $"nav reorder: leftmost key now opens {window.ViewHost.Content?.GetType().Name}");
+        Capture(window, outputDir, "0-nav-reorder-followed");
+        window.Close();
+
+        // Later probes select screens by nav position — put the default order back.
+        NavOrderSettings.Set(NavOrderSettings.Default);
     }
 
     /// <summary>

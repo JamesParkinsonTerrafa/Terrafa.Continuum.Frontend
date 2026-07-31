@@ -48,7 +48,6 @@ public partial class NetworkView : UserControl
         InitializeComponent();
         Tabs.TabSelected += navigate;
 
-        FeedBadge.TimeText = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm:ss 'UTC'").ToUpperInvariant();
         AsOfText.Text = snapshot.AsOf.ToString("dd-MMM-yyyy HH:mm").ToUpperInvariant() + " ▸ LIVE";
         EventCountText.Text = $"EVENTS {snapshot.EventCount:N0} · APPEND-ONLY";
 

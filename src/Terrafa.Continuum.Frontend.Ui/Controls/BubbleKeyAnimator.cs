@@ -94,6 +94,18 @@ public sealed class BubbleKeyAnimator
         BeginPop(ProgrammaticPopPressure);
     }
 
+    /// <summary>
+    /// Abandon an in-flight press without popping — the strip calls this when a press turns out
+    /// to be a drag. The pointer stays captured on the key so the drag keeps receiving moves.
+    /// </summary>
+    internal void CancelPress()
+    {
+        if (heldPointer is null) return;
+        heldPointer = null;
+        if (state is BubbleState.Pressing) BeginInflate();
+        else if (state is BubbleState.PoppedPressing) BeginPoppedSettle();
+    }
+
     public void Inflate()
     {
         if (state is BubbleState.Inflated or BubbleState.Inflating or BubbleState.Pressing) return;

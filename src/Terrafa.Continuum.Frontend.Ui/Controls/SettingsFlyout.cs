@@ -50,8 +50,8 @@ public class SettingsFlyout : Panel
     private readonly TextBlock lightLabel;
     private readonly TextBlock hintsOnLabel;
     private readonly TextBlock hintsOffLabel;
-    private readonly TextBlock builderOnLabel;
-    private readonly TextBlock builderOffLabel;
+    private readonly TextBlock tabsVerticalLabel;
+    private readonly TextBlock tabsHorizontalLabel;
     private readonly TextBlock snapOnLabel;
     private readonly TextBlock snapOffLabel;
     private readonly TextBlock gridLinesOnLabel;
@@ -74,8 +74,8 @@ public class SettingsFlyout : Panel
         lightLabel = BuildToggleLabel("LIGHT");
         hintsOnLabel = BuildToggleLabel("ON");
         hintsOffLabel = BuildToggleLabel("OFF");
-        builderOnLabel = BuildToggleLabel("ON");
-        builderOffLabel = BuildToggleLabel("OFF");
+        tabsVerticalLabel = BuildToggleLabel("VERTICAL");
+        tabsHorizontalLabel = BuildToggleLabel("HORIZONTAL");
         snapOnLabel = BuildToggleLabel("ON");
         snapOffLabel = BuildToggleLabel("OFF");
         gridLinesOnLabel = BuildToggleLabel("ON");
@@ -188,7 +188,7 @@ public class SettingsFlyout : Panel
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
-        column.Children.Add(BuildBuilderModeRow());
+        column.Children.Add(BuildTabLayoutRow());
         column.Children.Add(BuildThemeRow());
         column.Children.Add(BuildHintsRow());
         column.Children.Add(BuildSnapRow());
@@ -230,12 +230,12 @@ public class SettingsFlyout : Panel
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RefreshThemeLabels;
         HintSettings.Changed += RefreshHintLabels;
-        BuilderModeSettings.Changed += RefreshBuilderLabels;
         SnapSettings.Changed += RefreshSnapLabels;
+        TabLayoutSettings.Changed += RefreshTabLayoutLabels;
         RefreshThemeLabels();
         RefreshHintLabels();
-        RefreshBuilderLabels();
         RefreshSnapLabels();
+        RefreshTabLayoutLabels();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -243,8 +243,8 @@ public class SettingsFlyout : Panel
         base.OnDetachedFromVisualTree(e);
         ThemeManager.Changed -= RefreshThemeLabels;
         HintSettings.Changed -= RefreshHintLabels;
-        BuilderModeSettings.Changed -= RefreshBuilderLabels;
         SnapSettings.Changed -= RefreshSnapLabels;
+        TabLayoutSettings.Changed -= RefreshTabLayoutLabels;
     }
 
     private static TextBlock BuildToggleLabel(string text) => new()
@@ -261,9 +261,9 @@ public class SettingsFlyout : Panel
         MarkActive(HintSettings.Enabled ? hintsOnLabel : hintsOffLabel,
             HintSettings.Enabled ? hintsOffLabel : hintsOnLabel);
 
-    private void RefreshBuilderLabels() =>
-        MarkActive(BuilderModeSettings.Enabled ? builderOnLabel : builderOffLabel,
-            BuilderModeSettings.Enabled ? builderOffLabel : builderOnLabel);
+    private void RefreshTabLayoutLabels() =>
+        MarkActive(TabLayoutSettings.Vertical ? tabsVerticalLabel : tabsHorizontalLabel,
+            TabLayoutSettings.Vertical ? tabsHorizontalLabel : tabsVerticalLabel);
 
     private void RefreshSnapLabels()
     {
@@ -316,8 +316,8 @@ public class SettingsFlyout : Panel
     private Border BuildHintsRow() =>
         BuildToggleRow("HINTS", hintsOnLabel, hintsOffLabel, HintSettings.Toggle);
 
-    private Border BuildBuilderModeRow() =>
-        BuildToggleRow("BUILDER MODE", builderOnLabel, builderOffLabel, BuilderModeSettings.Toggle);
+    private Border BuildTabLayoutRow() =>
+        BuildToggleRow("TAB LAYOUT", tabsVerticalLabel, tabsHorizontalLabel, TabLayoutSettings.Toggle);
 
     private Border BuildSnapRow() =>
         BuildToggleRow("GRID SNAP", snapOnLabel, snapOffLabel, SnapSettings.Toggle);

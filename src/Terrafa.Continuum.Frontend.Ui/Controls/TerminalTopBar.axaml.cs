@@ -2,6 +2,8 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
+using Terrafa.Continuum.Frontend.Themes;
 
 namespace Terrafa.Continuum.Frontend.Controls;
 
@@ -29,6 +31,35 @@ public partial class TerminalTopBar : UserControl
             ContactDialog.RequestShow();
             e.Handled = true;
         };
+        ModeButton.PointerPressed += (_, e) =>
+        {
+            BuilderModeSettings.Toggle();
+            e.Handled = true;
+        };
+        RefreshModeLabels();
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        BuilderModeSettings.Changed += RefreshModeLabels;
+        RefreshModeLabels();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        BuilderModeSettings.Changed -= RefreshModeLabels;
+    }
+
+    private void RefreshModeLabels()
+    {
+        var active = BuilderModeSettings.Enabled ? TechnicalLabel : PlainLabel;
+        var inactive = BuilderModeSettings.Enabled ? PlainLabel : TechnicalLabel;
+        active.Foreground = Palette.Amber;
+        active.FontWeight = FontWeight.Bold;
+        inactive.Foreground = Palette.TextFaint;
+        inactive.FontWeight = FontWeight.Normal;
     }
 
     public string CommandText

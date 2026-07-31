@@ -29,6 +29,10 @@ public class App : Application
         // The object is the same either way, so nothing downstream has to know which is in force.
         IDatasetCatalog catalog = new SessionDatasetCatalog();
 
+        // Workspace restore re-mounts saved datasets through the same catalogue the screens read,
+        // so its caches are shared and the demo/live swap applies to the restore too.
+        UserStateSync.Catalog = catalog;
+
         switch (ApplicationLifetime)
         {
             case IClassicDesktopStyleApplicationLifetime desktop:

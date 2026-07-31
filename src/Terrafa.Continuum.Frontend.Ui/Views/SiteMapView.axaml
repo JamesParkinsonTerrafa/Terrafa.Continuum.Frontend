@@ -8,12 +8,8 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="MAP &lt;GO&gt;"
-                               SubtitleText="SITE ALPHA · PHYSICAL EMBEDDING">
-        <controls:TerminalTopBar.RightContent>
-          <controls:FeedLiveBadge x:Name="FeedBadge" />
-        </controls:TerminalTopBar.RightContent>
-      </controls:TerminalTopBar>
+                               CommandText="MAP"
+                               SubtitleText="PHYSICAL EMBEDDING" />
 
       <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="4"
                                  HintText="pin any measure or dashboard figure onto the client's own site image — anchors are held against the image, not the screen" />

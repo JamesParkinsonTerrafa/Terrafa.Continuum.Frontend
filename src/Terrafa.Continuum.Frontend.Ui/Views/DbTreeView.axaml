@@ -8,13 +8,13 @@
   <Panel>
     <DockPanel>
       <controls:TerminalTopBar DockPanel.Dock="Top"
-                               CommandText="TREE &lt;GO&gt;"
+                               CommandText="TREE"
                                SubtitleText="SCHEMA · MOUNTED SUBTREES">
         <controls:TerminalTopBar.RightContent>
           <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
             <controls:SquircleBorder Classes="emboss-key" Background="{StaticResource AmberBrush}"
                                      Padding="12,5">
-              <TextBlock Text="↻ REFRESH SCHEMA &lt;GO&gt;" FontSize="{DynamicResource FontSize11}" FontWeight="Bold"
+              <TextBlock Text="↻ REFRESH SCHEMA" FontSize="{DynamicResource FontSize11}" FontWeight="Bold"
                          Foreground="Black" />
             </controls:SquircleBorder>
             <TextBlock Text="last 14:02:11" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextMutedBrush}"
