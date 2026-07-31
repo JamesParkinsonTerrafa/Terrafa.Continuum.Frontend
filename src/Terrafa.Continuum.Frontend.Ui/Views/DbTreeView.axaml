@@ -14,10 +14,10 @@
           <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
             <controls:SquircleBorder Classes="emboss-key" Background="{StaticResource AmberBrush}"
                                      Padding="12,5">
-              <TextBlock Text="↻ REFRESH SCHEMA &lt;GO&gt;" FontSize="11" FontWeight="Bold"
+              <TextBlock Text="↻ REFRESH SCHEMA &lt;GO&gt;" FontSize="{DynamicResource FontSize11}" FontWeight="Bold"
                          Foreground="Black" />
             </controls:SquircleBorder>
-            <TextBlock Text="last 14:02:11" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+            <TextBlock Text="last 14:02:11" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextMutedBrush}"
                        VerticalAlignment="Center" />
           </StackPanel>
         </controls:TerminalTopBar.RightContent>
@@ -30,13 +30,13 @@
                                   IsVisible="{DynamicResource HintsVisible}">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
-            <TextBlock x:Name="ShapeText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
-            <TextBlock Text="PER-SUBTREE FILTRATION 𝓕ₜ — JOINS INHERIT THE COARSEST" FontSize="10"
+            <TextBlock x:Name="ShapeText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
+            <TextBlock Text="PER-SUBTREE FILTRATION 𝓕ₜ — JOINS INHERIT THE COARSEST" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>
         <controls:TerminalStatusBar.RightContent>
-          <TextBlock Text="CONTAINMENT NEVER CROSSES A DATASET BOUNDARY" FontSize="10"
+          <TextBlock Text="CONTAINMENT NEVER CROSSES A DATASET BOUNDARY" FontSize="{DynamicResource FontSize10}"
                      Foreground="{StaticResource TextFaintBrush}" />
         </controls:TerminalStatusBar.RightContent>
       </controls:TerminalStatusBar>
@@ -50,7 +50,7 @@
             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
               <StackPanel Margin="0,4,0,10">
                 <StackPanel x:Name="SubtreeToggles" />
-                <TextBlock Text="CROSS-SUBTREE LINKS" FontSize="10" LetterSpacing="1"
+                <TextBlock Text="CROSS-SUBTREE LINKS" FontSize="{DynamicResource FontSize10}" LetterSpacing="1"
                            Margin="14,14,14,4" Foreground="{StaticResource AmberBrush}" />
                 <StackPanel x:Name="LinkToggles" />
                 <StackPanel x:Name="LinkList" />
@@ -59,7 +59,7 @@
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <TextBlock Text="Bands are subtrees. No edge may make one dataset a child of another — the contracts would no longer hold."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        Foreground="{StaticResource TextMutedBrush}"
                        IsVisible="{DynamicResource HintsVisible}" />
           </controls:PanelBox.FooterContent>
@@ -78,10 +78,10 @@
           <controls:PanelBox.FooterContent>
             <StackPanel Spacing="6">
               <TextBlock Text="Mounts, binds and links are all just events — a subtree can be removed by replaying without its mount."
-                         FontSize="10" LineHeight="16" TextWrapping="Wrap"
+                         FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight16}" TextWrapping="Wrap"
                          Foreground="{StaticResource TextMutedBrush}"
                          IsVisible="{DynamicResource HintsVisible}" />
-              <TextBlock x:Name="ReplayText" FontSize="10" Foreground="{StaticResource GreenBrush}" />
+              <TextBlock x:Name="ReplayText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource GreenBrush}" />
             </StackPanel>
           </controls:PanelBox.FooterContent>
         </controls:PanelBox>

@@ -2,6 +2,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Terrafa.Continuum.Frontend.Controls;
 using Terrafa.Continuum.Frontend.Models;
 using Terrafa.Continuum.Frontend.Services;
@@ -16,10 +17,22 @@ namespace Terrafa.Continuum.Frontend.Views;
 public partial class MainView : UserControl
 {
     private const int ScreenCount = 6;
+    private const double PlateWidth = 1560;
+    private const double PlateHeight = 980;
+
+    /// <summary>
+    /// Where the window fit stops growing the plate. Past this the extra space stays empty and
+    /// the plate holds to the top-left — that is the "resize within limits" contract.
+    /// </summary>
+    private const double MaxFitScale = 1.6;
+
+    /// <summary>Floor on the drawn scale, so a tiny window clips the plate rather than pulping it.</summary>
+    private const double MinDrawnScale = 0.45;
 
     private readonly IDataFeed feed;
     private readonly IDatasetCatalog catalog;
     private readonly Dictionary<int, UserControl> screens = [];
+    private readonly ScaleTransform plateScale = new();
     private int activeIndex;
 
     public MainView() : this(new StaticDataFeed())
@@ -35,6 +48,9 @@ public partial class MainView : UserControl
         this.feed = feed;
         this.catalog = catalog;
         InitializeComponent();
+
+        Plate.RenderTransform = plateScale;
+        SizeChanged += (_, _) => ApplyPlateScale();
 
         // Build the network before any screen does. The graph is what computes the dashboard
         // figures, so whichever screen opens first must find them already derived rather than
@@ -60,6 +76,9 @@ public partial class MainView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         ThemeManager.Changed += RebuildScreens;
+        TypographySettings.Changed += RebuildScreens;
+        UiScaleSettings.Changed += ApplyPlateScale;
+        ApplyPlateScale();
         Workspace.Instance.Changed += InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed += InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed += InvalidateInactiveScreens;
@@ -71,6 +90,8 @@ public partial class MainView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         ThemeManager.Changed -= RebuildScreens;
+        TypographySettings.Changed -= RebuildScreens;
+        UiScaleSettings.Changed -= ApplyPlateScale;
         Workspace.Instance.Changed -= InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed -= InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed -= InvalidateInactiveScreens;
@@ -111,6 +132,19 @@ public partial class MainView : UserControl
         {
             // Reported by the screen that needs it.
         }
+    }
+
+    /// <summary>
+    /// The plate's drawn scale: the window fit, capped so a big window pins the plate to the
+    /// top-left instead of inflating it without end, times the operator's UI SCALE setting.
+    /// </summary>
+    private void ApplyPlateScale()
+    {
+        if (Bounds.Width <= 0 || Bounds.Height <= 0) return;
+        var fit = Math.Min(Bounds.Width / PlateWidth, Bounds.Height / PlateHeight);
+        var scale = Math.Max(Math.Min(fit, MaxFitScale) * UiScaleSettings.Scale, MinDrawnScale);
+        plateScale.ScaleX = scale;
+        plateScale.ScaleY = scale;
     }
 
     private void ToggleSettings() => Settings.Toggle();

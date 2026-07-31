@@ -4,12 +4,17 @@
              x:Class="Terrafa.Continuum.Frontend.Views.MainView"
              Background="{StaticResource BgDeepBrush}">
   <!-- The whole app is one fixed 1560x980 plate scaled to fit. That is what makes a
-       browser head cheap: there is no window to own, only this control. -->
-  <Viewbox Stretch="Uniform">
-    <Panel Width="1560" Height="980">
+       browser head cheap: there is no window to own, only this control. The plate is
+       pinned to the top-left rather than centred, so resizing the window keeps the
+       menu bar and the logo anchored, and the scale itself is applied in code — the
+       window fit, capped, times the operator's UI SCALE setting. -->
+  <Panel ClipToBounds="True">
+    <Panel x:Name="Plate" Width="1560" Height="980"
+           HorizontalAlignment="Left" VerticalAlignment="Top"
+           RenderTransformOrigin="0%,0%">
       <ContentControl x:Name="ViewHost" />
       <controls:SettingsFlyout x:Name="Settings" />
       <controls:ContactDialog x:Name="Contact" />
     </Panel>
-  </Viewbox>
+  </Panel>
 </UserControl>

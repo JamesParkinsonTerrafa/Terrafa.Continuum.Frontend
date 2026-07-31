@@ -15,12 +15,12 @@
                         IsVisible="{Binding HasHeaderRight, ElementName=Root}"
                         VerticalAlignment="Center"
                         Margin="10,0,0,0" />
-        <TextBlock DockPanel.Dock="Right" FontSize="11"
+        <TextBlock DockPanel.Dock="Right" FontSize="{DynamicResource FontSize11}"
                    Text="{Binding Hint, ElementName=Root}"
                    Foreground="{Binding HintForeground, ElementName=Root}"
                    IsVisible="{Binding HasHint, ElementName=Root}"
                    VerticalAlignment="Center" />
-        <TextBlock FontSize="11" LetterSpacing="1"
+        <TextBlock FontSize="{DynamicResource FontSize11}" LetterSpacing="1"
                    Text="{Binding Title, ElementName=Root}"
                    Foreground="{StaticResource AmberBrush}"
                    VerticalAlignment="Center" />

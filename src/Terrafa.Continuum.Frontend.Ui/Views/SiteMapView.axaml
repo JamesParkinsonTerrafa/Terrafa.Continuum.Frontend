@@ -21,15 +21,15 @@
       <controls:TerminalStatusBar DockPanel.Dock="Bottom">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
-            <TextBlock Text="ZONES = ADJACENCY META-DESCRIPTORS" FontSize="10"
+            <TextBlock Text="ZONES = ADJACENCY META-DESCRIPTORS" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}"
                        IsVisible="{DynamicResource HintsVisible}" />
-            <TextBlock x:Name="PinCountText" FontSize="10"
+            <TextBlock x:Name="PinCountText" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>
         <controls:TerminalStatusBar.RightContent>
-          <TextBlock x:Name="ImageBarText" FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+          <TextBlock x:Name="ImageBarText" FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
         </controls:TerminalStatusBar.RightContent>
       </controls:TerminalStatusBar>
 
@@ -44,10 +44,10 @@
           </Border>
           <StackPanel DockPanel.Dock="Top" Margin="12,10" Spacing="8">
             <StackPanel x:Name="ImageActions" Orientation="Horizontal" Spacing="10" />
-            <TextBlock x:Name="ImageStatusText" FontSize="10" LineHeight="14" TextWrapping="Wrap"
+            <TextBlock x:Name="ImageStatusText" FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight14}" TextWrapping="Wrap"
                        Foreground="{StaticResource TextMutedBrush}" />
             <TextBlock Text="Drop a PNG or JPEG straight onto the plan to do the same thing. Pins are held in image coordinates, so a replacement photo keeps the whole composition."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        Foreground="{StaticResource TextFaintBrush}"
                        IsVisible="{DynamicResource HintsVisible}" />
           </StackPanel>
@@ -70,7 +70,7 @@
                   BorderThickness="0,1,0,0" Padding="12,10"
                   IsVisible="{DynamicResource HintsVisible}">
             <TextBlock Text="Zones map to adjacency meta-descriptors — two tanks can touch in space without either owning the other."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        Foreground="{StaticResource TextFaintBrush}" />
           </Border>
           <StackPanel x:Name="SelectedPinRows" DockPanel.Dock="Bottom" Margin="12,8" Spacing="7" />

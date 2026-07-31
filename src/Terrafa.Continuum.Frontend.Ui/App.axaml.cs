@@ -14,6 +14,7 @@ public class App : Application
     public override void Initialize()
     {
         ThemeManager.Initialize(Resources);
+        TypographySettings.RegisterResources(Resources);
         HintSettings.RegisterResources(Resources);
         BuilderModeSettings.RegisterResources(Resources);
         ButtonSettings.RegisterResources(Resources);

@@ -313,5 +313,5 @@ public class LineChart : Control
     }
 
     private static FormattedText Format(string value, IBrush brush, double fontSize) =>
-        new(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ChartTypeface, fontSize, brush);
+        new(value, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, ChartTypeface, TypographySettings.Size(fontSize), brush);
 }

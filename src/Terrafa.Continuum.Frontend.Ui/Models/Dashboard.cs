@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Terrafa Limited. All rights reserved.
 
+using Terrafa.Continuum.Frontend.Themes;
+
 namespace Terrafa.Continuum.Frontend.Models;
 
 /// <summary>A tile and where it sits on the canvas.</summary>
@@ -20,12 +22,21 @@ public sealed class DashboardPlacement
 /// </summary>
 public sealed class Dashboard
 {
-    /// <summary>Narrower than a hand-placed tile so the seeded grid clears both side panels.</summary>
-    public const double SeedWidth = 302;
+    /// <summary>The smallest a tile can be drawn or resized to, shared with the canvas.</summary>
+    public const double MinTileWidth = 220;
 
-    public const double SeedHeight = 252;
+    public const double MinTileHeight = 150;
 
-    public const double DefaultWidth = 360;
+    /// <summary>
+    /// Narrower than a hand-placed tile so the seeded grid clears both side panels. Both seed
+    /// dimensions are multiples of <see cref="SnapSettings.GridSize"/>, so the board opens
+    /// already sitting on the snap grid rather than locking to it on first touch.
+    /// </summary>
+    public const double SeedWidth = 300;
+
+    public const double SeedHeight = 250;
+
+    public const double DefaultWidth = 350;
 
     public const double DefaultHeight = 250;
 
@@ -39,7 +50,28 @@ public sealed class Dashboard
 
     public IEnumerable<DashboardTile> Tiles => placements.Select(placement => placement.Tile);
 
-    private Dashboard() => Seed();
+    private Dashboard()
+    {
+        Seed();
+        // Going from free placement to the grid locks every tile to its nearest gridline —
+        // the board is the thing that outlives the screen, so it is the board that snaps.
+        SnapSettings.Changed += OnSnapChanged;
+    }
+
+    private void OnSnapChanged()
+    {
+        if (!SnapSettings.Enabled) return;
+        foreach (var placement in placements)
+        {
+            placement.X = SnapSettings.Snap(placement.X);
+            placement.Y = SnapSettings.Snap(placement.Y);
+            placement.Width = SnapSettings.SnapAtLeast(
+                placement.X + placement.Width, placement.X + MinTileWidth) - placement.X;
+            placement.Height = SnapSettings.SnapAtLeast(
+                placement.Y + placement.Height, placement.Y + MinTileHeight) - placement.Y;
+        }
+        Changed?.Invoke();
+    }
 
     public DashboardPlacement? Find(DashboardTile tile) =>
         placements.FirstOrDefault(placement => placement.Tile == tile);
@@ -136,8 +168,8 @@ public sealed class Dashboard
         placements.Add(new DashboardPlacement
         {
             Tile = tile,
-            X = 24 + column * (SeedWidth + 16),
-            Y = 20 + row * (SeedHeight + 18),
+            X = SnapSettings.GridSize + column * (SeedWidth + SnapSettings.GridSize),
+            Y = SnapSettings.GridSize + row * (SeedHeight + SnapSettings.GridSize),
             Width = SeedWidth,
             Height = SeedHeight
         });

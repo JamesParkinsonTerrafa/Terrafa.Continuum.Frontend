@@ -187,7 +187,7 @@ public partial class DbTreeView : UserControl
         var title = new TextBlock
         {
             Text = $"SUBTREE · {subtree.Dataset.ToLowerInvariant()}/",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             LetterSpacing = 1,
             Foreground = accent,
             VerticalAlignment = VerticalAlignment.Center
@@ -195,7 +195,7 @@ public partial class DbTreeView : UserControl
         var detail = new TextBlock
         {
             Text = $"contract {subtree.Contract} · {subtree.LeafCount} leaves · 𝓕ₜ {subtree.Cadence}",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -215,7 +215,7 @@ public partial class DbTreeView : UserControl
         var note = new TextBlock
         {
             Text = "no subtrees visible — mount a dataset on 6) DATA SOURCES, or re-enable one on the left",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.TextFaint
         };
         Canvas.SetLeft(note, CanvasMargin);
@@ -372,7 +372,7 @@ public partial class DbTreeView : UserControl
 
         foreach (var option in new[] { SubtreeLinkKind.Equality, SubtreeLinkKind.Adjacency })
         {
-            var text = new TextBlock { FontSize = 10, LetterSpacing = 1 };
+            var text = new TextBlock { FontSize = TypographySettings.Size(10), LetterSpacing = 1 };
             text.Text = option == SubtreeLinkKind.Equality
                 ? "≡ EQUALITY — same underlying thing"
                 : "→ ADJACENCY — context, not containment";
@@ -415,7 +415,7 @@ public partial class DbTreeView : UserControl
             var text = new TextBlock
             {
                 Text = $"{node.Path}  ·  {(node.Kind == DataNodeKind.Measure ? "measure" : "object")}",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Foreground = Palette.TextMuted
             };
             var marker = new Rectangle
@@ -451,7 +451,7 @@ public partial class DbTreeView : UserControl
             list.Children.Add(new TextBlock
             {
                 Text = "no other subtree is mounted — mount one on 6) DATA SOURCES first",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Margin = new Thickness(10, 8),
                 Foreground = Palette.TextFaint
             });
@@ -477,7 +477,7 @@ public partial class DbTreeView : UserControl
         LabelledBlock(label, new TextBlock
         {
             Text = value,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.Text
         });
@@ -488,7 +488,7 @@ public partial class DbTreeView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint
         });
@@ -523,7 +523,7 @@ public partial class DbTreeView : UserControl
             SubtreeToggles.Children.Add(new TextBlock
             {
                 Text = "nothing mounted yet",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Margin = new Thickness(14, 8),
                 Foreground = Palette.TextFaint
             });
@@ -538,7 +538,7 @@ public partial class DbTreeView : UserControl
             Child = new TextBlock
             {
                 Text = "[ ] containment          in-subtree only",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Foreground = Palette.TextGhost
             }
         });
@@ -554,7 +554,7 @@ public partial class DbTreeView : UserControl
         var check = new TextBlock
         {
             Text = subtree.Visible ? "[x]" : "[ ]",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = subtree.Visible ? accent : Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -570,7 +570,7 @@ public partial class DbTreeView : UserControl
         var name = new TextBlock
         {
             Text = subtree.Dataset.ToLowerInvariant() + "/",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = subtree.Visible ? Palette.Text : Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -583,7 +583,7 @@ public partial class DbTreeView : UserControl
         var detail = new TextBlock
         {
             Text = $"{subtree.Cadence} · {subtree.LeafCount} leaves",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Margin = new Thickness(29, 2, 0, 0),
             Foreground = Palette.TextFaint
         };
@@ -619,21 +619,21 @@ public partial class DbTreeView : UserControl
         var check = new TextBlock
         {
             Text = shown ? "[x]" : "[ ]",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = shown ? accent : Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
         var name = new TextBlock
         {
             Text = label,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = shown ? Palette.Text : Palette.TextGhost,
             VerticalAlignment = VerticalAlignment.Center
         };
         var count = new TextBlock
         {
             Text = workspace.CountLinks(kind).ToString(),
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -670,8 +670,8 @@ public partial class DbTreeView : UserControl
         var accent = link.Kind == SubtreeLinkKind.Equality ? Palette.Purple : Palette.Amber;
         var text = new TextBlock
         {
-            FontSize = 10,
-            LineHeight = 14,
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(14),
             TextWrapping = TextWrapping.Wrap,
             Foreground = Palette.TextMuted
         };
@@ -721,7 +721,7 @@ public partial class DbTreeView : UserControl
                 _ => Palette.Cyan
             };
 
-            var header = new TextBlock { FontSize = 10, LineHeight = 15 };
+            var header = new TextBlock { FontSize = TypographySettings.Size(10), LineHeight = TypographySettings.Size(15) };
             header.Inlines =
             [
                 new Run(entry.Time + " ") { Foreground = Palette.TextFaint },
@@ -731,8 +731,8 @@ public partial class DbTreeView : UserControl
             var detail = new TextBlock
             {
                 Text = entry.Detail,
-                FontSize = 10,
-                LineHeight = 15,
+                FontSize = TypographySettings.Size(10),
+                LineHeight = TypographySettings.Size(15),
                 Foreground = Palette.TextMuted,
                 TextWrapping = TextWrapping.Wrap
             };
@@ -756,7 +756,7 @@ public partial class DbTreeView : UserControl
             Child = new TextBlock
             {
                 Text = $"… {snapshot.EventCount - snapshot.Events.Count:N0} earlier events retained",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Foreground = Palette.TextGhost
             }
         });
@@ -778,7 +778,7 @@ public partial class DbTreeView : UserControl
         LegendPanel.Children.Add(new TextBlock
         {
             Text = "containment stays inside one dataset",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             Foreground = Palette.TextFaint,
             Margin = new Thickness(0, 2, 0, 0)
         });
@@ -800,7 +800,7 @@ public partial class DbTreeView : UserControl
         row.Children.Add(new TextBlock
         {
             Text = text,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 0.5,
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center

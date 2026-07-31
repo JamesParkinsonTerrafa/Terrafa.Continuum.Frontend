@@ -35,6 +35,8 @@ public class SettingsFlyout : Panel
     internal Slider NodeCornerRadiusSlider { get; }
     internal Slider HighlightSaturationSlider { get; }
     internal Slider HighlightBrightnessSlider { get; }
+    internal Slider TextSizeSlider { get; }
+    internal Slider UiScaleSlider { get; }
 
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
@@ -50,6 +52,10 @@ public class SettingsFlyout : Panel
     private readonly TextBlock hintsOffLabel;
     private readonly TextBlock builderOnLabel;
     private readonly TextBlock builderOffLabel;
+    private readonly TextBlock snapOnLabel;
+    private readonly TextBlock snapOffLabel;
+    private readonly TextBlock gridLinesOnLabel;
+    private readonly TextBlock gridLinesOffLabel;
     private readonly TextBlock waveValue;
 
     public SettingsFlyout()
@@ -70,6 +76,10 @@ public class SettingsFlyout : Panel
         hintsOffLabel = BuildToggleLabel("OFF");
         builderOnLabel = BuildToggleLabel("ON");
         builderOffLabel = BuildToggleLabel("OFF");
+        snapOnLabel = BuildToggleLabel("ON");
+        snapOffLabel = BuildToggleLabel("OFF");
+        gridLinesOnLabel = BuildToggleLabel("ON");
+        gridLinesOffLabel = BuildToggleLabel("OFF");
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         bubbleArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
@@ -79,6 +89,20 @@ public class SettingsFlyout : Panel
         buttonBody = BuildSectionBody();
         bubbleBody = BuildSectionBody();
         appearanceBody = BuildSectionBody();
+
+        TextSizeSlider = AddSliderRow(appearanceBody, "TEXT SIZE", TypographySettings.MinScale,
+            TypographySettings.MaxScale, 0.05, TypographySettings.Scale, "0.00", TypographySettings.SetScale);
+        UiScaleSlider = AddSliderRow(appearanceBody, "UI SCALE", UiScaleSettings.MinScale,
+            UiScaleSettings.MaxScale, 0.05, UiScaleSettings.Scale, "0.00", UiScaleSettings.SetScale);
+        appearanceBody.Children.Add(new TextBlock
+        {
+            Text = "TEXT SIZE scales the type alone · UI SCALE scales the whole screen, " +
+                   "on top of the window fit",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
 
         SaturationSlider = AddSliderRow(appearanceBody, "SATURATION", 0, 1, 0.05,
             AppearanceSettings.NodeSaturation, "0.00", AppearanceSettings.SetNodeSaturation);
@@ -167,6 +191,8 @@ public class SettingsFlyout : Panel
         column.Children.Add(BuildBuilderModeRow());
         column.Children.Add(BuildThemeRow());
         column.Children.Add(BuildHintsRow());
+        column.Children.Add(BuildSnapRow());
+        column.Children.Add(BuildGridLinesRow());
         column.Children.Add(AppearanceToggleRow);
         column.Children.Add(appearanceBody);
         column.Children.Add(ButtonToggleRow);
@@ -205,9 +231,11 @@ public class SettingsFlyout : Panel
         ThemeManager.Changed += RefreshThemeLabels;
         HintSettings.Changed += RefreshHintLabels;
         BuilderModeSettings.Changed += RefreshBuilderLabels;
+        SnapSettings.Changed += RefreshSnapLabels;
         RefreshThemeLabels();
         RefreshHintLabels();
         RefreshBuilderLabels();
+        RefreshSnapLabels();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -216,6 +244,7 @@ public class SettingsFlyout : Panel
         ThemeManager.Changed -= RefreshThemeLabels;
         HintSettings.Changed -= RefreshHintLabels;
         BuilderModeSettings.Changed -= RefreshBuilderLabels;
+        SnapSettings.Changed -= RefreshSnapLabels;
     }
 
     private static TextBlock BuildToggleLabel(string text) => new()
@@ -235,6 +264,14 @@ public class SettingsFlyout : Panel
     private void RefreshBuilderLabels() =>
         MarkActive(BuilderModeSettings.Enabled ? builderOnLabel : builderOffLabel,
             BuilderModeSettings.Enabled ? builderOffLabel : builderOnLabel);
+
+    private void RefreshSnapLabels()
+    {
+        MarkActive(SnapSettings.Enabled ? snapOnLabel : snapOffLabel,
+            SnapSettings.Enabled ? snapOffLabel : snapOnLabel);
+        MarkActive(SnapSettings.ShowGridLines ? gridLinesOnLabel : gridLinesOffLabel,
+            SnapSettings.ShowGridLines ? gridLinesOffLabel : gridLinesOnLabel);
+    }
 
     private static void MarkActive(TextBlock active, TextBlock inactive)
     {
@@ -281,6 +318,12 @@ public class SettingsFlyout : Panel
 
     private Border BuildBuilderModeRow() =>
         BuildToggleRow("BUILDER MODE", builderOnLabel, builderOffLabel, BuilderModeSettings.Toggle);
+
+    private Border BuildSnapRow() =>
+        BuildToggleRow("GRID SNAP", snapOnLabel, snapOffLabel, SnapSettings.Toggle);
+
+    private Border BuildGridLinesRow() =>
+        BuildToggleRow("GRID LINES", gridLinesOnLabel, gridLinesOffLabel, SnapSettings.ToggleGridLines);
 
     private static Border BuildToggleRow(string label, TextBlock first, TextBlock second, Action toggle)
     {

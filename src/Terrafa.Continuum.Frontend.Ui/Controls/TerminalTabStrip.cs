@@ -60,7 +60,7 @@ public class TerminalTabStrip : UserControl
 
         hintBlock = new TextBlock
         {
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             VerticalAlignment = VerticalAlignment.Center
         };
         rightHost = new ContentControl { VerticalAlignment = VerticalAlignment.Center };
@@ -191,7 +191,7 @@ public class TerminalTabStrip : UserControl
             var block = new TextBlock
             {
                 Text = Labels[i],
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 VerticalAlignment = VerticalAlignment.Center
             };
             if (IsClosable)

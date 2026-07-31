@@ -20,7 +20,7 @@ public class Chip : UserControl
 
     public Chip()
     {
-        textBlock = new TextBlock { FontSize = 10 };
+        textBlock = new TextBlock { FontSize = TypographySettings.Size(10) };
         border = new Border
         {
             BorderThickness = new Thickness(1),

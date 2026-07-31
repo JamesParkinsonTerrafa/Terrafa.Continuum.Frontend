@@ -45,11 +45,15 @@ public class DiagramCanvas : Border
     private const double EdgeLayerExtent = 6000;
     private const double EdgeLayerOffset = 3000;
     private const double PortGrabRadius = 16;
+    private const double MinZoom = 0.4;
+    private const double MaxZoom = 2.5;
 
     private readonly Canvas world;
     private readonly EdgeLayer edgeLayer;
     private readonly Canvas menuLayer;
+    private readonly GridLayer grid;
     private readonly TranslateTransform pan = new();
+    private readonly ScaleTransform zoom = new();
     private readonly List<DiagramNode> nodes = [];
     private readonly List<DiagramConnection> connections = [];
 
@@ -81,6 +85,9 @@ public class DiagramCanvas : Border
     /// <summary>Raised when a node is dropped after a drag, so its position can be kept.</summary>
     public event Action<DiagramNode>? NodeMoved;
 
+    /// <summary>Raised as the pointer enters (true) and leaves (false) a node, for rail highlighting.</summary>
+    public event Action<DiagramNode, bool>? NodeHoverChanged;
+
     public IReadOnlyList<DiagramNode> Nodes => nodes;
     public IReadOnlyList<DiagramConnection> Connections => connections;
 
@@ -93,17 +100,60 @@ public class DiagramCanvas : Border
         Canvas.SetLeft(edgeLayer, -EdgeLayerOffset);
         Canvas.SetTop(edgeLayer, -EdgeLayerOffset);
 
-        world = new Canvas { RenderTransform = pan };
+        // Scale before translate, so the pan stays in viewport pixels whatever the zoom.
+        world = new Canvas
+        {
+            RenderTransform = new TransformGroup { Children = { zoom, pan } },
+            RenderTransformOrigin = RelativePoint.TopLeft
+        };
         world.Children.Add(edgeLayer);
 
         menuLayer = new Canvas { IsVisible = false, Background = Brushes.Transparent };
         menuLayer.PointerPressed += OnMenuLayerPressed;
 
-        Child = new Panel { Children = { world, menuLayer } };
+        grid = new GridLayer(pan, zoom) { IsHitTestVisible = false, IsVisible = SnapSettings.ShowGridLines };
+        Child = new Panel { Children = { grid, world, menuLayer } };
 
         PointerPressed += OnBackgroundPressed;
         PointerMoved += OnBackgroundMoved;
         PointerReleased += OnBackgroundReleased;
+        PointerWheelChanged += OnWheel;
+    }
+
+    /// <summary>Zooms about the pointer: the spot under the cursor stays under the cursor.</summary>
+    private void OnWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var target = Math.Clamp(zoom.ScaleX * Math.Pow(1.12, e.Delta.Y), MinZoom, MaxZoom);
+        if (Math.Abs(target - zoom.ScaleX) > 0.0001)
+        {
+            var anchor = e.GetPosition(this);
+            var worldPoint = ViewportToWorld(anchor);
+            zoom.ScaleX = target;
+            zoom.ScaleY = target;
+            pan.X = anchor.X - worldPoint.X * target;
+            pan.Y = anchor.Y - worldPoint.Y * target;
+            grid.InvalidateVisual();
+        }
+        e.Handled = true;
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        SnapSettings.Changed += OnSnapSettingChanged;
+        OnSnapSettingChanged();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        SnapSettings.Changed -= OnSnapSettingChanged;
+    }
+
+    private void OnSnapSettingChanged()
+    {
+        grid.IsVisible = SnapSettings.ShowGridLines;
+        grid.InvalidateVisual();
     }
 
     public DiagramNode AddNode(string id, NodeCard card, bool leftPort, bool rightPort, Point position)
@@ -123,6 +173,8 @@ public class DiagramCanvas : Border
         container.PointerPressed += (_, e) => OnNodePressed(node, e);
         container.PointerMoved += (_, e) => OnNodeMoved(node, e);
         container.PointerReleased += (_, e) => OnNodeReleased(node, e);
+        container.PointerEntered += (_, _) => NodeHoverChanged?.Invoke(node, true);
+        container.PointerExited += (_, _) => NodeHoverChanged?.Invoke(node, false);
         container.SizeChanged += (_, _) => RefreshEdges();
 
         world.Children.Add(container);
@@ -157,9 +209,11 @@ public class DiagramCanvas : Border
         RefreshEdges();
     }
 
-    public Point ViewportToWorld(Point viewportPoint) => new(viewportPoint.X - pan.X, viewportPoint.Y - pan.Y);
+    public Point ViewportToWorld(Point viewportPoint) =>
+        new((viewportPoint.X - pan.X) / zoom.ScaleX, (viewportPoint.Y - pan.Y) / zoom.ScaleY);
 
-    public Point WorldToViewport(Point worldPoint) => new(worldPoint.X + pan.X, worldPoint.Y + pan.Y);
+    public Point WorldToViewport(Point worldPoint) =>
+        new(worldPoint.X * zoom.ScaleX + pan.X, worldPoint.Y * zoom.ScaleY + pan.Y);
 
     public Point NodePositionOf(DiagramNode node) => NodePosition(node);
 
@@ -224,8 +278,17 @@ public class DiagramCanvas : Border
     {
         if (draggingNode != node) return;
         var current = e.GetPosition(world);
-        Canvas.SetLeft(node.Container, dragNodeStart.X + (current.X - dragPointerStart.X));
-        Canvas.SetTop(node.Container, dragNodeStart.Y + (current.Y - dragPointerStart.Y));
+        var x = dragNodeStart.X + (current.X - dragPointerStart.X);
+        var y = dragNodeStart.Y + (current.Y - dragPointerStart.Y);
+        // The magnetic feel: near a gridline the card leans toward it, but the hard lock
+        // waits for release so the drag never fights the pointer.
+        if (SnapSettings.Enabled)
+        {
+            x = SnapSettings.Magnetize(x);
+            y = SnapSettings.Magnetize(y);
+        }
+        Canvas.SetLeft(node.Container, x);
+        Canvas.SetTop(node.Container, y);
         RefreshEdges();
     }
 
@@ -235,6 +298,12 @@ public class DiagramCanvas : Border
         draggingNode = null;
         e.Pointer.Capture(null);
         e.Handled = true;
+        if (SnapSettings.Enabled)
+        {
+            Canvas.SetLeft(node.Container, SnapSettings.Snap(Canvas.GetLeft(node.Container)));
+            Canvas.SetTop(node.Container, SnapSettings.Snap(Canvas.GetTop(node.Container)));
+            RefreshEdges();
+        }
         NodeMoved?.Invoke(node);
     }
 
@@ -313,6 +382,7 @@ public class DiagramCanvas : Border
         var current = e.GetPosition(this);
         pan.X = panStart.X + (current.X - panPointerStart.X);
         pan.Y = panStart.Y + (current.Y - panPointerStart.Y);
+        grid.InvalidateVisual();
     }
 
     private void OnBackgroundReleased(object? sender, PointerReleasedEventArgs e)

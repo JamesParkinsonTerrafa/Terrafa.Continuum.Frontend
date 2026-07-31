@@ -12,7 +12,7 @@
                                SubtitleText="TRANSFER FUNCTION EDITOR">
         <controls:TerminalTopBar.RightContent>
           <TextBlock x:Name="TopBarStatus"
-                     Text="editing: fig.draft_h — not yet committed to network" FontSize="12"
+                     Text="editing: fig.draft_h — not yet committed to network" FontSize="{DynamicResource FontSize12}"
                      Foreground="{StaticResource TextMutedBrush}" />
         </controls:TerminalTopBar.RightContent>
       </controls:TerminalTopBar>
@@ -24,15 +24,15 @@
                                   IsVisible="{DynamicResource HintsVisible}">
         <controls:TerminalStatusBar.LeftContent>
           <StackPanel Orientation="Horizontal" Spacing="18">
-            <TextBlock Text="COMPOSITION = FUNCTION TREE" FontSize="10"
+            <TextBlock Text="COMPOSITION = FUNCTION TREE" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
-            <TextBlock Text="EACH INPUT PORT BRANCHES BELOW ITS FUNCTION" FontSize="10"
+            <TextBlock Text="EACH INPUT PORT BRANCHES BELOW ITS FUNCTION" FontSize="{DynamicResource FontSize10}"
                        Foreground="{StaticResource TextFaintBrush}" />
           </StackPanel>
         </controls:TerminalStatusBar.LeftContent>
         <controls:TerminalStatusBar.RightContent>
           <TextBlock Text="σ PROPAGATION: PLACEHOLDER BAND — VARIANCE TRACE NOT YET WIRED"
-                     FontSize="10" Foreground="{StaticResource TextFaintBrush}" />
+                     FontSize="{DynamicResource FontSize10}" Foreground="{StaticResource TextFaintBrush}" />
         </controls:TerminalStatusBar.RightContent>
       </controls:TerminalStatusBar>
 
@@ -50,7 +50,7 @@
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
             <TextBlock Text="Primitives are fixed. Right-click to create a composite. Estimators fit live on the NETWORK canvas."
-                       FontSize="10" LineHeight="15" TextWrapping="Wrap"
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
                        MaxLines="2" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextFaintBrush}"
                        IsVisible="{DynamicResource HintsVisible}" />
@@ -71,7 +71,7 @@
               </controls:SquircleBorder>
               <controls:SquircleBorder x:Name="SaveButton" Classes="emboss-key" Padding="12,5"
                                        Background="{StaticResource AmberBrush}" Cursor="Hand">
-                <TextBlock Text="SAVE ▸" FontSize="10" FontWeight="Bold" Foreground="Black" />
+                <TextBlock Text="SAVE ▸" FontSize="{DynamicResource FontSize10}" FontWeight="Bold" Foreground="Black" />
               </controls:SquircleBorder>
             </StackPanel>
           </controls:PanelBox.HeaderRightContent>
@@ -84,7 +84,7 @@
             </DockPanel>
           </controls:PanelBox.InnerContent>
           <controls:PanelBox.FooterContent>
-            <TextBlock x:Name="StackFooter" FontSize="10" LineHeight="16" TextWrapping="Wrap"
+            <TextBlock x:Name="StackFooter" FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight16}" TextWrapping="Wrap"
                        MaxLines="2" TextTrimming="CharacterEllipsis"
                        Foreground="{StaticResource TextMutedBrush}" />
           </controls:PanelBox.FooterContent>
@@ -97,7 +97,7 @@
           <charts:LineChart x:Name="ResultChart" Margin="20" />
         </controls:PanelBox.InnerContent>
         <controls:PanelBox.FooterContent>
-          <TextBlock x:Name="ResultFooter" FontSize="10"
+          <TextBlock x:Name="ResultFooter" FontSize="{DynamicResource FontSize10}"
                      Foreground="{StaticResource TextFaintBrush}" />
         </controls:PanelBox.FooterContent>
       </controls:PanelBox>

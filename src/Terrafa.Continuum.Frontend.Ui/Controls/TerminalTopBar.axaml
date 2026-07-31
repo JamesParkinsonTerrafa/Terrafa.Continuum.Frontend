@@ -15,28 +15,28 @@
         <StackPanel Orientation="Horizontal" Spacing="6">
           <controls:SpurGearIcon Fill="{DynamicResource TextMutedBrush}"
                                  VerticalAlignment="Center" />
-          <TextBlock Text="SETTINGS" FontSize="9" LetterSpacing="1"
+          <TextBlock Text="SETTINGS" FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
                      VerticalAlignment="Center"
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </controls:SquircleBorder>
       <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" Margin="14,0,0,0"
                  Text="READ ONLY · SETTINGS ▸ BUILDER MODE TO MAKE CHANGES"
-                 FontSize="9" LetterSpacing="1"
+                 FontSize="{DynamicResource FontSize9}" LetterSpacing="1"
                  Foreground="{DynamicResource TextMutedBrush}"
                  IsVisible="{DynamicResource BuilderHintVisible}" />
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
       <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-        <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="12" FontWeight="Bold"
+        <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="{DynamicResource FontSize12}" FontWeight="Bold"
                    LetterSpacing="2" Cursor="Hand" />
-        <TextBlock Text="CONTINUUM CORE" FontSize="12" LetterSpacing="1"
+        <TextBlock Text="CONTINUUM CORE" FontSize="{DynamicResource FontSize12}" LetterSpacing="1"
                    Foreground="{StaticResource TextMutedBrush}" />
-        <TextBlock Text="│" FontSize="12" Foreground="{StaticResource TextGhostBrush}" />
-        <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="12"
+        <TextBlock Text="│" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextGhostBrush}" />
+        <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                    Foreground="{StaticResource AmberBrush}" />
-        <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="12"
+        <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
                    Foreground="{StaticResource TextMutedBrush}" />
       </StackPanel>
     </DockPanel>

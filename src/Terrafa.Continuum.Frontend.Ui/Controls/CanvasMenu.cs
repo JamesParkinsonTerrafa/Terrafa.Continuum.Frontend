@@ -32,7 +32,7 @@ public static class CanvasMenu
             Child = new TextBlock
             {
                 Text = header.ToUpperInvariant(),
-                FontSize = 9,
+                FontSize = TypographySettings.Size(9),
                 LetterSpacing = 1,
                 Foreground = Palette.TextFaint
             }
@@ -58,7 +58,7 @@ public static class CanvasMenu
         var itemText = new TextBlock
         {
             Text = label,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             Foreground = Palette.Text
         };

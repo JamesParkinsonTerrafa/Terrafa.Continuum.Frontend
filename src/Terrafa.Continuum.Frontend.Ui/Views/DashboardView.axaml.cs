@@ -88,6 +88,10 @@ public partial class DashboardView : UserControl
         FigureCatalog.Instance.Changed += OnSourcesChanged;
         Workspace.Instance.Changed += OnSourcesChanged;
         board.Changed += SyncBoard;
+
+        // The board can move while this screen is off show — the snap setting locking every
+        // tile to the grid, most likely — so returning has to pick the change up.
+        SyncBoard();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -121,7 +125,19 @@ public partial class DashboardView : UserControl
     /// </summary>
     private void SyncBoard()
     {
-        if (Canvas.Placements.Select(placement => placement.Tile).SequenceEqual(board.Tiles)) return;
+        if (Canvas.Placements.Select(placement => placement.Tile).SequenceEqual(board.Tiles))
+        {
+            // Same tiles, but the geometry may have moved under the canvas — the snap
+            // setting locking the board to the grid does exactly that.
+            foreach (var placement in board.Placements)
+            {
+                Canvas.Reposition(
+                    placement.Tile,
+                    new Point(placement.X, placement.Y),
+                    new Size(placement.Width, placement.Height));
+            }
+            return;
+        }
 
         openEditors.RemoveAll(tile => board.Find(tile) is null);
         activeEditorIndex = Math.Clamp(activeEditorIndex, -1, openEditors.Count - 1);
@@ -149,7 +165,7 @@ public partial class DashboardView : UserControl
         var caret = new TextBlock
         {
             Text = collapsed ? "▸" : "▾",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextMuted,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -163,14 +179,14 @@ public partial class DashboardView : UserControl
         var name = new TextBlock
         {
             Text = $"{section.Name.ToLowerInvariant()} /",
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.Cyan,
             VerticalAlignment = VerticalAlignment.Center
         };
         var count = new TextBlock
         {
             Text = $"{section.Entries.Count}",
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -300,7 +316,7 @@ public partial class DashboardView : UserControl
             Child = new TextBlock
             {
                 Text = entry.Label,
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 LetterSpacing = 1,
                 Foreground = Palette.AmberSoft
             }
@@ -342,6 +358,8 @@ public partial class DashboardView : UserControl
 
     private DashboardTile CreateTile(TileKind kind, Point position)
     {
+        if (SnapSettings.Enabled)
+            position = new Point(SnapSettings.Snap(position.X), SnapSettings.Snap(position.Y));
         var tile = new DashboardTile(kind, board.NextName(kind));
         board.Add(tile, position.X, position.Y, DefaultTileSize.Width, DefaultTileSize.Height);
         SyncBoard();
@@ -376,10 +394,12 @@ public partial class DashboardView : UserControl
         var origin = board.Find(tile);
         var copy = new DashboardTile(tile.Kind, board.NextName(tile.Kind));
         copy.Sources.AddRange(tile.Sources);
+        // Offset by a whole grid cell under snap, so the copy lands beside rather than across.
+        var offset = SnapSettings.Enabled ? SnapSettings.GridSize : 28;
         board.Add(
             copy,
-            (origin?.X ?? 0) + 28,
-            (origin?.Y ?? 0) + 28,
+            (origin?.X ?? 0) + offset,
+            (origin?.Y ?? 0) + offset,
             origin?.Width ?? DefaultTileSize.Width,
             origin?.Height ?? DefaultTileSize.Height);
         SyncBoard();
@@ -431,6 +451,13 @@ public partial class DashboardView : UserControl
         VarianceToggleText.Foreground = on ? Palette.Amber : Palette.TextMuted;
         VarianceToggle.Classes.Set("emboss", !on);
         VarianceToggle.Classes.Set("emboss-press", on);
+        VarianceNoteText.Text = on
+            ? "SHOW VARIANCE is on — every tile draws the ±σ spread of its sources: bands on " +
+              "line charts, whiskers on bars, a ± column in tables. A tile wired to a source " +
+              "that carries no σ is left blank rather than drawn as if it were certain."
+            : "SHOW VARIANCE is off — tiles draw their central estimates only and every ±σ " +
+              "spread is hidden. Use this to lay a board out before σ is wired; switch it back " +
+              "on to see honest bounds.";
         UpdateStatus();
     }
 
@@ -490,8 +517,8 @@ public partial class DashboardView : UserControl
             EditorBody.Children.Add(new TextBlock
             {
                 Text = "No tile open.\n\nDouble-click a tile on the canvas to edit its name and data sources, or drag a new element in from the left.",
-                FontSize = 11,
-                LineHeight = 17,
+                FontSize = TypographySettings.Size(11),
+                LineHeight = TypographySettings.Size(17),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Palette.TextFaint
             });
@@ -565,7 +592,7 @@ public partial class DashboardView : UserControl
             var text = new TextBlock
             {
                 Text = kind.ToString().ToUpperInvariant(),
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 LetterSpacing = 1,
                 FontWeight = isActive ? FontWeight.Bold : FontWeight.Normal,
                 Foreground = isActive ? Palette.Amber : Palette.TextMuted
@@ -646,7 +673,7 @@ public partial class DashboardView : UserControl
             list.Children.Add(new TextBlock
             {
                 Text = "nothing mounted — open 6) DATA SOURCES",
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 Foreground = Palette.TextFaint
             });
         }
@@ -660,7 +687,7 @@ public partial class DashboardView : UserControl
     private static TextBlock GroupHeader(string text) => new()
     {
         Text = text,
-        FontSize = 11,
+        FontSize = TypographySettings.Size(11),
         Margin = new Thickness(0, 8, 0, 2),
         Foreground = Palette.TextMuted
     };
@@ -685,7 +712,7 @@ public partial class DashboardView : UserControl
         var caption = new TextBlock
         {
             Text = "σ FROM",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Margin = new Thickness(0, 3, 0, 0),
             Foreground = bound is null ? Palette.TextFaint : Palette.Purple
@@ -703,7 +730,7 @@ public partial class DashboardView : UserControl
         var text = new TextBlock
         {
             Text = label,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             Foreground = isActive ? (key is null ? Palette.Amber : Palette.Purple) : Palette.TextMuted
         };
         var shell = new SquircleBorder
@@ -736,18 +763,18 @@ public partial class DashboardView : UserControl
         var accent = isProvisional ? Palette.Purple : Palette.Cyan;
         var brush = selected ? accent : Palette.TextFaint;
 
-        var check = new TextBlock { Text = selected ? "[x]" : "[ ]", FontSize = 11, Foreground = brush };
+        var check = new TextBlock { Text = selected ? "[x]" : "[ ]", FontSize = TypographySettings.Size(11), Foreground = brush };
         var name = new TextBlock
         {
             Text = label,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = brush,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         var sigma = new TextBlock
         {
             Text = sigmaText,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = hasVariance ? Palette.TextFaint : Palette.Amber
         };
 

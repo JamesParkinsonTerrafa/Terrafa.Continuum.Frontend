@@ -38,7 +38,7 @@ public static class TileView
         var name = new TextBlock
         {
             Text = tile.Name,
-            FontSize = 11,
+            FontSize = TypographySettings.Size(11),
             Foreground = Palette.TextBright,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -46,7 +46,7 @@ public static class TileView
         var kind = new TextBlock
         {
             Text = DashboardTile.KindLabel(tile.Kind),
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
@@ -328,7 +328,7 @@ public static class TileView
     private static TextBlock HeaderCell(string text) => new()
     {
         Text = text,
-        FontSize = 9,
+        FontSize = TypographySettings.Size(9),
         LetterSpacing = 1,
         Foreground = Palette.TextFaint
     };
@@ -336,7 +336,7 @@ public static class TileView
     private static TextBlock BodyCell(string text, IBrush brush) => new()
     {
         Text = text,
-        FontSize = 11,
+        FontSize = TypographySettings.Size(11),
         Foreground = brush,
         TextTrimming = TextTrimming.CharacterEllipsis
     };
@@ -352,7 +352,7 @@ public static class TileView
         stack.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1.5,
             Foreground = brush,
             HorizontalAlignment = HorizontalAlignment.Center
@@ -360,7 +360,7 @@ public static class TileView
         stack.Children.Add(new TextBlock
         {
             Text = detail,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
@@ -373,7 +373,7 @@ public static class TileView
     private static TextBlock Footnote(string text, IBrush brush) => new()
     {
         Text = text,
-        FontSize = 9,
+        FontSize = TypographySettings.Size(9),
         Margin = new Thickness(0, 6, 0, 0),
         Foreground = brush,
         TextTrimming = TextTrimming.CharacterEllipsis

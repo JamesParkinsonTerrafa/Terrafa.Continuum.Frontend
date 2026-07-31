@@ -40,6 +40,7 @@ public partial class SiteMapView : UserControl
 
     private readonly Action<int> navigate;
     private readonly Dictionary<string, CatalogueRow> catalogue = [];
+    private readonly HashSet<string> canvasHoverIds = [];
     private CatalogueRow? railDrag;
     private Border? railGhost;
     private MapPin? selectedPin;
@@ -59,6 +60,7 @@ public partial class SiteMapView : UserControl
 
         Plan.MenuProvider = BuildPinMenu;
         Plan.SelectionChanged += ShowSelectedPin;
+        Plan.PinHoverChanged += OnPinHover;
         Plan.FileDropped += file => _ = LoadImageAsync(file);
 
         BuildImageActions();
@@ -98,7 +100,7 @@ public partial class SiteMapView : UserControl
         var text = new TextBlock
         {
             Text = label,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             FontWeight = primary ? FontWeight.Bold : FontWeight.Normal,
             Foreground = primary ? Brushes.Black : Palette.TextSub
@@ -214,8 +216,8 @@ public partial class SiteMapView : UserControl
     private void AddLayerRow(string label, IBrush swatch, Action<bool> apply)
     {
         var enabled = true;
-        var check = new TextBlock { Text = "[x]", FontSize = 11, Foreground = Palette.Green };
-        var name = new TextBlock { Text = label, FontSize = 11, Foreground = Palette.Text };
+        var check = new TextBlock { Text = "[x]", FontSize = TypographySettings.Size(11), Foreground = Palette.Green };
+        var name = new TextBlock { Text = label, FontSize = TypographySettings.Size(11), Foreground = Palette.Text };
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -254,7 +256,7 @@ public partial class SiteMapView : UserControl
             CatalogueList.Children.Add(new TextBlock
             {
                 Text = group.Key,
-                FontSize = 11,
+                FontSize = TypographySettings.Size(11),
                 Foreground = Palette.TextMuted,
                 Margin = new Thickness(12, 8, 0, 3)
             });
@@ -335,14 +337,14 @@ public partial class SiteMapView : UserControl
         var kindMark = new TextBlock
         {
             Text = source.TagRight,
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         };
         DockPanel.SetDock(kindMark, Dock.Right);
 
-        var checkBlock = new TextBlock { Text = "[ ]", FontSize = 11 };
-        var nameBlock = new TextBlock { Text = source.Title, FontSize = 11 };
+        var checkBlock = new TextBlock { Text = "[ ]", FontSize = TypographySettings.Size(11) };
+        var nameBlock = new TextBlock { Text = source.Title, FontSize = TypographySettings.Size(11) };
         var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         label.Children.Add(checkBlock);
         label.Children.Add(nameBlock);
@@ -361,8 +363,16 @@ public partial class SiteMapView : UserControl
 
         var catalogueRow = new CatalogueRow(source, shell, checkBlock, nameBlock);
         catalogue[source.Id] = catalogueRow;
-        shell.PointerEntered += (_, _) => UpdateCatalogueRow(catalogueRow, hover: true);
-        shell.PointerExited += (_, _) => UpdateCatalogueRow(catalogueRow, hover: false);
+        shell.PointerEntered += (_, _) =>
+        {
+            UpdateCatalogueRow(catalogueRow, hover: true);
+            SetPinHighlight(catalogueRow, true);
+        };
+        shell.PointerExited += (_, _) =>
+        {
+            UpdateCatalogueRow(catalogueRow, hover: false);
+            SetPinHighlight(catalogueRow, false);
+        };
         shell.PointerPressed += (_, e) => BeginRailDrag(catalogueRow, e);
         shell.PointerMoved += (_, e) => OnRailDragMoved(e);
         shell.PointerReleased += (_, e) => OnRailDragReleased(e);
@@ -374,15 +384,34 @@ public partial class SiteMapView : UserControl
     private void UpdateCatalogueRow(CatalogueRow row, bool hover = false)
     {
         var placed = Plan.FindPin(row.Source.Id) is not null;
-        var highlighted = hover && !placed;
         var brush = placed
             ? SitePlanCanvas.AccentFor(row.Source.Kind)
-            : highlighted ? Palette.TextSub : Palette.TextFaint;
+            : hover ? Palette.TextSub : Palette.TextFaint;
         row.CheckBlock.Text = placed ? "[x]" : "[ ]";
         row.CheckBlock.Foreground = brush;
         row.NameBlock.Foreground = brush;
-        row.Shell.Background = highlighted ? Palette.BgField : Brushes.Transparent;
+        // Lit while the pointer is on the row, and while it is on the row's pin on the plan —
+        // the same light in both directions, so either side finds the other.
+        row.Shell.Background = hover || canvasHoverIds.Contains(row.Source.Id)
+            ? Palette.BgField
+            : Brushes.Transparent;
         row.Shell.Cursor = new Cursor(placed ? StandardCursorType.Arrow : StandardCursorType.Hand);
+    }
+
+    /// <summary>Catalogue row hovered — light the pinned card on the plan, if it is placed.</summary>
+    private void SetPinHighlight(CatalogueRow row, bool on)
+    {
+        if (Plan.FindPin(row.Source.Id) is { } pin) pin.Card.IsHighlighted = on;
+    }
+
+    /// <summary>Pin card hovered — light its catalogue row and bring it into view.</summary>
+    private void OnPinHover(MapPin pin, bool hovering)
+    {
+        if (!catalogue.TryGetValue(pin.Id, out var row)) return;
+        if (hovering) canvasHoverIds.Add(pin.Id);
+        else canvasHoverIds.Remove(pin.Id);
+        UpdateCatalogueRow(row);
+        if (hovering) row.Shell.BringIntoView();
     }
 
     private static string LeafTitle(DataTreeNode measure)
@@ -492,8 +521,8 @@ public partial class SiteMapView : UserControl
             SelectedPinRows.Children.Add(new TextBlock
             {
                 Text = "nothing selected — drag a value onto the plan, or click a card already pinned there.",
-                FontSize = 10,
-                LineHeight = 15,
+                FontSize = TypographySettings.Size(10),
+                LineHeight = TypographySettings.Size(15),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Palette.TextFaint
             });
@@ -506,7 +535,7 @@ public partial class SiteMapView : UserControl
         anchorValue = new TextBlock
         {
             Text = AnchorText(pin),
-            FontSize = 10,
+            FontSize = TypographySettings.Size(10),
             Foreground = Palette.TextBright
         };
         SelectedPinRows.Children.Add(DetailRow("anchor", anchorValue));
@@ -516,8 +545,8 @@ public partial class SiteMapView : UserControl
             SelectedPinRows.Children.Add(new TextBlock
             {
                 Text = pin.Detail,
-                FontSize = 10,
-                LineHeight = 15,
+                FontSize = TypographySettings.Size(10),
+                LineHeight = TypographySettings.Size(15),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Palette.TextMuted
             });
@@ -532,8 +561,8 @@ public partial class SiteMapView : UserControl
             Child = new TextBlock
             {
                 Text = "Drag the card to move the pin — the anchor rides with it. Right-click for actions.",
-                FontSize = 10,
-                LineHeight = 15,
+                FontSize = TypographySettings.Size(10),
+                LineHeight = TypographySettings.Size(15),
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Palette.TextFaint
             }
@@ -544,14 +573,14 @@ public partial class SiteMapView : UserControl
         $"x {pin.Anchor.X * 100:0.0}% · y {pin.Anchor.Y * 100:0.0}%";
 
     private static Control DetailRow(string label, string value, IBrush brush) =>
-        DetailRow(label, new TextBlock { Text = value, FontSize = 10, Foreground = brush, TextWrapping = TextWrapping.Wrap });
+        DetailRow(label, new TextBlock { Text = value, FontSize = TypographySettings.Size(10), Foreground = brush, TextWrapping = TextWrapping.Wrap });
 
     private static Control DetailRow(string label, Control value)
     {
         DockPanel.SetDock(value, Dock.Right);
         var row = new DockPanel();
         row.Children.Add(value);
-        row.Children.Add(new TextBlock { Text = label, FontSize = 10, Foreground = Palette.TextMuted });
+        row.Children.Add(new TextBlock { Text = label, FontSize = TypographySettings.Size(10), Foreground = Palette.TextMuted });
         return row;
     }
 
@@ -621,7 +650,7 @@ public partial class SiteMapView : UserControl
             Child = new TextBlock
             {
                 Text = $"{source.Title}  {source.Value}",
-                FontSize = 10,
+                FontSize = TypographySettings.Size(10),
                 Foreground = accent
             }
         };
@@ -646,7 +675,7 @@ public partial class SiteMapView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = caption,
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             Foreground = Palette.TextFaint
         });
         return stack;
@@ -679,7 +708,7 @@ public partial class SiteMapView : UserControl
         stack.Children.Add(new TextBlock
         {
             Text = "error ellipse — long axis = least-sure direction",
-            FontSize = 9,
+            FontSize = TypographySettings.Size(9),
             Foreground = Palette.TextFaint
         });
         return stack;
