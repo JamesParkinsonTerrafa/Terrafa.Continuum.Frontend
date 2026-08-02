@@ -24,6 +24,7 @@ namespace Terrafa.Continuum.Frontend.Tests;
 /// down, not easier.
 /// </para>
 /// </summary>
+[Collection("workspace")]
 public class SeriesTests
 {
     private const string Database = "synthetic_dev";

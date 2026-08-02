@@ -34,6 +34,10 @@ public static class SnapshotRunner
         // The probes drive the side panels, which only exist in builder mode.
         BuilderModeSettings.SetEnabled(true);
 
+        // Every view here is built fresh, and a fresh build counts as a first visit — without this
+        // the pointer bubbles would land on every frame the suite captures.
+        PointerHintSettings.AutoShow = false;
+
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
         CaptureBubbleProbe(outputDir);
@@ -48,6 +52,7 @@ public static class SnapshotRunner
         CaptureScaleProbe(outputDir);
         CaptureSnapProbe(outputDir);
         CaptureZoomAndHighlightProbe(outputDir);
+        CapturePointerHintProbe(outputDir);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -228,6 +233,27 @@ public static class SnapshotRunner
         Pump();
         Console.WriteLine($"data probe: preview rows = {view.PreviewRows.Children.Count}");
 
+        // A left click only picks a row out — the menu stays shut and nothing is mounted by it.
+        var leafRow = RowContaining(view.PreviewRows, "m1_settle");
+        var leafPoint = Center(leafRow);
+        window.MouseDown(leafPoint, MouseButton.Left);
+        window.MouseUp(leafPoint, MouseButton.Left);
+        Pump();
+        Console.WriteLine($"data probe: left click picks '{view.PreviewPanel.Hint}' · " +
+                          $"menu open = {view.MenuLayer.IsVisible} · mounts = {Workspace.Instance.Subtrees.Count}");
+        Save(window, outputDir, "6-data-picked");
+
+        // The box in the SELECTED column opens the same dialog the menu does. Cancelled here, so
+        // what follows still starts from an unmounted ICE_BRENT.
+        var boxRow = RowContaining(view.PreviewRows, "m1_volume");
+        var boxPoint = boxRow.TranslatePoint(new Point(30, boxRow.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(boxPoint, MouseButton.Left);
+        window.MouseUp(boxPoint, MouseButton.Left);
+        Pump();
+        Console.WriteLine($"data probe: box click → dialog open = {view.Dialog.IsVisible}");
+        ClickText(window, view.Dialog, "CANCEL");
+        Console.WriteLine($"data probe: cancelled · mounts = {Workspace.Instance.Subtrees.Count}");
+
         var schemaRoot = RowContaining(view.PreviewRows, "ICE_BRENT /");
         var schemaPoint = Center(schemaRoot);
         window.MouseDown(schemaPoint, MouseButton.Right);
@@ -240,6 +266,45 @@ public static class SnapshotRunner
         Console.WriteLine($"data probe: subtrees mounted = {Workspace.Instance.Subtrees.Count}");
 
         Save(window, outputDir, "6-data-interact");
+
+        // Unticking takes the leaf back out. Put back afterwards: the probes downstream are written
+        // against a whole ICE_BRENT, this one being what mounts it.
+        Point BoxOf(string name)
+        {
+            var target = RowContaining(view.PreviewRows, name);
+            return target.TranslatePoint(new Point(30, target.Bounds.Height / 2), window)!.Value;
+        }
+
+        var untickPoint = BoxOf("m1_volume");
+        window.MouseDown(untickPoint, MouseButton.Left);
+        window.MouseUp(untickPoint, MouseButton.Left);
+        Pump();
+        ClickText(window, view.Dialog, "REMOVE <GO>");
+        Console.WriteLine($"data probe: untick → leaf held = " +
+                          $"{Workspace.Instance.FindNode("ICE_BRENT.curve.m1_volume") is not null} · " +
+                          $"leaves = {Workspace.Instance.Find("ICE_BRENT")?.LeafCount}");
+        Save(window, outputDir, "6-data-unticked");
+
+        // The menu mirrors the box: a mounted node offers removal, not another add. Cancelled, so
+        // only the re-tick below changes anything.
+        var mountedRow = RowContaining(view.PreviewRows, "calendar");
+        var mountedPoint = Center(mountedRow);
+        window.MouseDown(mountedPoint, MouseButton.Right);
+        window.MouseUp(mountedPoint, MouseButton.Right);
+        Pump();
+        var offered = view.MenuLayer.GetVisualDescendants().OfType<TextBlock>()
+            .Select(block => block.Text).FirstOrDefault(text => text?.EndsWith("TREE", StringComparison.Ordinal) == true);
+        Console.WriteLine($"data probe: menu on a mounted node offers '{offered}'");
+        ClickText(window, view.MenuLayer, "REMOVE FROM TREE");
+        ClickText(window, view.Dialog, "CANCEL");
+
+        var retickPoint = BoxOf("m1_volume");
+        window.MouseDown(retickPoint, MouseButton.Left);
+        window.MouseUp(retickPoint, MouseButton.Left);
+        Pump();
+        ClickText(window, view.Dialog, "ADD <GO>");
+        Console.WriteLine($"data probe: re-tick → leaves = {Workspace.Instance.Find("ICE_BRENT")?.LeafCount}");
+
         window.Close();
     }
 
@@ -924,6 +989,88 @@ public static class SnapshotRunner
 
         // The drag above moved a seeded node — later frames must not inherit it.
         NetworkGraph.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>
+    /// The pointer hints, which land all at once and are then dismissed one at a time. Two frames:
+    /// every bubble up in builder mode, then the same screen in plain mode, where the two bubbles
+    /// whose targets are builder-only have to drop out rather than point at nothing. The rest
+    /// drives the two ways they go away — a close takes down one tip, the key takes down the lot —
+    /// and checks that pressing the key again brings back what was closed.
+    /// </summary>
+    private static void CapturePointerHintProbe(string outputDir)
+    {
+        var view = new TransferFunctionView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+
+        int BubbleCount() => window.GetVisualDescendants().OfType<HintPointerLayer>()
+            .Sum(layer => layer.Children.OfType<SquircleBorder>().Count());
+
+        PointerHintSettings.SetEnabled(true);
+        Pump();
+        Console.WriteLine($"pointer probe: builder mode shows {BubbleCount()} bubbles at once (expected 3)");
+        Capture(window, outputDir, "2-tfn-pointers");
+
+        BuilderModeSettings.SetEnabled(false);
+        Pump();
+        Console.WriteLine($"pointer probe: plain mode shows {BubbleCount()} bubbles (expected 1)");
+        Capture(window, outputDir, "2-tfn-pointers-plain");
+        BuilderModeSettings.SetEnabled(true);
+        Pump();
+
+        var key = window.GetVisualDescendants().OfType<TerminalTopBar>().First().PointerButton;
+        bool KeyIsDown() => key.Classes.Contains("emboss-press");
+
+        // The tree rows on this screen carry their own remove glyph, so a close has to be found
+        // inside the layer rather than by glyph alone.
+        var layer = window.GetVisualDescendants().OfType<HintPointerLayer>().First();
+        ClickText(window, layer, "✕");
+        Pump();
+        Console.WriteLine(
+            $"pointer probe: one close left {BubbleCount()} bubbles (expected 2) · key down = {KeyIsDown()}");
+        Capture(window, outputDir, "2-tfn-pointers-one-closed");
+
+        ClickKey(window, key);
+        SettleKey(key, wantDown: false);
+        Console.WriteLine(
+            $"pointer probe: key press left {BubbleCount()} bubbles (expected 0) · " +
+            $"enabled = {PointerHintSettings.Enabled} · key down = {KeyIsDown()}");
+
+        ClickKey(window, key);
+        SettleKey(key, wantDown: true);
+        Console.WriteLine(
+            $"pointer probe: key press again restored {BubbleCount()} bubbles (expected 3) · " +
+            $"key down = {KeyIsDown()}");
+
+        window.Close();
+        PointerHintSettings.SetEnabled(false);
+    }
+
+    private static void ClickKey(Window window, SquircleBorder key)
+    {
+        var point = key.TranslatePoint(new Point(key.Bounds.Width / 2, key.Bounds.Height / 2), window)!.Value;
+        window.MouseDown(point, MouseButton.Left);
+        window.MouseUp(point, MouseButton.Left);
+        Pump();
+    }
+
+    private static void SettleKey(SquircleBorder key, bool wantDown)
+    {
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed.TotalSeconds < 2 && key.Classes.Contains("emboss-press") != wantDown)
+        {
+            Pump();
+            Thread.Sleep(8);
+        }
+        Pump();
     }
 
     private static void CaptureTransferFunctionProbe(string outputDir)

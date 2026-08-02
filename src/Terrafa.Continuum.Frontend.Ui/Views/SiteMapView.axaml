@@ -86,5 +86,6 @@
       </Panel>
     </DockPanel>
     <Canvas x:Name="GhostLayer" IsHitTestVisible="False" />
+    <controls:HintPointerLayer ScreenIndex="4" />
   </Panel>
 </UserControl>

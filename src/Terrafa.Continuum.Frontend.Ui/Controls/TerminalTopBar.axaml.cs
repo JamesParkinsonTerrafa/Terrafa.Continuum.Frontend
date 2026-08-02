@@ -18,6 +18,10 @@ public partial class TerminalTopBar : UserControl
     public static readonly StyledProperty<object?> RightContentProperty =
         AvaloniaProperty.Register<TerminalTopBar, object?>(nameof(RightContent));
 
+    private readonly BubbleKeyAnimator pointerBubble;
+
+    private bool pointersWereOnAtPress;
+
     public TerminalTopBar()
     {
         InitializeComponent();
@@ -36,20 +40,68 @@ public partial class TerminalTopBar : UserControl
             BuilderModeSettings.Toggle();
             e.Handled = true;
         };
+        pointerBubble = new BubbleKeyAnimator(PointerButton);
+
+        // The animator raises PopStarted only on the way down, so that arm turns the pointers on.
+        // A press on a key that is already down never reaches it, which is the arm that turns them
+        // off — hence the state captured at press, before PopStarted can flip it.
+        pointerBubble.PopStarted += _ => PointerHintSettings.SetEnabled(true);
+        PointerButton.PointerPressed += (_, _) => pointersWereOnAtPress = PointerHintSettings.Enabled;
+        PointerButton.PointerReleased += (_, e) =>
+        {
+            if (!pointersWereOnAtPress) return;
+            if (!new Rect(PointerButton.Bounds.Size).Contains(e.GetPosition(PointerButton))) return;
+            PointerHintSettings.SetEnabled(false);
+        };
         RefreshModeLabels();
+        RefreshPointerLabel();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         BuilderModeSettings.Changed += RefreshModeLabels;
+        PointerHintSettings.Changed += AnimatePointerButton;
         RefreshModeLabels();
+        SettlePointerButton();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         BuilderModeSettings.Changed -= RefreshModeLabels;
+        PointerHintSettings.Changed -= AnimatePointerButton;
+    }
+
+    /// <summary>
+    /// Each screen builds its own top bar, so a screen switch while the bubbles are up has to draw
+    /// the key already popped rather than replay the animation on arrival.
+    /// </summary>
+    private void SettlePointerButton()
+    {
+        if (PointerHintSettings.Enabled) pointerBubble.RestPopped();
+        else pointerBubble.RestInflated();
+        RefreshPointerLabel();
+    }
+
+    private void AnimatePointerButton()
+    {
+        if (PointerHintSettings.Enabled)
+        {
+            if (!pointerBubble.IsPoppedOrPopping) pointerBubble.PopProgrammatic();
+        }
+        else
+        {
+            pointerBubble.Inflate();
+        }
+        RefreshPointerLabel();
+    }
+
+    private void RefreshPointerLabel()
+    {
+        var on = PointerHintSettings.Enabled;
+        PointerLabel.Foreground = on ? Palette.Amber : Palette.TextSub;
+        PointerLabel.FontWeight = on ? FontWeight.Bold : FontWeight.Normal;
     }
 
     private void RefreshModeLabels()

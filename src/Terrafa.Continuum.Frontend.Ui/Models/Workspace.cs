@@ -108,6 +108,53 @@ public sealed class Workspace
         return subtree;
     }
 
+    /// <summary>
+    /// Drops <paramref name="path"/> and everything beneath it. An object left holding nothing goes
+    /// with it — ancestors are mounted to carry what was picked, never for their own sake — and a
+    /// subtree emptied to its root unmounts, a dataset with no leaves being mounted in name only.
+    /// Cross-subtree links to anything that left go too: a link needs both ends.
+    /// </summary>
+    public bool RemoveNode(string path)
+    {
+        if (Cut(path) is not { } cut) return false;
+
+        if (ReferenceEquals(cut.Top, cut.Subtree.Root))
+        {
+            Unmount(cut.Subtree.Dataset);
+            return true;
+        }
+
+        cut.Parent!.Children.Remove(cut.Top);
+        links.RemoveAll(link => FindNode(link.LeftPath) is null || FindNode(link.RightPath) is null);
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// The nodes <see cref="RemoveNode"/> would take, so a screen can say what it is about to do and
+    /// have that be what happens. Empty when the path is not mounted. Includes the subtree root when
+    /// the removal empties it, which is the shape of "this unmounts the dataset".
+    /// </summary>
+    public IReadOnlyList<DataTreeNode> RemovalFootprint(string path) =>
+        Cut(path) is { } cut ? [cut.Top, .. cut.Top.Descendants()] : [];
+
+    /// <summary>
+    /// Where the branch is severed: the highest ancestor that would be left holding nothing but the
+    /// node, or the node itself when its parent holds more than it. Everything under that one cut is
+    /// exactly what leaves — a parent is only followed upwards while it has a single child, so
+    /// nothing with a sibling is ever swept up.
+    /// </summary>
+    private (MountedSubtree Subtree, DataTreeNode Top, DataTreeNode? Parent)? Cut(string path)
+    {
+        if (SubtreeOf(path) is not { } subtree) return null;
+        if (subtree.Root.Find(path) is not { } node) return null;
+        if (PathTo(subtree.Root, node) is not { } chain) return null;
+
+        var index = chain.Count - 1;
+        while (index > 0 && chain[index - 1].Children.Count == 1) index--;
+        return (subtree, chain[index], index > 0 ? chain[index - 1] : null);
+    }
+
     public void Unmount(string dataset)
     {
         var subtree = Find(dataset);

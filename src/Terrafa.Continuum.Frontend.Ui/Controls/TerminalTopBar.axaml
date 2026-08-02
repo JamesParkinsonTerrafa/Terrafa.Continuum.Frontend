@@ -20,6 +20,13 @@
                      Foreground="{StaticResource TextSubBrush}" />
         </StackPanel>
       </controls:SquircleBorder>
+      <controls:SquircleBorder x:Name="PointerButton" Classes="emboss" DockPanel.Dock="Right"
+                               Margin="14,0,0,0" Padding="10,5"
+                               Background="{StaticResource EmbossSurfaceBrush}"
+                               VerticalAlignment="Center" Cursor="Hand">
+        <TextBlock x:Name="PointerLabel" Text="SHOW POINTERS" FontSize="{DynamicResource FontSize9}"
+                   LetterSpacing="1" VerticalAlignment="Center" />
+      </controls:SquircleBorder>
       <controls:SquircleBorder x:Name="ModeButton" Classes="emboss" DockPanel.Dock="Right"
                                Margin="14,0,0,0" Padding="10,5"
                                Background="{StaticResource EmbossSurfaceBrush}"

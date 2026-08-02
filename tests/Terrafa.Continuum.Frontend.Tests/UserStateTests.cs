@@ -14,6 +14,7 @@ namespace Terrafa.Continuum.Frontend.Tests;
 /// what was edited — nothing while applying, nothing signed out, retried after a failed write.
 /// All offline, against an in-memory store; the HTTP store is exercised against a stub handler.
 /// </summary>
+[Collection("workspace")]
 public class UserStateTests
 {
     private sealed class InMemoryUserStateStore : IUserStateStore

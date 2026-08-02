@@ -111,6 +111,7 @@
       </Border>
     </DockPanel>
 
+    <controls:HintPointerLayer ScreenIndex="3" />
     <controls:ContextMenuLayer x:Name="MenuLayer" />
     <controls:OverlayDialog x:Name="Dialog" />
   </Panel>

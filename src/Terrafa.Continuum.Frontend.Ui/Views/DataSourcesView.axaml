@@ -108,7 +108,7 @@
           <Border DockPanel.Dock="Top" x:Name="PreviewHeaderHost" Padding="16,12"
                   BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" />
           <controls:PanelBox x:Name="PreviewPanel" Title="SUBTREE PREVIEW"
-                             Hint="right-click a node to add it — parents include everything beneath">
+                             Hint="tick a box to add a node, untick to remove — parents include everything beneath">
             <controls:PanelBox.InnerContent>
               <ScrollViewer>
                 <StackPanel x:Name="PreviewRows" Margin="0,2,0,12" />
@@ -119,6 +119,7 @@
       </Border>
     </DockPanel>
 
+    <controls:HintPointerLayer ScreenIndex="5" />
     <controls:ContextMenuLayer x:Name="MenuLayer" />
     <controls:OverlayDialog x:Name="Dialog" />
   </Panel>

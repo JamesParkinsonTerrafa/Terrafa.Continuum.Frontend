@@ -101,6 +101,7 @@
     </Panel>
   </DockPanel>
   <Canvas x:Name="GhostLayer" IsHitTestVisible="False" />
+  <controls:HintPointerLayer ScreenIndex="0" />
   <controls:OverlayDialog x:Name="Dialog" />
   </Panel>
 </UserControl>

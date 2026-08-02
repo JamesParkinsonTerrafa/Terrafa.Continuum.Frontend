@@ -17,6 +17,7 @@ namespace Terrafa.Continuum.Frontend.Views;
 public partial class DataSourcesView : UserControl
 {
     private const double RowIndent = 14;
+    private const double CheckColumn = 68;
 
     private readonly IDatasetCatalog catalog;
     private readonly AuthSession session = AuthSession.Instance;
@@ -35,6 +36,13 @@ public partial class DataSourcesView : UserControl
     /// <summary>The dataset the preview is showing or loading — not the merely selected one.</summary>
     private string? openDataset;
     private string? previewMessage;
+
+    /// <summary>
+    /// The preview row the pointer settled on. Nothing follows from a selection on its own — it is
+    /// there so the operator can find the row they mean with a harmless click, and see it stay
+    /// found, before the right-click that acts on it.
+    /// </summary>
+    private string? selectedNode;
 
     /// <summary>
     /// The column the open dataset's readings are ordered by. Null while nobody has settled on one,
@@ -200,6 +208,7 @@ public partial class DataSourcesView : UserControl
         preview = null;
         openDataset = null;
         selectedDataset = null;
+        selectedNode = null;
 
         SyncText.Text = $"CATALOGUE READING {Source}";
         RebuildConnect();
@@ -249,6 +258,8 @@ public partial class DataSourcesView : UserControl
         openDataset = dataset;
         previewMessage = null;
         xAxis = null;
+        // The old selection names a path in the tree being replaced.
+        selectedNode = null;
 
         try
         {
@@ -540,7 +551,9 @@ public partial class DataSourcesView : UserControl
             return;
         }
 
-        PreviewPanel.Hint = "right-click a node to add it — parents include everything beneath";
+        PreviewPanel.Hint = selectedNode is null
+            ? "tick a box to add a node, untick to remove — parents include everything beneath"
+            : $"{selectedNode} picked — tick its box to add, untick to remove, parents included";
         if (previewMessage is not null) PreviewRows.Children.Add(Note(previewMessage));
         PreviewRows.Children.Add(PreviewColumnHeader());
         AppendPreviewRow(preview.Root, 0);
@@ -812,6 +825,20 @@ public partial class DataSourcesView : UserControl
         row.Children.Add(RightCell("NOTE", 250, Palette.TextFaint, 9));
         row.Children.Add(RightCell("UNIT · σ", 130, Palette.TextFaint, 9));
         row.Children.Add(RightCell("KIND", 100, Palette.TextFaint, 9));
+
+        var selected = new TextBlock
+        {
+            Text = "SELECTED",
+            FontSize = TypographySettings.Size(9),
+            LetterSpacing = 1,
+            Width = CheckColumn,
+            Foreground = Palette.TextFaint,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        DockPanel.SetDock(selected, Dock.Left);
+        row.Children.Add(selected);
+
         row.Children.Add(new TextBlock
         {
             Text = "PATH",
@@ -856,12 +883,13 @@ public partial class DataSourcesView : UserControl
     {
         var isLeaf = node.Kind == DataNodeKind.Measure;
         var alreadyMounted = workspace.FindNode(node.Path) is not null;
+        var isSelected = node.Path == selectedNode;
 
         var label = new TextBlock
         {
             Text = isLeaf ? node.Name : $"{node.Name} /",
             FontSize = TypographySettings.Size(11),
-            Margin = new Thickness(16 + depth * RowIndent, 0, 0, 0),
+            Margin = new Thickness(depth * RowIndent, 0, 0, 0),
             Foreground = isLeaf ? Palette.Cyan : Palette.Text,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -872,13 +900,22 @@ public partial class DataSourcesView : UserControl
             node.Reading is { } reading ? $"{reading.Display} {reading.SigmaDisplay}".Trim() : "—",
             130, Palette.TextMuted, 10));
         row.Children.Add(RightCell(isLeaf ? node.KindLabel : "OBJECT", 100, Palette.TextMuted, 10));
+        row.Children.Add(CheckCell(node, alreadyMounted));
         row.Children.Add(label);
 
-        IBrush background = alreadyMounted ? Palette.CyanFill : Brushes.Transparent;
+        // Mounted keeps its tint even while picked — the bar down the left side is what says picked,
+        // so the two states are never in competition for the same background.
+        IBrush background = alreadyMounted ? Palette.CyanFill
+            : isSelected ? Palette.BgField
+            : Brushes.Transparent;
         var shell = new Border
         {
             Padding = new Thickness(0, 5),
             Background = background,
+            // Carried by every row, transparent unless selected, so highlighting one cannot nudge
+            // the column of names sideways.
+            BorderBrush = isSelected ? Palette.Amber : Brushes.Transparent,
+            BorderThickness = new Thickness(2, 0, 0, 0),
             Cursor = new Cursor(StandardCursorType.Hand),
             Child = row
         };
@@ -886,11 +923,74 @@ public partial class DataSourcesView : UserControl
         shell.PointerExited += (_, _) => shell.Background = background;
         shell.PointerPressed += (_, e) =>
         {
-            if (!e.GetCurrentPoint(shell).Properties.IsRightButtonPressed) return;
+            var properties = e.GetCurrentPoint(shell).Properties;
+            if (!properties.IsLeftButtonPressed && !properties.IsRightButtonPressed) return;
             e.Handled = true;
-            MenuLayer.Show(node.Path, [("ADD TO TREE", () => ShowAddDialog(node))], e.GetPosition(MenuLayer));
+
+            // Read before the rebuild below detaches this row: the layer the menu is placed on
+            // outlives it, but the row the position is measured from does not.
+            var point = e.GetPosition(MenuLayer);
+            Select(node.Path);
+            if (!properties.IsRightButtonPressed) return;
+            MenuLayer.Show(node.Path, alreadyMounted
+                ? [("REMOVE FROM TREE", () => ShowRemoveDialog(node))]
+                : [("ADD TO TREE", () => ShowAddDialog(node))], point);
         };
         return shell;
+    }
+
+    /// <summary>
+    /// Moves the highlight. Right-click selects the row it lands on as well, so the menu and the
+    /// highlight can never name two different nodes.
+    /// </summary>
+    private void Select(string path)
+    {
+        if (selectedNode == path) return;
+        selectedNode = path;
+        RenderPreview();
+    }
+
+    /// <summary>
+    /// The box in the SELECTED column: the short way to do what the right-click menu does, since a
+    /// node worth adding is usually one the eye has already found in this column. Ticked means the
+    /// node is in the tree, and clicking a ticked box takes it back out.
+    /// </summary>
+    private Control CheckCell(DataTreeNode node, bool alreadyMounted)
+    {
+        var idle = alreadyMounted ? Palette.Cyan : Palette.TextGhost;
+        var box = new TextBlock
+        {
+            Text = alreadyMounted ? "[x]" : "[ ]",
+            FontSize = TypographySettings.Size(11),
+            Foreground = idle,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        // Transparent rather than unset, so the whole column width takes the click and not just the
+        // three characters of the box.
+        var cell = new Border
+        {
+            Width = CheckColumn,
+            Margin = new Thickness(14, 0, 0, 0),
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = box
+        };
+        DockPanel.SetDock(cell, Dock.Left);
+
+        // Red on the way out, amber on the way in — the same reading as UNMOUNT on the right rail.
+        cell.PointerEntered += (_, _) => box.Foreground = alreadyMounted ? Palette.Red : Palette.Amber;
+        cell.PointerExited += (_, _) => box.Foreground = idle;
+        cell.PointerPressed += (_, e) =>
+        {
+            // Right-click belongs to the row beneath: the menu says the same thing as the box, and
+            // an operator aiming at it should not be blocked by having hit the column.
+            if (!e.GetCurrentPoint(cell).Properties.IsLeftButtonPressed) return;
+            e.Handled = true;
+            Select(node.Path);
+            if (alreadyMounted) ShowRemoveDialog(node);
+            else ShowAddDialog(node);
+        };
+        return cell;
     }
 
     private static string SubtreeNote(DataTreeNode node)
@@ -914,7 +1014,7 @@ public partial class DataSourcesView : UserControl
     private string TopicOf(string dataset) =>
         catalogue.FirstOrDefault(entry => entry.Value.Contains(dataset)).Key ?? "uncategorised";
 
-    // ── add to tree ──────────────────────────────────────────────────────────
+    // ── add to & remove from tree ────────────────────────────────────────────
 
     private void ShowAddDialog(DataTreeNode node)
     {
@@ -947,6 +1047,55 @@ public partial class DataSourcesView : UserControl
         Dialog.Show("ADD TO TREE", body, "ADD <GO>", () =>
         {
             workspace.Mount(schema, node);
+            RenderPreview();
+            RebuildCatalogue();
+            RebuildMounted();
+            return true;
+        });
+    }
+
+    /// <summary>
+    /// The counterpart to <see cref="ShowAddDialog"/>, and it asks for the same reason: a node is
+    /// rarely alone. What goes is counted off the mount rather than the schema — the mount holds
+    /// only what was picked, which can be a good deal less than the branch in front of you.
+    /// </summary>
+    private void ShowRemoveDialog(DataTreeNode node)
+    {
+        if (preview is null) return;
+        var schema = preview;
+
+        var going = workspace.RemovalFootprint(node.Path);
+        if (going.Count == 0) return;
+
+        var leaves = going.Count(gone => gone.Kind == DataNodeKind.Measure);
+        var objects = going.Count - leaves;
+        var unmounts = workspace.SubtreeOf(node.Path) is { } subtree &&
+                       going.Any(gone => gone.Path == subtree.Root.Path);
+        var severed = workspace.Links.Count(link =>
+            going.Any(gone => gone.Path == link.LeftPath || gone.Path == link.RightPath));
+
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(DialogField("DATASET", schema.Dataset));
+        body.Children.Add(DialogField("NODE", node.Path));
+        body.Children.Add(DialogField("REMOVES",
+            $"{Plural(objects, "object", "objects")} · {Plural(leaves, "leaf", "leaves")}" +
+            (severed > 0 ? $" · {Plural(severed, "link", "links")} severed" : "")));
+        body.Children.Add(new TextBlock
+        {
+            Text = unmounts
+                ? $"Nothing else of {schema.Dataset} is in the tree, so the subtree unmounts with it. " +
+                  "The catalogue is untouched — it can be added again from this screen."
+                : "An object left holding nothing goes too. The catalogue is untouched — anything " +
+                  "removed can be added again from this screen.",
+            FontSize = TypographySettings.Size(10),
+            LineHeight = TypographySettings.Size(15),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextFaint
+        });
+
+        Dialog.Show("REMOVE FROM TREE", body, "REMOVE <GO>", () =>
+        {
+            workspace.RemoveNode(node.Path);
             RenderPreview();
             RebuildCatalogue();
             RebuildMounted();
