@@ -16,7 +16,7 @@ namespace Terrafa.Continuum.Frontend.Views;
 /// </summary>
 public partial class MainView : UserControl
 {
-    private const int ScreenCount = 6;
+    private const int ScreenCount = 7;
     private const double PlateWidth = 1560;
     private const double PlateHeight = 980;
 
@@ -165,7 +165,8 @@ public partial class MainView : UserControl
             2 => new DashboardView(snapshot, SwitchTo),
             3 => new DbTreeView(snapshot, SwitchTo),
             4 => new SiteMapView(snapshot, SwitchTo),
-            _ => new DataSourcesView(snapshot, SwitchTo, catalog)
+            5 => new DataSourcesView(snapshot, SwitchTo, catalog),
+            _ => new CsvExportView(snapshot, SwitchTo)
         };
     }
 

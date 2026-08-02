@@ -27,6 +27,7 @@ public static class HintCatalog
     public const int DataTreeScreen = 3;
     public const int MapScreen = 4;
     public const int DataSourcesScreen = 5;
+    public const int CsvExportScreen = 6;
 
     private static readonly IReadOnlyList<HintPointer> TransferFunctionHints =
     [

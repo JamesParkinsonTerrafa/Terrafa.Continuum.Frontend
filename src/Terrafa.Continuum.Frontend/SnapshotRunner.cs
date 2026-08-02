@@ -53,6 +53,7 @@ public static class SnapshotRunner
         CaptureSnapProbe(outputDir);
         CaptureZoomAndHighlightProbe(outputDir);
         CapturePointerHintProbe(outputDir);
+        CaptureCsvGridProbe(outputDir, snapshot);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
@@ -705,7 +706,7 @@ public static class SnapshotRunner
         Pump();
 
         Console.WriteLine(
-            $"nav reorder: order [{string.Join(" ", NavOrderSettings.OrderFor(6))}], " +
+            $"nav reorder: order [{string.Join(" ", NavOrderSettings.OrderFor(NavOrderSettings.Default.Count))}], " +
             $"view after drag = {window.ViewHost.Content?.GetType().Name}");
         Capture(window, outputDir, "0-nav-reorder");
 
@@ -1504,6 +1505,90 @@ public static class SnapshotRunner
         target.Save(path);
     }
 
+    /// <summary>
+    /// The CSV EXPORT grid against a six-figure table: build 200k rows through the real pipeline,
+    /// wheel-scroll and thumb-drag through the real input path, and log the sliding window's
+    /// position and residency so a broken eviction shows up in the console, not just the frame.
+    /// 200k keeps the suite fast; the 5M case is the manual perf check.
+    /// </summary>
+    private static void CaptureCsvGridProbe(string outputDir, DataSnapshot snapshot)
+    {
+        Await(ExportTable.Instance.BuildAsync(
+            new TableExportRequest(ExportTable.SyntheticDataset, 200_000)));
+
+        var view = new CsvExportView(snapshot, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+        WaitForCsvTable();
+
+        var table = ExportTable.Instance;
+        var cache = table.Cache!;
+        Console.WriteLine(
+            $"csv probe: {table.Document!.TotalRows} rows in {table.BuildMilliseconds} ms, " +
+            $"parquet {table.ParquetBytes / 1024} KB, window [{cache.Window.Start},{cache.Window.End}) " +
+            $"resident {cache.ResidentRows}");
+        Capture(window, outputDir, "7-csv-grid-top");
+
+        var gridCentre = view.Grid
+            .TranslatePoint(new Point(view.Grid.Bounds.Width / 2, view.Grid.Bounds.Height / 2), window)!
+            .Value;
+        for (var notch = 0; notch < 40; notch++)
+        {
+            window.MouseWheel(gridCentre, new Vector(0, -3));
+        }
+
+        Pump();
+        WaitForCsvTable();
+        Console.WriteLine($"csv probe: after wheel, first visible row {view.Grid.FirstVisibleRow}");
+
+        var gridTopRight = view.Grid.TranslatePoint(new Point(view.Grid.Bounds.Width - 5, 0), window)!.Value;
+        var thumbStart = new Point(gridTopRight.X, gridTopRight.Y + 36);
+        var thumbEnd = new Point(gridTopRight.X, gridTopRight.Y + view.Grid.Bounds.Height * 0.6);
+        window.MouseDown(thumbStart, MouseButton.Left);
+        for (var step = 0.0; step <= 1.0; step += 0.1)
+        {
+            window.MouseMove(new Point(
+                thumbStart.X, thumbStart.Y + (thumbEnd.Y - thumbStart.Y) * step));
+            Pump();
+        }
+
+        window.MouseUp(thumbEnd, MouseButton.Left);
+        Pump();
+        WaitForCsvTable();
+
+        var bound = TableCacheSettings.CacheRows + 2 * TableExportBuilder.RowGroupSize;
+        Console.WriteLine(
+            $"csv probe: after thumb drag, first visible row {view.Grid.FirstVisibleRow}, " +
+            $"window [{cache.Window.Start},{cache.Window.End}) slid={cache.Window.Start > 0}, " +
+            $"resident {cache.ResidentRows} bound {(cache.ResidentRows <= bound ? "HELD" : "BROKEN")}, " +
+            $"hits {cache.Hits} misses {cache.Misses}");
+        Capture(window, outputDir, "7-csv-grid-deep");
+        window.Close();
+    }
+
+    private static void WaitForCsvTable()
+    {
+        for (var attempt = 0; attempt < 400; attempt++)
+        {
+            if (ExportTable.Instance is { State: ExportBuildState.Ready, Cache.ResidentRows: > 0 })
+            {
+                break;
+            }
+
+            Pump();
+            Thread.Sleep(5);
+        }
+
+        Pump();
+    }
+
     private static T? Await<T>(Task<T?> task) where T : class
     {
         WaitFor(task);
@@ -1552,7 +1637,8 @@ public static class SnapshotRunner
             ("3-dash", new DashboardView(snapshot, _ => { })),
             ("4-tree", new DbTreeView(snapshot, _ => { })),
             ("5-map", new SiteMapView(snapshot, _ => { })),
-            ("6-data", new DataSourcesView(snapshot, _ => { }))
+            ("6-data", new DataSourcesView(snapshot, _ => { })),
+            ("7-csv", new CsvExportView(snapshot, _ => { }))
         };
 
         foreach (var (name, view) in views)
@@ -1566,6 +1652,8 @@ public static class SnapshotRunner
             };
             window.Show();
             Pump();
+
+            if (name == "7-csv") WaitForCsvTable();
 
             Capture(window, outputDir, $"{name}{suffix}");
             window.Close();

@@ -43,20 +43,28 @@ public class UserStateTests
         UiScaleSettings.SetScale(1.2);
         SnapSettings.SetEnabled(false);
         BubbleSettings.SetPopSpeed(1.7);
+        TableCacheSettings.SetCacheRows(150_000);
+        TableCacheSettings.SetEvictionRows(30_000);
         var captured = UserStateMapper.CaptureSettings();
 
         UiScaleSettings.SetScale(1.0);
         SnapSettings.SetEnabled(true);
         BubbleSettings.SetPopSpeed(1.0);
+        TableCacheSettings.SetCacheRows(100_000);
+        TableCacheSettings.SetEvictionRows(25_000);
         UserStateMapper.ApplySettings(captured);
 
         Assert.Equal(1.2, UiScaleSettings.Scale);
         Assert.False(SnapSettings.Enabled);
         Assert.Equal(1.7, BubbleSettings.PopSpeed);
+        Assert.Equal(150_000, TableCacheSettings.CacheRows);
+        Assert.Equal(30_000, TableCacheSettings.EvictionRows);
 
         SnapSettings.SetEnabled(true);
         UiScaleSettings.SetScale(1.0);
         BubbleSettings.SetPopSpeed(1.0);
+        TableCacheSettings.SetCacheRows(100_000);
+        TableCacheSettings.SetEvictionRows(25_000);
     }
 
     [Fact]
@@ -66,11 +74,51 @@ public class UserStateTests
             """{"schemaVersion":1,"uiScale":0.9}""", UserStateJson.Default.SettingsState)!;
 
         var holdBefore = BubbleSettings.HoldSeconds;
+        var cacheRowsBefore = TableCacheSettings.CacheRows;
         UserStateMapper.ApplySettings(sparse);
 
         Assert.Equal(0.9, UiScaleSettings.Scale);
         Assert.Equal(holdBefore, BubbleSettings.HoldSeconds);
+        Assert.Equal(cacheRowsBefore, TableCacheSettings.CacheRows);
         UiScaleSettings.SetScale(1.0);
+    }
+
+    [Fact]
+    public void Settings_TableCacheValuesClampOnApply()
+    {
+        var hostile = JsonSerializer.Deserialize(
+            """{"schemaVersion":1,"tableCacheRows":5,"tableEvictionRows":99999999}""",
+            UserStateJson.Default.SettingsState)!;
+
+        UserStateMapper.ApplySettings(hostile);
+
+        Assert.Equal(TableCacheSettings.MinCacheRows, TableCacheSettings.CacheRows);
+        Assert.Equal(TableCacheSettings.MaxEvictionRows, TableCacheSettings.EvictionRows);
+
+        TableCacheSettings.SetCacheRows(100_000);
+        TableCacheSettings.SetEvictionRows(25_000);
+    }
+
+    [Fact]
+    public void Settings_SixEntryNavOrder_AppendsCsvExport()
+    {
+        NavOrderSettings.Set([4, 2, 0, 1, 3, 5]);
+
+        Assert.Equal(
+            new[] { 4, 2, 0, 1, 3, 5, 6 },
+            NavOrderSettings.OrderFor(NavOrderSettings.Default.Count));
+
+        NavOrderSettings.Set(NavOrderSettings.Default);
+    }
+
+    [Fact]
+    public void Settings_GarbageNavOrder_Ignored()
+    {
+        NavOrderSettings.Set(NavOrderSettings.Default);
+
+        NavOrderSettings.Set([99, -3, 42]);
+
+        Assert.Equal(NavOrderSettings.Default, NavOrderSettings.OrderFor(NavOrderSettings.Default.Count));
     }
 
     // ── dashboard ────────────────────────────────────────────────────────────

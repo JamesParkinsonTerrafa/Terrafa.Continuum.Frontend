@@ -22,6 +22,14 @@
          Trimmed, these three assemblies cost ~190 KB brotli in the wasm bundle. Two wasm shims in
          CognitoAuthenticator are needed to make them run in a browser at all — see there. -->
     <PackageReference Include="Amazon.Extensions.CognitoAuthentication" Version="3.1.5" />
+    <!-- The CSV EXPORT screen's in-memory table document is a real parquet file. Only the
+         low-level ParquetWriter/ParquetReader column API is used — ParquetSerializer walks
+         types with reflection and is off-limits under the trimmer and AOT. Since 6.x every
+         compression dependency (Snappier, ZstdSharp, K4os.LZ4) is pure managed, so the
+         browser head needs no native codec; Snappy/Gzip/None all round-trip in the AOT'd
+         wasm bundle. Cost: the six assemblies are ~146 KB brotli, but their AOT'd code
+         grows dotnet.native.wasm by ~1.8 MB brotli. -->
+    <PackageReference Include="Parquet.Net" Version="6.0.3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Terrafa.Continuum.Analytics/Terrafa.Continuum.Analytics.csproj" />

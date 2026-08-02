@@ -68,6 +68,7 @@ public static class UserStateSync
         BubbleSettings.Changed += MarkSettingsDirty;
         GrainSettings.IntensityChanged += MarkSettingsDirty;
         GrainSettings.FieldChanged += MarkSettingsDirty;
+        TableCacheSettings.Changed += MarkSettingsDirty;
 
         Dashboard.Instance.Changed += MarkDashboardDirty;
         Dashboard.Instance.Edited += MarkDashboardDirty;

@@ -44,7 +44,9 @@ public static class UserStateMapper
         GrainSettings.SpectralSlope,
         GrainSettings.WarpStrength,
         GrainSettings.FineGrain,
-        TabLayoutSettings.Vertical);
+        TabLayoutSettings.Vertical,
+        TableCacheSettings.CacheRows,
+        TableCacheSettings.EvictionRows);
 
     public static void ApplySettings(SettingsState state)
     {
@@ -74,6 +76,8 @@ public static class UserStateMapper
         if (state.GrainWarpStrength is { } warp) GrainSettings.SetWarpStrength(warp);
         if (state.GrainFineGrain is { } fine) GrainSettings.SetFineGrain(fine);
         if (state.TabsVertical is { } tabsVertical) TabLayoutSettings.SetVertical(tabsVertical);
+        if (state.TableCacheRows is { } cacheRows) TableCacheSettings.SetCacheRows(cacheRows);
+        if (state.TableEvictionRows is { } evictionRows) TableCacheSettings.SetEvictionRows(evictionRows);
     }
 
     // ── dashboard ────────────────────────────────────────────────────────────

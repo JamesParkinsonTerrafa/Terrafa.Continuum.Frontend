@@ -48,7 +48,9 @@ public sealed record SettingsState(
     double? GrainSpectralSlope,
     double? GrainWarpStrength,
     double? GrainFineGrain,
-    bool? TabsVertical = null);
+    bool? TabsVertical = null,
+    int? TableCacheRows = null,
+    int? TableEvictionRows = null);
 
 public sealed record DashboardState(int SchemaVersion, IReadOnlyList<TileState>? Tiles);
 

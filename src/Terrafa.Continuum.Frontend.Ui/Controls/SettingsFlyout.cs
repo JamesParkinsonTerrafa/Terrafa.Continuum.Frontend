@@ -37,15 +37,20 @@ public class SettingsFlyout : Panel
     internal Slider HighlightBrightnessSlider { get; }
     internal Slider TextSizeSlider { get; }
     internal Slider UiScaleSlider { get; }
+    internal Border CsvExportToggleRow { get; }
+    internal Slider CacheRowsSlider { get; }
+    internal Slider EvictionRowsSlider { get; }
 
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
     private readonly StackPanel bubbleBody;
     private readonly StackPanel appearanceBody;
+    private readonly StackPanel csvBody;
     private readonly TextBlock grainArrow;
     private readonly TextBlock buttonArrow;
     private readonly TextBlock bubbleArrow;
     private readonly TextBlock appearanceArrow;
+    private readonly TextBlock csvArrow;
     private readonly TextBlock darkLabel;
     private readonly TextBlock lightLabel;
     private readonly TextBlock hintsOnLabel;
@@ -84,11 +89,13 @@ public class SettingsFlyout : Panel
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         bubbleArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         appearanceArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
+        csvArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
         grainBody = BuildSectionBody();
         buttonBody = BuildSectionBody();
         bubbleBody = BuildSectionBody();
         appearanceBody = BuildSectionBody();
+        csvBody = BuildSectionBody();
 
         TextSizeSlider = AddSliderRow(appearanceBody, "TEXT SIZE", TypographySettings.MinScale,
             TypographySettings.MaxScale, 0.05, TypographySettings.Scale, "0.00", TypographySettings.SetScale);
@@ -181,10 +188,27 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
+        CacheRowsSlider = AddSliderRow(csvBody, "CACHE ROWS", TableCacheSettings.MinCacheRows,
+            TableCacheSettings.MaxCacheRows, 10_000, TableCacheSettings.CacheRows, "0",
+            value => TableCacheSettings.SetCacheRows((int)value));
+        EvictionRowsSlider = AddSliderRow(csvBody, "EVICTION ROWS", TableCacheSettings.MinEvictionRows,
+            TableCacheSettings.MaxEvictionRows, 5_000, TableCacheSettings.EvictionRows, "0",
+            value => TableCacheSettings.SetEvictionRows((int)value));
+        csvBody.Children.Add(new TextBlock
+        {
+            Text = "CACHE ROWS is the most decoded rows the export grid holds; its window slides in " +
+                   "EVICTION ROWS chunks (capped at a quarter of the cache) as the cursor nears an edge.",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
         AppearanceToggleRow = BuildSectionRow("APPEARANCE", appearanceArrow, appearanceBody);
         ButtonToggleRow = BuildSectionRow("BUTTON UI", buttonArrow, buttonBody);
         BubbleToggleRow = BuildSectionRow("BUBBLE POP", bubbleArrow, bubbleBody);
         GrainToggleRow = BuildSectionRow("GRAIN EFFECTS", grainArrow, grainBody);
+        CsvExportToggleRow = BuildSectionRow("CSV EXPORT", csvArrow, csvBody);
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
@@ -201,6 +225,8 @@ public class SettingsFlyout : Panel
         column.Children.Add(bubbleBody);
         column.Children.Add(GrainToggleRow);
         column.Children.Add(grainBody);
+        column.Children.Add(CsvExportToggleRow);
+        column.Children.Add(csvBody);
 
         PanelBorder = new Border
         {

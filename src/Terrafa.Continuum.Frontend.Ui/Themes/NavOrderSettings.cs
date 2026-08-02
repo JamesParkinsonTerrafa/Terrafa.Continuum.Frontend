@@ -12,9 +12,10 @@ public static class NavOrderSettings
 {
     /// <summary>
     /// Data flows left to right by default: DATA SOURCES, DATA TREE, TRANSFER FUNCTION, NETWORK,
-    /// DASHBOARD, MAP — the values are screen indices in TerminalTabStrip.NavigationLabels order.
+    /// DASHBOARD, MAP, CSV EXPORT — the values are screen indices in
+    /// TerminalTabStrip.NavigationLabels order.
     /// </summary>
-    public static readonly IReadOnlyList<int> Default = [5, 3, 1, 0, 2, 4];
+    public static readonly IReadOnlyList<int> Default = [5, 3, 1, 0, 2, 4, 6];
 
     private static int[] order = [.. Default];
 
@@ -27,10 +28,23 @@ public static class NavOrderSettings
         return order;
     }
 
+    /// <summary>
+    /// Accepts any distinct in-range subset and appends whatever screens it omits, so an order
+    /// persisted before a screen existed migrates to "your order, new screens at the end" instead
+    /// of silently resetting when <see cref="OrderFor"/> sees the wrong length. Garbage entries
+    /// are dropped; an order with nothing valid is ignored.
+    /// </summary>
     public static void Set(IReadOnlyList<int> newOrder)
     {
-        if (order.SequenceEqual(newOrder)) return;
-        order = [.. newOrder];
+        var sanitized = newOrder
+            .Where(index => index >= 0 && index < Default.Count)
+            .Distinct()
+            .ToList();
+        if (sanitized.Count == 0) return;
+        sanitized.AddRange(Enumerable.Range(0, Default.Count).Where(index => !sanitized.Contains(index)));
+
+        if (order.SequenceEqual(sanitized)) return;
+        order = [.. sanitized];
         Changed?.Invoke();
     }
 }

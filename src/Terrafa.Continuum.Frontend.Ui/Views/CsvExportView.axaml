@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             xmlns:tablegrid="using:Terrafa.Continuum.Frontend.Controls.TableGrid"
+             x:Class="Terrafa.Continuum.Frontend.Views.CsvExportView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <Panel>
+    <DockPanel>
+      <controls:TerminalTopBar DockPanel.Dock="Top"
+                               CommandText="CSV"
+                               SubtitleText="EXPORT PIPELINE" />
+
+      <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="6"
+                                 HintText="the grid previews the csv this pipeline would write · it reads a parquet document through a sliding row window, so millions of rows scroll without loading at once" />
+
+      <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+        <controls:TerminalStatusBar.LeftContent>
+          <StackPanel Orientation="Horizontal" Spacing="18"
+                      IsVisible="{DynamicResource HintsVisible}">
+            <TextBlock Text="NAMED FOR WHAT IT PROVES — THE DATA COULD LEAVE AS CSV" FontSize="{DynamicResource FontSize10}"
+                       Foreground="{StaticResource TextFaintBrush}" />
+            <TextBlock Text="ONLY THE WINDOW IS DECODED" FontSize="{DynamicResource FontSize10}"
+                       Foreground="{StaticResource TextFaintBrush}" />
+          </StackPanel>
+        </controls:TerminalStatusBar.LeftContent>
+        <controls:TerminalStatusBar.RightContent>
+          <TextBlock x:Name="StatusRight" FontSize="{DynamicResource FontSize10}"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </controls:TerminalStatusBar.RightContent>
+      </controls:TerminalStatusBar>
+
+      <Border DockPanel.Dock="Right" Width="336"
+              Background="{StaticResource BgPanelBrush}"
+              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+        <controls:PanelBox Title="EXPORT PIPELINE" FooterHeight="54">
+          <controls:PanelBox.InnerContent>
+            <ScrollViewer>
+              <StackPanel x:Name="PipelineBody" Margin="12,10" Spacing="10" />
+            </ScrollViewer>
+          </controls:PanelBox.InnerContent>
+          <controls:PanelBox.FooterContent>
+            <TextBlock Text="Filters and the per-row figure computation are stubbed — the parquet document, the sliding window and the csv writer are real."
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
+                       MaxLines="3" TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource TextFaintBrush}"
+                       IsVisible="{DynamicResource HintsVisible}" />
+          </controls:PanelBox.FooterContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Padding="14">
+        <controls:SquircleBorder Classes="emboss-inner" Padding="3">
+          <tablegrid:TableGridControl x:Name="Grid" />
+        </controls:SquircleBorder>
+      </Border>
+    </DockPanel>
+    <controls:HintPointerLayer ScreenIndex="6" />
+  </Panel>
+</UserControl>
