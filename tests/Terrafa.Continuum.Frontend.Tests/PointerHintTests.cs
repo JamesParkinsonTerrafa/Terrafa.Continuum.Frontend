@@ -132,38 +132,46 @@ public class PointerHintTests : IDisposable
         Assert.False(PointerHintSettings.HasVisited(HintCatalog.MapScreen));
     }
 
-    [Fact]
-    public void Catalog_CoversTheTransferFunctionScreenOnly()
+    /// <summary>
+    /// Every screen in the tab strip carries at least one tip, so the tour has no gap in it.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Screens))]
+    public void Catalog_CoversEveryScreen(int screen, string _)
     {
-        Assert.NotEmpty(HintCatalog.For(HintCatalog.TransferFunctionScreen));
-
-        foreach (var screen in new[]
-                 {
-                     HintCatalog.NetworkScreen, HintCatalog.DashboardScreen, HintCatalog.DataTreeScreen,
-                     HintCatalog.MapScreen, HintCatalog.DataSourcesScreen
-                 })
-        {
-            Assert.Empty(HintCatalog.For(screen));
-        }
+        Assert.NotEmpty(HintCatalog.For(screen));
     }
 
     /// <summary>
-    /// A bubble resolves its target by x:Name against the view's name scope, so a rename in the
-    /// axaml would otherwise drop that bubble in silence rather than fail the build.
+    /// A bubble resolves its target by x:Name against the view's own name scope, so a rename in the
+    /// axaml — or a tip filed against the wrong screen — would otherwise drop that bubble in silence
+    /// rather than fail the build.
     /// </summary>
-    [Fact]
-    public void Catalog_TargetsExistInTheTransferFunctionView()
+    [Theory]
+    [MemberData(nameof(Screens))]
+    public void Catalog_TargetsExistInTheScreenTheyAreFiledUnder(int screen, string viewFileName)
     {
-        var markup = File.ReadAllText(ViewPath("TransferFunctionView.axaml"));
+        var markup = File.ReadAllText(ViewPath(viewFileName));
         var names = Regex.Matches(markup, @"x:Name=""(?<name>[^""]+)""")
             .Select(match => match.Groups["name"].Value)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var hint in HintCatalog.For(HintCatalog.TransferFunctionScreen))
+        foreach (var hint in HintCatalog.For(screen))
         {
             Assert.Contains(hint.TargetName, names);
         }
     }
+
+    public static TheoryData<int, string> Screens => new()
+    {
+        { HintCatalog.NetworkScreen, "NetworkView.axaml" },
+        { HintCatalog.TransferFunctionScreen, "TransferFunctionView.axaml" },
+        { HintCatalog.DashboardScreen, "DashboardView.axaml" },
+        { HintCatalog.DataTreeScreen, "DbTreeView.axaml" },
+        { HintCatalog.MapScreen, "SiteMapView.axaml" },
+        { HintCatalog.DataSourcesScreen, "DataSourcesView.axaml" },
+        { HintCatalog.CsvExportScreen, "CsvExportView.axaml" }
+    };
 
     private static string ViewPath(string fileName)
     {
