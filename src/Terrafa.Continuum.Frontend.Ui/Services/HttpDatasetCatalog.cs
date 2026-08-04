@@ -33,7 +33,7 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
     private readonly Dictionary<string, Task<DatasetSchema>> schemas = new(StringComparer.Ordinal);
 
     /// <summary>Keyed by dataset <i>and</i> axis: re-ordering a read is a different read.</summary>
-    private readonly Dictionary<(string Dataset, string XAxis), Task<DatasetSchema>> series = [];
+    private readonly Dictionary<(string Dataset, string XAxis, string Projection), Task<DatasetSchema>> series = [];
 
     private readonly Dictionary<string, DatasetSchemaResponse> rawSchemas = new(StringComparer.Ordinal);
 
@@ -91,18 +91,21 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         }
     }
 
-    public Task<DatasetSchema> GetSeriesAsync(string dataset, string xAxis)
+    public Task<DatasetSchema> GetSeriesAsync(
+        string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null)
     {
         if (!DataFeedOptions.SampleValues) return GetSchemaAsync(dataset);
 
-        // Keyed on the pair rather than a joined string: both parts can contain a dot, so there
-        // is no separator that is guaranteed not to appear in either.
-        var key = (dataset, xAxis);
+        // Keyed on the parts rather than one joined string: each can contain a dot, so there is no
+        // separator guaranteed not to appear in any of them. The projection is part of the key —
+        // a narrow read and a full read of the same dataset are different answers.
+        var projection = wanted is { Count: > 0 } ? string.Join('\n', wanted.Order(StringComparer.Ordinal)) : "";
+        var key = (dataset, xAxis, projection);
 
         lock (gate)
         {
             if (series.TryGetValue(key, out var cached) && !cached.IsFaulted) return cached;
-            var loading = LoadSeriesAsync(dataset, xAxis);
+            var loading = LoadSeriesAsync(dataset, xAxis, wanted);
             series[key] = loading;
             return loading;
         }
@@ -228,10 +231,13 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
 
         // A sensor_id column declares replicate members: twelve sensors reading the same
         // quantity are twelve series, and each gets its own subtree of leaves built from its own
-        // rows of the one fetch. Without members, one row per axis value is the contract the
-        // pipeline rests on — a table carrying more interleaves several series in every column,
-        // and a line through that would join readings from different instruments. Its leaves
-        // stay structural and say why; the fix is the table's, not this client's.
+        // rows of the one fetch.
+        //
+        // Repeated axis values are counted and reported — one row per axis value is what a chart
+        // needs, and RowsPerPoint is how a screen says the table does not give it. Nothing is
+        // dropped on account of it. The read path reports what the table holds and does not decide
+        // what is fit to keep: a lookup table repeats its keys by design, and discarding its cells
+        // to protect a chart nobody asked for cost the joins their data.
         var members = readings is not null ? MemberPartition(readings) : null;
         var rowsPerPoint = 1;
 
@@ -263,10 +269,10 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
                 foreach (var column in response.Columns ?? [])
                 {
                     if (SeriesAxis.Member.Equals(column.Name, StringComparison.OrdinalIgnoreCase)) continue;
-                    Append(node, column, dataset, memberRows > 1 ? null : memberReadings, memberNote, isPartitionKey: false, depth: 0);
+                    Append(node, column, dataset, memberReadings, memberNote, isPartitionKey: false, depth: 0);
                 }
                 foreach (var column in response.PartitionKeys ?? [])
-                    Append(node, column, dataset, memberRows > 1 ? null : memberReadings, memberNote, isPartitionKey: true, depth: 0);
+                    Append(node, column, dataset, memberReadings, memberNote, isPartitionKey: true, depth: 0);
 
                 root.Children.Add(node);
             }
@@ -276,7 +282,6 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
             readings = readings is not null ? Tail(readings) : null;
             rowsPerPoint = readings is not null ? RowsPerPoint(readings, xAxis) : 1;
             var tieNote = rowsPerPoint > 1 ? $"{rowsPerPoint} rows/point — expected one" : "";
-            if (rowsPerPoint > 1) readings = null;
 
             // Partition keys are selectable and filterable exactly like ordinary columns — Athena
             // just reports them separately — so they belong in the tree, tagged for what they are.
@@ -344,14 +349,18 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         }
 
         var isVector = HiveType.IsArray(type);
+        var isBoolean = HiveType.IsBoolean(type);
         var columnPath = SeriesAxis.Relative(dataset, path);
         var cells = readings is not null && readings.TryGetValue(columnPath, out var found) ? found : [];
 
         // The whole transformation a value undergoes on its way to a chart: the column's non-null
         // cells, parsed, in row order. The chart plots readings by index, so a skipped null is a
-        // missing measurement, not a closed gap. A column that does not read as numbers keeps its
-        // text and carries no series, and the newest non-null cell is the leaf's reading either
-        // way — a feed whose latest rows have not caught up still reads as its last measurement.
+        // missing measurement, not a closed gap. A boolean column reads as determinations — 1 and
+        // 0 — by its declared type, not by sniffing cells. A column that reads as neither keeps
+        // its text and carries no series, and the newest non-null cell is the leaf's reading
+        // either way — a feed whose latest rows have not caught up still reads as its last
+        // measurement. The raw cells are kept whole on the leaf regardless: History drops nulls
+        // per column, so only Cells can answer for a row.
         var measured = new List<double>(cells.Count);
         string? latest = null;
         var numeric = true;
@@ -360,13 +369,17 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
             if (cell is null) continue;
             latest = cell;
             if (!numeric) continue;
-            var (parsed, _) = MeasureNumerics.ParseValue(cell);
+            var parsed = isBoolean
+                ? MeasureNumerics.ParseBoolean(cell)
+                : MeasureNumerics.ParseValue(cell).Value;
             if (double.IsNaN(parsed)) numeric = false;
             else measured.Add(parsed);
         }
 
         IReadOnlyList<double> history = numeric && measured.Count >= 2 ? measured : [];
-        var (value, unit) = MeasureNumerics.ParseValue(latest ?? "");
+        var (value, unit) = isBoolean
+            ? (latest is null ? double.NaN : MeasureNumerics.ParseBoolean(latest), "")
+            : MeasureNumerics.ParseValue(latest ?? "");
 
         parent.Children.Add(new DataTreeNode
         {
@@ -388,9 +401,11 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
                     points: history.Count,
                     tieNote),
                 IsVector = isVector,
+                IsBoolean = isBoolean,
                 Value = value,
                 Unit = unit,
-                History = history
+                History = history,
+                Cells = cells
             }
         });
 
@@ -504,13 +519,16 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         {
             BindSiblingSigma(node, dataset, readings);
 
-            if (node.Kind != DataNodeKind.Measure || node.Reading is not { } reading) continue;
+            // DeclaredReading, not Reading: this binds the tree in hand. Reading would consult the
+            // store, and a second read of the same dataset would then pair a fresh measure with a
+            // σ left over from the first.
+            if (node.Kind != DataNodeKind.Measure || node.DeclaredReading is not { } reading) continue;
             if (reading.IsSigmaCarrier) continue;
 
             var carrier = parent.Children.FirstOrDefault(candidate =>
                 candidate.Kind == DataNodeKind.Measure &&
                 candidate.Name.Equals(node.Name + MeasureNumerics.SigmaSuffix, StringComparison.OrdinalIgnoreCase));
-            if (carrier?.Reading is not { } carrierReading) continue;
+            if (carrier?.DeclaredReading is not { } carrierReading) continue;
 
             // Marked even before any values exist, so a picker never offers a standard deviation
             // as though it were a quantity — the tree keeps the leaf, sources skip it.
@@ -530,11 +548,13 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
                 Selected = reading.Selected,
                 IsNew = reading.IsNew,
                 IsVector = reading.IsVector,
+                IsBoolean = reading.IsBoolean,
                 Value = reading.Value,
                 Sigma = sigma,
                 Unit = reading.Unit,
                 History = reading.History,
-                SigmaHistory = sigmaHistory
+                SigmaHistory = sigmaHistory,
+                Cells = reading.Cells
             };
         }
     }
@@ -572,11 +592,13 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         Selected = source.Selected,
         IsNew = source.IsNew,
         IsVector = source.IsVector,
+        IsBoolean = source.IsBoolean,
         Value = source.Value,
         Sigma = source.Sigma,
         Unit = source.Unit,
         History = source.History,
         SigmaHistory = source.SigmaHistory,
+        Cells = source.Cells,
         IsSigmaCarrier = true
     };
 
@@ -587,7 +609,8 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
     /// a second tree rather than a mutation of the first because a node's reading is fixed at
     /// construction — and that is worth keeping, since a mounted subtree holds those same nodes.
     /// </summary>
-    private async Task<DatasetSchema> LoadSeriesAsync(string dataset, string xAxis)
+    private async Task<DatasetSchema> LoadSeriesAsync(
+        string dataset, string xAxis, IReadOnlyCollection<string>? wanted)
     {
         var response = await GetRawSchemaAsync(dataset);
         var structure = BuildSchema(dataset, response, readings: null, xAxis);
@@ -595,14 +618,27 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         var leaves = structure.Root
             .Descendants()
             .Where(node => node.Kind == DataNodeKind.Measure)
-            .Select(node => SeriesAxis.Relative(dataset, node.Path));
+            .Select(node => SeriesAxis.Relative(dataset, node.Path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // A table with no column by this name has no axis, rather than some other column pressed
+        // into the role. Naming one anyway ordered a lookup table by whichever column happened to
+        // come first and filtered out every row that column was null on — a reordering and a
+        // silent cut, neither of them asked for. Rows come back in table order instead, and a grid
+        // orders them by its own index column, which is where the operator picks it.
+        if (!leaves.Contains(xAxis, StringComparer.OrdinalIgnoreCase)) xAxis = "";
+
+        if (Narrow(dataset, leaves, wanted) is { Count: > 0 } narrowed) leaves = narrowed;
 
         // The axis leads the projection so it always survives the column cap: it is the one column
         // the request cannot do without, and on a wide table it would otherwise be cut.
-        var columns = new List<string> { xAxis };
+        var columns = new List<string>();
+        if (xAxis.Length > 0) columns.Add(xAxis);
         columns.AddRange(leaves.Where(path => !path.Equals(xAxis, StringComparison.OrdinalIgnoreCase)));
         if (columns.Count > DataFeedOptions.MaxSampleColumns)
             columns.RemoveRange(DataFeedOptions.MaxSampleColumns, columns.Count - DataFeedOptions.MaxSampleColumns);
+        if (columns.Count == 0) return structure;
 
         var (database, table) = await RouteAsync(dataset);
 
@@ -610,18 +646,21 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         for (var i = 0; i < columns.Count; i++)
             query.Append(i == 0 ? '?' : '&').Append("columns=").Append(Uri.EscapeDataString(columns[i]));
 
-        // A row without an axis value cannot be placed on the axis, and with the sort descending
-        // it would come back ahead of every row that can. The service filters them out itself.
-        query.Append("&filter=").Append(Uri.EscapeDataString($"{xAxis} IS NOT NULL"));
+        if (xAxis.Length > 0)
+        {
+            // A row without an axis value cannot be placed on the axis, and with the sort descending
+            // it would come back ahead of every row that can. The service filters them out itself.
+            query.Append("&filter=").Append(Uri.EscapeDataString($"{xAxis} IS NOT NULL"));
 
-        // Descending, and reversed below. The service caps the read after ordering, so ascending
-        // would return the oldest rows of a long table and the chart would draw its distant past.
-        query.Append("&orderBy=").Append(Uri.EscapeDataString($"{xAxis} desc"));
+            // Descending, and reversed below. The service caps the read after ordering, so ascending
+            // would return the oldest rows of a long table and the chart would draw its distant past.
+            query.Append("&orderBy=").Append(Uri.EscapeDataString($"{xAxis} desc"));
+        }
 
         var data = await GetAsync(
             query.ToString(),
             DataFeedJson.Default.DatasetDataResponse,
-            $"read {dataset} ordered by {xAxis}");
+            xAxis.Length > 0 ? $"read {dataset} ordered by {xAxis}" : $"read {dataset}");
 
         var rows = data.Rows ?? [];
         if (rows.Count == 0) return structure;
@@ -629,8 +668,9 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         // Newest first on the wire, oldest first here: a chart reads left to right, and the last
         // point is the one the tree shows as the reading. The whole response is kept at this
         // stage — a member table spreads its rows across sensors, so the per-series cap is
-        // applied after the split, not before it.
-        var ordered = rows.Reverse().ToList();
+        // applied after the split, not before it. Nothing was sorted without an axis, so there is
+        // nothing to undo — those rows stay in the order the table gave them.
+        var ordered = xAxis.Length > 0 ? rows.Reverse().ToList() : [.. rows];
 
         // Keyed off the response's own column list, which reports the resolved path in the
         // catalog's spelling — that, not the order we asked in, is what the values line up with.
@@ -644,6 +684,56 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         }
 
         return BuildSchema(dataset, response, readings, xAxis);
+    }
+
+    /// <summary>
+    /// The projection cut down to the leaves someone selected, or null to read the whole table.
+    ///
+    /// <para>
+    /// Null is also the answer when the selection matches no column. A selection that matches
+    /// nothing is stale, not an instruction to read no columns, and a read of the axis alone would
+    /// blank every leaf on the screen.
+    /// </para>
+    /// </summary>
+    private static List<string>? Narrow(
+        string dataset, IReadOnlyList<string> leaves, IReadOnlyCollection<string>? wanted)
+    {
+        if (wanted is not { Count: > 0 }) return null;
+
+        var relative = wanted
+            .Select(path => SeriesAxis.Relative(dataset, path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // A member table addresses its leaves per sensor — "LIG-01.level" — while its columns stay
+        // bare. The suffix match is what carries a selection across that split.
+        bool Selected(string leaf) =>
+            relative.Contains(leaf) ||
+            relative.Any(path => path.EndsWith("." + leaf, StringComparison.OrdinalIgnoreCase));
+
+        var kept = new List<string>();
+        var matched = false;
+        foreach (var leaf in leaves)
+        {
+            if (Selected(leaf))
+            {
+                kept.Add(leaf);
+                matched = true;
+                continue;
+            }
+
+            // Two columns nobody selects and every read needs: the one the sensors split on, and
+            // the σ beside a leaf that was selected. Dropping either changes the tree's shape.
+            if (leaf.Equals(SeriesAxis.Member, StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add(leaf);
+                continue;
+            }
+
+            if (!leaf.EndsWith(MeasureNumerics.SigmaSuffix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (Selected(leaf[..^MeasureNumerics.SigmaSuffix.Length])) kept.Add(leaf);
+        }
+
+        return matched ? kept : null;
     }
 
     private static string Format(string? value)

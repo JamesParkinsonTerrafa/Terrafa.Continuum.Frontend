@@ -47,12 +47,14 @@ public static class MeasureNumerics
     {
         foreach (var node in root.Descendants())
         {
-            if (node.Kind != DataNodeKind.Measure || node.Reading is not { } reading) continue;
+            // DeclaredReading, not Reading: this binds the tree in hand, before anything the store
+            // holds for these paths is allowed to speak for them.
+            if (node.Kind != DataNodeKind.Measure || node.DeclaredReading is not { } reading) continue;
 
             var carrier = node.Children.FirstOrDefault(child =>
                 child.Kind == DataNodeKind.Measure &&
                 child.Name.Equals(SigmaLeafName, StringComparison.OrdinalIgnoreCase));
-            if (carrier?.Reading is not { } carrierReading || !carrierReading.HasValue) continue;
+            if (carrier?.DeclaredReading is not { } carrierReading || !carrierReading.HasValue) continue;
 
             // Regenerated with a wider wobble than the default 0.6%: a σ that varies per reading is
             // the whole reason to carry it as a leaf, and the flat default would draw a band
@@ -70,11 +72,13 @@ public static class MeasureNumerics
                 Selected = reading.Selected,
                 IsNew = reading.IsNew,
                 IsVector = reading.IsVector,
+                IsBoolean = reading.IsBoolean,
                 Value = reading.Value,
                 Sigma = carrierReading.Value,
                 Unit = reading.Unit,
                 History = reading.History,
-                SigmaHistory = carrierHistory
+                SigmaHistory = carrierHistory,
+                Cells = reading.Cells
             };
         }
     }
@@ -88,11 +92,13 @@ public static class MeasureNumerics
         Selected = source.Selected,
         IsNew = source.IsNew,
         IsVector = source.IsVector,
+        IsBoolean = source.IsBoolean,
         Value = source.Value,
         Sigma = source.Sigma,
         Unit = source.Unit,
         History = history,
         SigmaHistory = source.SigmaHistory,
+        Cells = source.Cells,
         IsSigmaCarrier = isSigmaCarrier
     };
 
@@ -122,10 +128,12 @@ public static class MeasureNumerics
             Selected = reading.Selected,
             IsNew = reading.IsNew,
             IsVector = reading.IsVector,
+            IsBoolean = reading.IsBoolean,
             Value = value,
             Sigma = sigma,
             Unit = unit,
-            History = withHistory ? History(path, value, sigma) : []
+            History = withHistory ? History(path, value, sigma) : [],
+            Cells = reading.Cells
         };
     }
 
@@ -155,6 +163,25 @@ public static class MeasureNumerics
         return Format(Math.Round(sigma * scale) / scale);
     }
 
+    /// <summary>A determination as text: 0 is false and anything else true — the encoding a
+    /// boolean leaf and a comparator share.</summary>
+    public static string FormatBoolean(double value) =>
+        double.IsNaN(value) ? "—" : value != 0 ? "true" : "false";
+
+    /// <summary>
+    /// A σ level, to two significant figures — "2.3σ". Infinite means the spread was exactly
+    /// zero: the inputs are exact, and so is the determination.
+    /// </summary>
+    public static string FormatSigmaLevel(double level)
+    {
+        if (double.IsNaN(level)) return "";
+        if (double.IsPositiveInfinity(level)) return "exact";
+        var magnitude = Math.Abs(level);
+        if (magnitude == 0) return "0σ";
+        var scale = Math.Pow(10, 1 - Math.Floor(Math.Log10(magnitude)));
+        return $"{Format(Math.Round(magnitude * scale) / scale)}σ";
+    }
+
     /// <summary>Splits a reading such as "8,410 bbl" into its number and its unit.</summary>
     public static (double Value, string Unit) ParseValue(string display)
     {
@@ -173,6 +200,18 @@ public static class MeasureNumerics
         return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             ? (value, text[end..].Trim())
             : (double.NaN, "");
+    }
+
+    /// <summary>
+    /// Reads a determination cell: "true"/"1" as 1, "false"/"0" as 0, anything else as NaN —
+    /// a boolean column carrying text that is neither stays valueless rather than guessed at.
+    /// </summary>
+    public static double ParseBoolean(string display)
+    {
+        var text = display.Trim();
+        if (text.Equals("true", StringComparison.OrdinalIgnoreCase) || text == "1") return 1;
+        if (text.Equals("false", StringComparison.OrdinalIgnoreCase) || text == "0") return 0;
+        return double.NaN;
     }
 
     /// <summary>

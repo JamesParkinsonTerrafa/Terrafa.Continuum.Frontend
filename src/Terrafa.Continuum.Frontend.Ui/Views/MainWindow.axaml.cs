@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     // Reached by SnapshotRunner in the desktop head, which drives the real controls.
     internal ContentControl ViewHost => root.ViewHost;
 
+    internal void ShowScreen(int index) => root.ShowScreen(index);
+
     internal SettingsFlyout Settings => root.Settings;
 
     internal ContactDialog Contact => root.Contact;

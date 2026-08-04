@@ -10,6 +10,8 @@ public enum DataNodeKind
 
 public sealed class DataTreeNode
 {
+    private Measure? declared;
+
     public required string Name { get; init; }
     public required string Path { get; init; }
     public DataNodeKind Kind { get; init; }
@@ -17,11 +19,34 @@ public sealed class DataTreeNode
     public bool IsNew { get; init; }
 
     /// <summary>
-    /// Settable so <see cref="MeasureNumerics.BindSigmaLeaves"/> can fold a "sigma" child into its
-    /// parent once the whole tree exists — a leaf cannot see its own children while it is being
-    /// constructed.
+    /// The value behind this leaf.
+    ///
+    /// <para>
+    /// The getter asks <see cref="ReadingStore"/> first, so a node that was copied into a mount
+    /// still reports the newest read rather than the one it was built with. Nothing has to walk the
+    /// tree writing values in, and no copy of a node can go stale.
+    /// </para>
+    ///
+    /// <para>
+    /// The setter writes what the tree itself declares, which is what the demo data carries and
+    /// what a fetched schema is built with. It is settable so
+    /// <see cref="MeasureNumerics.BindSigmaLeaves"/> can fold a "sigma" child into its parent once
+    /// the whole tree exists — a leaf cannot see its own children while it is being constructed.
+    /// </para>
     /// </summary>
-    public Measure? Reading { get; set; }
+    public Measure? Reading
+    {
+        get => ReadingStore.Instance.Find(Path) ?? declared;
+        set => declared = value;
+    }
+
+    /// <summary>
+    /// What this node was built with, before the store is consulted. Schema construction reads it
+    /// rather than <see cref="Reading"/>: binding a σ carrier or naming an axis must work off the
+    /// tree in hand, not off values a previous read left behind.
+    /// </summary>
+    public Measure? DeclaredReading => declared;
+
     public List<DataTreeNode> Children { get; } = [];
 
     public string KindLabel => Kind == DataNodeKind.Object

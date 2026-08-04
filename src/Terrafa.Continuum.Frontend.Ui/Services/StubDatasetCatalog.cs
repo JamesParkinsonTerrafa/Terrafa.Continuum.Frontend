@@ -47,7 +47,10 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
     /// and no ordering to impose — the demo trees are written in order. The axis is accepted and
     /// ignored rather than rejected, so a caller does not have to know which catalogue it holds.
     /// </summary>
-    public Task<DatasetSchema> GetSeriesAsync(string dataset, string xAxis) => GetSchemaAsync(dataset);
+    // The demo tree declares its own values, so there is no projection to narrow and nothing to
+    // read: the wanted list is accepted and ignored.
+    public Task<DatasetSchema> GetSeriesAsync(
+        string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null) => GetSchemaAsync(dataset);
 
     private static DatasetSchema BuildSchema(string dataset) => dataset switch
     {

@@ -38,6 +38,7 @@ public partial class TerminalTopBar : UserControl
         ModeButton.PointerPressed += (_, e) =>
         {
             BuilderModeSettings.Toggle();
+            if (!BuilderModeSettings.Enabled) TypographySettings.SetScale(TypographySettings.MaxScale);
             e.Handled = true;
         };
         pointerBubble = new BubbleKeyAnimator(PointerButton);

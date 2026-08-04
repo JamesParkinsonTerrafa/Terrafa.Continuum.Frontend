@@ -53,6 +53,10 @@ internal static class HiveType
     public static bool IsArray(string? type) =>
         type?.TrimStart().StartsWith("array<", StringComparison.OrdinalIgnoreCase) ?? false;
 
+    /// <summary>True for a column that carries a determination rather than a quantity.</summary>
+    public static bool IsBoolean(string? type) =>
+        type?.Trim().Equals("boolean", StringComparison.OrdinalIgnoreCase) ?? false;
+
     private static string? StructBody(string? type)
     {
         var trimmed = type?.Trim();

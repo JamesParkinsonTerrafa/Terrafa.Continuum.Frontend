@@ -6,13 +6,19 @@ public enum TileKind
 {
     Line,
     Bar,
-    Table
+    Table,
+
+    /// <summary>Rows of a derived table — real data rows, not one row per source.</summary>
+    Grid
 }
 
 public enum TileSourceKind
 {
     Measure,
-    Figure
+    Figure,
+
+    /// <summary>A <see cref="TableCatalog"/> key. Only a grid tile draws one.</summary>
+    Table
 }
 
 /// <summary>
@@ -27,7 +33,12 @@ public enum TileSourceKind
 /// </summary>
 public sealed record TileSource(TileSourceKind Kind, string Path, string? SigmaFigureKey = null)
 {
-    public string Display => Kind == TileSourceKind.Figure ? $"fig.{Path}" : Path;
+    public string Display => Kind switch
+    {
+        TileSourceKind.Figure => $"fig.{Path}",
+        TileSourceKind.Table => $"tbl.{Path}",
+        _ => Path
+    };
 
     /// <summary>Whether this source may be given a σ figure at all.</summary>
     public bool AcceptsSigmaFigure => Kind == TileSourceKind.Measure;
@@ -38,7 +49,7 @@ public sealed record TileSource(TileSourceKind Kind, string Path, string? SigmaF
     {
         get
         {
-            if (Kind == TileSourceKind.Figure) return $"fig.{Path}";
+            if (Kind != TileSourceKind.Measure) return Display;
             var segments = Path.Split('.');
             return segments.Length >= 2 ? $"{segments[^2]}.{segments[^1]}" : Path;
         }
@@ -97,12 +108,21 @@ public sealed class DashboardTile
     public TileKind Kind { get; set; }
     public List<TileSource> Sources { get; } = [];
 
+    // ── grid only ────────────────────────────────────────────────────────────
+
+    /// <summary>The column the rows lead with and sort by. Empty defers to the table's own.</summary>
+    public string IndexLeaf { get; set; } = "";
+
+    /// <summary>Draw boolean cells as green/red pills rather than plain text.</summary>
+    public bool HighlightBooleans { get; set; }
+
     public bool IsWired => Sources.Count > 0;
 
     public static string KindLabel(TileKind kind) => kind switch
     {
         TileKind.Line => "LINE CHART",
         TileKind.Bar => "BAR CHART",
+        TileKind.Grid => "DATA GRID",
         _ => "TABLE"
     };
 }
@@ -126,7 +146,10 @@ public static class TileData
 
     private static TileSeries? FromMeasure(TileSource source)
     {
-        if (Workspace.Instance.FindNode(source.Path)?.Reading is not { } reading) return null;
+        // By path, not by mount. Requiring the viewer's own mount is what made a dashboard saved on
+        // one machine read SOURCE MISSING on the next, and it is the same wall a shared dashboard
+        // would hit.
+        if (Workspace.ReadingAt(source.Path) is not { } reading) return null;
 
         var series = new TileSeries(
             source.ShortLabel,

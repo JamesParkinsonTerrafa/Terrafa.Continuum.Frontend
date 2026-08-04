@@ -17,6 +17,19 @@ namespace Terrafa.Continuum.Frontend.Views;
 public partial class MainView : UserControl
 {
     private const int ScreenCount = 7;
+
+    /// <summary>
+    /// The screen indices <see cref="CreateScreen"/> builds, named where anything outside this
+    /// class has to say which one it means. These are build indices, not strip positions — the
+    /// nav order is the operator's to rearrange and says nothing about what a screen is.
+    /// </summary>
+    public const int NetworkScreen = 0;
+
+    public const int MapScreen = 4;
+
+    /// <summary>The screen the app opens on.</summary>
+    public const int LandingScreen = MapScreen;
+
     private const double PlateWidth = 1560;
     private const double PlateHeight = 980;
 
@@ -34,6 +47,7 @@ public partial class MainView : UserControl
     private readonly Dictionary<int, UserControl> screens = [];
     private readonly ScaleTransform plateScale = new();
     private int activeIndex;
+    private string? sessionIdentity;
 
     public MainView() : this(new StaticDataFeed())
     {
@@ -58,9 +72,11 @@ public partial class MainView : UserControl
         _ = NetworkGraph.Instance;
 
         // Warm the catalogue while the first screen builds — DATA SOURCES then opens populated.
-        _ = WarmCatalogue();
+        // Signed out there is no live catalogue to warm, so the prefetch waits for sign-in;
+        // OnSessionChanged fires it once the session arrives.
+        if (AuthSession.Instance.IsSignedIn) _ = WarmCatalogue();
 
-        SwitchTo(0);
+        SwitchTo(LandingScreen);
         AddHandler(
             Avalonia.Input.InputElement.PointerPressedEvent,
             (_, e) => Console.WriteLine(
@@ -82,8 +98,10 @@ public partial class MainView : UserControl
         Workspace.Instance.Changed += InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed += InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed += InvalidateInactiveScreens;
+        sessionIdentity = CurrentSessionIdentity();
         AuthSession.Instance.Changed += OnSessionChanged;
         SettingsFlyout.ToggleRequested += ToggleSettings;
+        SettingsFlyout.SignInRequested += ShowConnect;
         ContactDialog.ShowRequested += ShowContact;
     }
 
@@ -97,25 +115,42 @@ public partial class MainView : UserControl
         NetworkGraph.Instance.Changed -= InvalidateInactiveScreens;
         AuthSession.Instance.Changed -= OnSessionChanged;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
+        SettingsFlyout.SignInRequested -= ShowConnect;
         ContactDialog.ShowRequested -= ShowContact;
         base.OnDetachedFromVisualTree(e);
     }
 
     /// <summary>
-    /// Signing in or out swaps the whole catalogue underneath the app, so the workspace is emptied
-    /// with it — a subtree mounted from the demo catalogue is meaningless against a real one, and
-    /// vice versa. The network and the board go with it: both are built out of leaves that are
-    /// about to stop existing, and a figure derived from the demo tree must not survive into a real
-    /// session. Resetting raises Changed, which drops the screens that are not on show; the DATA
-    /// SOURCES screen refreshes itself, since that is where the change was made.
+    /// Signing in or out swaps the whole catalogue underneath the app, so one account's mounts,
+    /// figures and readings must not survive into the next session — the workspace, network and
+    /// board all reset. Everything resets to the demo seed in both directions, so a signed-in restore
+    /// applies over the same state it would find at startup — ApplyWorkspaceAsync's KeepExisting
+    /// fallback needs the demo mount still present to keep saved tiles wired to it alive, and an
+    /// account with nothing saved lands on the seeded demo rather than a blank board. Every screen
+    /// is rebuilt, the one on show included — the session can change from the settings flyout over
+    /// any screen, not just DATA SOURCES.
+    ///
+    /// <para>
+    /// Only a change of identity resets. The session raises Changed for a token restore and a
+    /// renewal too, and those arrive after the restored documents have been applied — resetting on
+    /// one wipes the operator's work back to the seed and saves the seed over it.
+    /// </para>
     /// </summary>
     private void OnSessionChanged()
     {
-        var seedDemo = !AuthSession.Instance.IsSignedIn;
-        Workspace.Instance.Reset(seedDemo);
-        NetworkGraph.Instance.Reset(seedDemo);
-        Dashboard.Instance.Reset(seedDemo);
+        var identity = CurrentSessionIdentity();
+        if (identity == sessionIdentity) return;
+        sessionIdentity = identity;
+
+        Workspace.Instance.Reset(seedDemo: true);
+        NetworkGraph.Instance.Reset(seedDemo: true);
+        Dashboard.Instance.Reset(seedDemo: true);
+        RebuildScreens();
+        if (AuthSession.Instance.IsSignedIn) _ = WarmCatalogue();
     }
+
+    private static string? CurrentSessionIdentity() =>
+        AuthSession.Instance.IsSignedIn ? AuthSession.Instance.Username ?? "" : null;
 
     /// <summary>
     /// Prefetch only. A failure is deliberately dropped here: DataSourcesView makes the same call
@@ -147,7 +182,20 @@ public partial class MainView : UserControl
         plateScale.ScaleY = scale;
     }
 
+    /// <summary>
+    /// Opens a screen by build index. The nav keys go through the same path, so a caller that
+    /// needs a particular screen — SnapshotRunner drives several that only exist on NETWORK —
+    /// asks for it rather than assuming where the app happens to land.
+    /// </summary>
+    internal void ShowScreen(int index) => SwitchTo(index);
+
     private void ToggleSettings() => Settings.Toggle();
+
+    private void ShowConnect()
+    {
+        Settings.Hide();
+        ConnectDataFlow.Show(ConnectDialog, AuthSession.Instance, () => { });
+    }
 
     private void ShowContact()
     {

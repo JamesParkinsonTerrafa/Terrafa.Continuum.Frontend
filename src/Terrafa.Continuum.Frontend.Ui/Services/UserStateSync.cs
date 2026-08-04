@@ -137,6 +137,21 @@ public static class UserStateSync
             if (await network is { } networkState) Apply(() => UserStateMapper.ApplyNetwork(networkState));
             if (await dashboard is { } dashboardState) Apply(() => UserStateMapper.ApplyDashboard(dashboardState));
 
+            // Structure is restored, so the selections are known and the values can be read. This
+            // is the only place values are read on the way in — there is no clock behind it and no
+            // second pass. A screen showing a stale number is not a case that exists any more.
+            if (Catalog is { } readCatalog)
+            {
+                try
+                {
+                    await ReadingLoader.LoadAsync(readCatalog);
+                }
+                catch (Exception)
+                {
+                    // Per-dataset failures are handled inside. This guards the loader itself.
+                }
+            }
+
             lock (Gate) loaded = true;
         }
         finally

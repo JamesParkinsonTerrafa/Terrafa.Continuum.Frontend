@@ -15,6 +15,7 @@
       <ContentControl x:Name="ViewHost" />
       <controls:SettingsFlyout x:Name="Settings" />
       <controls:ContactDialog x:Name="Contact" />
+      <controls:OverlayDialog x:Name="ConnectDialog" />
     </Panel>
   </Panel>
 </UserControl>

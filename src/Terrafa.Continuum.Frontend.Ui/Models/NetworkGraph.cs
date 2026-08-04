@@ -8,7 +8,14 @@ public enum NetworkNodeKind
 {
     Measure,
     Transfer,
-    Figure
+    Figure,
+    Compare,
+
+    /// <summary>Gathers columns into a row set — the relational face of the canvas.</summary>
+    Select,
+
+    /// <summary>Commits a select's row set to <see cref="TableCatalog"/>, as Figure does a scalar.</summary>
+    Table
 }
 
 /// <summary>
@@ -37,6 +44,11 @@ public sealed class NetworkNode
     public string Estimator { get; init; } = "";
 
     public bool IsEstimator => Estimator.Length > 0;
+
+    // ── comparator only ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>A <see cref="FunctionLibrary"/> boolean-group name — which comparison this is.</summary>
+    public string Operator { get; set; } = "";
 
     /// <summary>
     /// A transfer the app will not evaluate — the seeded hazard, whose frailty term is not
@@ -70,15 +82,26 @@ public sealed class NetworkGraph
     public static IReadOnlyList<string> EstimatorPorts { get; } =
         [EstimatorPortX, EstimatorPortY, EstimatorPortPredict];
 
+    public const string ComparePortA = "a";
+    public const string ComparePortB = "b";
+
+    public static IReadOnlyList<string> ComparePorts { get; } = [ComparePortA, ComparePortB];
+
     public static NetworkGraph Instance { get; } = new();
 
     /// <summary>What "CHANGE FUNCTION" cycles through: identity, then the primitives.</summary>
     private static readonly string[] StageCycle =
         ["", "exp", "log", "sqrt", "square", "tanh", "negate", "clip"];
 
+    /// <summary>What "CHANGE OPERATOR" cycles through — the boolean-group comparisons.</summary>
+    private static readonly string[] OperatorCycle =
+        ["greater_than", "greater_equal", "less_than", "less_equal"];
+
     private readonly List<NetworkNode> nodes = [];
     private readonly List<NetworkEdge> edges = [];
     private int nextTransfer;
+    private int nextCompare;
+    private int nextSelect;
     private int suspended;
 
     public event Action? Changed;
@@ -97,9 +120,19 @@ public sealed class NetworkGraph
     {
         Seed();
         Workspace.Instance.Changed += PruneUnmounted;
+
+        // Values arrive after the structure does — a restored session applies the network before
+        // ReadingLoader has read a thing, and a dataset mounted later is read later still. Every
+        // figure and table would otherwise hold whatever it computed against no readings at all:
+        // a select over a join evaluated at that moment reports its key columns as carrying no
+        // cells, and nothing afterwards ever asked it again. Recompute, and leave the announcing
+        // to the catalogues — a reading landing changes what they hold, not what is on the canvas.
+        ReadingStore.Instance.Changed += Recompute;
     }
 
     public static string FigureId(string key) => $"figure:{key}";
+
+    public static string TableId(string key) => $"table:{key}";
 
     public NetworkNode? Find(string id) => nodes.FirstOrDefault(node => node.Id == id);
 
@@ -160,6 +193,21 @@ public sealed class NetworkGraph
         return node;
     }
 
+    public NetworkNode AddComparator(double x, double y)
+    {
+        var node = new NetworkNode
+        {
+            Id = $"compare:c{++nextCompare}",
+            Kind = NetworkNodeKind.Compare,
+            Operator = OperatorCycle[0],
+            X = Placed(x),
+            Y = Placed(y)
+        };
+        nodes.Add(node);
+        Publish();
+        return node;
+    }
+
     public NetworkNode AddFigure(string key, double x, double y)
     {
         if (Find(FigureId(key)) is { } existing) return existing;
@@ -167,6 +215,36 @@ public sealed class NetworkGraph
         {
             Id = FigureId(key),
             Kind = NetworkNodeKind.Figure,
+            Key = key,
+            X = Placed(x),
+            Y = Placed(y)
+        };
+        nodes.Add(node);
+        Publish();
+        return node;
+    }
+
+    public NetworkNode AddSelect(double x, double y)
+    {
+        var node = new NetworkNode
+        {
+            Id = $"select:s{++nextSelect}",
+            Kind = NetworkNodeKind.Select,
+            X = Placed(x),
+            Y = Placed(y)
+        };
+        nodes.Add(node);
+        Publish();
+        return node;
+    }
+
+    public NetworkNode AddTableSink(string key, double x, double y)
+    {
+        if (Find(TableId(key)) is { } existing) return existing;
+        var node = new NetworkNode
+        {
+            Id = TableId(key),
+            Kind = NetworkNodeKind.Table,
             Key = key,
             X = Placed(x),
             Y = Placed(y)
@@ -191,36 +269,55 @@ public sealed class NetworkGraph
             else
                 FigureCatalog.Instance.Remove(node.Key);
         }
+
+        // A table has no declared form to fall back to — every one is computed, so off the canvas
+        // means out of the catalogue.
+        if (node.Kind == NetworkNodeKind.Table) TableCatalog.Instance.Remove(node.Key);
+
         Publish();
     }
 
     /// <summary>
-    /// Whether the wire may be drawn. Measures only ever feed, figures only ever receive, and a loop
-    /// is refused outright rather than being caught later by the evaluator's own guard.
+    /// Whether the wire may be drawn. Measures only ever feed, figures and tables only ever
+    /// receive, and a loop is refused outright rather than being caught later by the evaluator's
+    /// own guard. The select's output is a row set, not a reading — the only thing that can take
+    /// one is a table sink, and a table sink takes nothing else.
     /// </summary>
     public bool CanConnect(string fromId, string toId)
     {
         if (fromId == toId) return false;
         if (Find(fromId) is not { } from || Find(toId) is not { } to) return false;
-        if (from.Kind == NetworkNodeKind.Figure || to.Kind == NetworkNodeKind.Measure) return false;
+        if (from.Kind is NetworkNodeKind.Figure or NetworkNodeKind.Table) return false;
+        if (to.Kind == NetworkNodeKind.Measure) return false;
+        if (from.Kind == NetworkNodeKind.Select && to.Kind != NetworkNodeKind.Table) return false;
+        if (to.Kind == NetworkNodeKind.Table &&
+            (from.Kind != NetworkNodeKind.Select || InputsOf(toId).Any())) return false;
+        if (to.Kind == NetworkNodeKind.Select &&
+            from.Kind is not (NetworkNodeKind.Measure or NetworkNodeKind.Compare)) return false;
         if (edges.Any(edge => edge.FromId == fromId && edge.ToId == toId)) return false;
-        if (to.IsEstimator && InputsOf(toId).Count() >= EstimatorPorts.Count) return false;
+        if (PortRoles(to) is { } roles && InputsOf(toId).Count() >= roles.Count) return false;
         return !Reaches(toId, fromId);
     }
 
     public bool Connect(string fromId, string toId)
     {
         if (!CanConnect(fromId, toId)) return false;
-        var port = Find(toId) is { IsEstimator: true } ? NextFreePort(toId) : "";
+        var port = Find(toId) is { } to && PortRoles(to) is { } roles ? NextFreePort(toId, roles) : "";
         edges.Add(new NetworkEdge(fromId, toId, port));
         Publish();
         return true;
     }
 
-    private string NextFreePort(string toId)
+    /// <summary>The named input roles a node wires by, or null for order-free inputs.</summary>
+    private static IReadOnlyList<string>? PortRoles(NetworkNode node) =>
+        node.IsEstimator ? EstimatorPorts
+        : node.Kind == NetworkNodeKind.Compare ? ComparePorts
+        : null;
+
+    private string NextFreePort(string toId, IReadOnlyList<string> roles)
     {
         var taken = edges.Where(edge => edge.ToId == toId).Select(edge => edge.Port).ToHashSet();
-        return EstimatorPorts.First(port => !taken.Contains(port));
+        return roles.First(port => !taken.Contains(port));
     }
 
     public string? SourceOnPort(NetworkNode node, string port) =>
@@ -240,6 +337,26 @@ public sealed class NetworkGraph
             {
                 EstimatorPortX => EstimatorPortY,
                 EstimatorPortY => EstimatorPortX,
+                _ => edges[index].Port
+            };
+            if (port == edges[index].Port) continue;
+            edges[index] = edges[index] with { Port = port };
+            swapped = true;
+        }
+        if (swapped) Publish();
+    }
+
+    public void SwapCompareWires(NetworkNode node)
+    {
+        if (node.Kind != NetworkNodeKind.Compare) return;
+        var swapped = false;
+        for (var index = 0; index < edges.Count; index++)
+        {
+            if (edges[index].ToId != node.Id) continue;
+            var port = edges[index].Port switch
+            {
+                ComparePortA => ComparePortB,
+                ComparePortB => ComparePortA,
                 _ => edges[index].Port
             };
             if (port == edges[index].Port) continue;
@@ -292,20 +409,32 @@ public sealed class NetworkGraph
         edges.Clear();
         nodes.AddRange(loadedNodes);
         edges.AddRange(loadedEdges);
-        nextTransfer = nodes
-            .Select(node => node.Id.StartsWith("transfer:t", StringComparison.Ordinal)
-                && int.TryParse(node.Id["transfer:t".Length..], out var index) ? index : 0)
-            .DefaultIfEmpty(0)
-            .Max();
+        nextTransfer = HighestId("transfer:t");
+        nextCompare = HighestId("compare:c");
+        nextSelect = HighestId("select:s");
         suspended--;
         Publish();
     }
+
+    private int HighestId(string prefix) => nodes
+        .Select(node => node.Id.StartsWith(prefix, StringComparison.Ordinal)
+            && int.TryParse(node.Id[prefix.Length..], out var index) ? index : 0)
+        .DefaultIfEmpty(0)
+        .Max();
 
     public void CycleStage(NetworkNode transfer)
     {
         if (transfer.Kind != NetworkNodeKind.Transfer || transfer.IsOpaque || transfer.IsEstimator) return;
         var index = Array.IndexOf(StageCycle, transfer.Stage);
         transfer.Stage = StageCycle[(index + 1) % StageCycle.Length];
+        Publish();
+    }
+
+    public void CycleOperator(NetworkNode comparator)
+    {
+        if (comparator.Kind != NetworkNodeKind.Compare) return;
+        var index = Array.IndexOf(OperatorCycle, comparator.Operator);
+        comparator.Operator = OperatorCycle[(index + 1) % OperatorCycle.Length];
         Publish();
     }
 
@@ -328,6 +457,12 @@ public sealed class NetworkGraph
     {
         NetworkNodeKind.Measure => LeafTitle(node.Key),
         NetworkNodeKind.Figure => $"fig.{node.Key}",
+        NetworkNodeKind.Table => $"tbl.{node.Key}",
+        NetworkNodeKind.Select => SelectTitle(node),
+        NetworkNodeKind.Compare => TransferMath.ComparisonFormula(
+            FunctionLibrary.Instance.Find(node.Operator),
+            SourceTitleOnPort(node, ComparePortA),
+            SourceTitleOnPort(node, ComparePortB)),
         _ when node.IsOpaque => node.OpaqueTitle,
         _ when node.IsEstimator => TransferMath.EstimatorFormula(
             node.Estimator,
@@ -343,17 +478,49 @@ public sealed class NetworkGraph
     public IReadOnlyList<string> InputLabels(NetworkNode node) =>
         InputsOf(node.Id).Select(id => Find(id) is { } source ? Title(source) : id).ToList();
 
-    /// <summary>The transfer's own output, for the card that draws it. Null when it cannot be had.</summary>
+    /// <summary>The node's own output, for the card that draws it. Null when it cannot be had.</summary>
     public TransferResult? Evaluate(NetworkNode node)
     {
-        if (node.Kind != NetworkNodeKind.Transfer || node.IsOpaque) return null;
-        if (node.IsEstimator) return EvaluateEstimatorNode(node, []);
-        var terms = InputsOf(node.Id)
-            .Select(id => Reading(id, []))
-            .OfType<TransferInput>()
-            .ToList();
-        return TransferMath.Evaluate(node.Combiner, Stage(node), terms);
+        if (node.IsOpaque) return null;
+        switch (node.Kind)
+        {
+            case NetworkNodeKind.Compare:
+                return EvaluateComparatorNode(node, []);
+            case NetworkNodeKind.Transfer when node.IsEstimator:
+                return EvaluateEstimatorNode(node, []);
+            case NetworkNodeKind.Transfer:
+            {
+                var terms = InputsOf(node.Id)
+                    .Select(id => Reading(id, []))
+                    .OfType<TransferInput>()
+                    .ToList();
+                return TransferMath.Evaluate(node.Combiner, Stage(node), terms);
+            }
+            default:
+                return null;
+        }
     }
+
+    private TransferResult? EvaluateComparatorNode(NetworkNode node, HashSet<string> path)
+    {
+        if (FunctionLibrary.Instance.Find(node.Operator) is not { } operation) return null;
+
+        // Leaves from two tables have no shared row order to zip — standalone, this comparison
+        // means nothing; inside a SELECT the join supplies the alignment and evaluates it per
+        // row instead. The checker's R3 says so on the card.
+        if (PortLeafDataset(node, ComparePortA) is { } a && PortLeafDataset(node, ComparePortB) is { } b &&
+            !string.Equals(a, b, StringComparison.Ordinal)) return null;
+
+        return TransferMath.EvaluateComparison(
+            operation,
+            ReadingOnPort(node, ComparePortA, path),
+            ReadingOnPort(node, ComparePortB, path));
+    }
+
+    private string? PortLeafDataset(NetworkNode node, string port) =>
+        SourceOnPort(node, port) is { } sourceId && Find(sourceId) is { Kind: NetworkNodeKind.Measure } leaf
+            ? DatasetOf(leaf.Key)
+            : null;
 
     public TransferInput? InputOnPort(NetworkNode node, string port) => ReadingOnPort(node, port, []);
 
@@ -378,15 +545,69 @@ public sealed class NetworkGraph
     // ── evaluation ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Recomputes every figure on the canvas and hands it to the catalogue. Called after anything
-    /// structural, and after the workspace changes — a leaf that has just been unmounted must stop
-    /// contributing to a figure the dashboard is still plotting.
+    /// Recomputes every committed output on the canvas — figures and tables — and hands them to
+    /// their catalogues. Called after anything structural, and after the workspace changes — a
+    /// leaf that has just been unmounted must stop contributing to what the dashboard is drawing.
     /// </summary>
     public void Recompute()
     {
         foreach (var node in nodes.Where(node => node.Kind == NetworkNodeKind.Figure).ToList())
             FigureCatalog.Instance.Register(BuildFigure(node));
+        foreach (var node in nodes.Where(node => node.Kind == NetworkNodeKind.Table).ToList())
+            TableCatalog.Instance.Register(BuildDerivedTable(node));
     }
+
+    // ── select ───────────────────────────────────────────────────────────────────────────────
+
+    private string SelectTitle(NetworkNode node)
+    {
+        var labels = InputsOf(node.Id)
+            .Select(id => Find(id) switch
+            {
+                { Kind: NetworkNodeKind.Measure } leaf => LeafName(leaf.Key),
+                { Kind: NetworkNodeKind.Compare } => "computed",
+                _ => null
+            })
+            .OfType<string>()
+            .ToList();
+        var joined = labels.Count == 0 ? "…" : string.Join(", ", labels);
+        var title = $"select({joined})";
+        return title.Length > 34 ? title[..33] + "…" : title;
+    }
+
+    private DerivedTable BuildDerivedTable(NetworkNode sink)
+    {
+        var select = InputsOf(sink.Id)
+            .Select(Find)
+            .OfType<NetworkNode>()
+            .FirstOrDefault(candidate => candidate.Kind == NetworkNodeKind.Select);
+        if (select is null)
+        {
+            return new DerivedTable
+            {
+                Key = sink.Key,
+                Note = "nothing wired into it yet — wire a SELECT into its left port"
+            };
+        }
+        return EvaluateSelect(select, sink.Key);
+    }
+
+    /// <summary>The select's row set — the semantics live in <see cref="SelectEvaluation"/>.</summary>
+    public DerivedTable EvaluateSelect(NetworkNode select, string key = "") =>
+        SelectEvaluation.Evaluate(this, select, key);
+
+    /// <summary>
+    /// The dataset a leaf path belongs to — its mounted subtree when there is one, else the path
+    /// with its leaf segment cut off. The fallback exists for a leaf whose dataset was unmounted
+    /// while its values survive in the store; it can misjudge a member subtree's sensor level,
+    /// which costs a spurious two-table warning, never a wrong join.
+    /// </summary>
+    internal static string DatasetOf(string path) =>
+        Workspace.Instance.SubtreeOf(path)?.Dataset
+        ?? (path.LastIndexOf('.') is var cut && cut > 0 ? path[..cut] : path);
+
+    internal static string LeafName(string path) =>
+        path.LastIndexOf('.') is var cut && cut >= 0 ? path[(cut + 1)..] : path;
 
     private DashboardFigure BuildFigure(NetworkNode node)
     {
@@ -405,22 +626,28 @@ public sealed class NetworkGraph
         if (Find(inputs[0]) is not { } source || Reading(inputs[0], []) is not { } reading)
             return declared ?? Unwired(node.Key, "upstream carries no value the chain can commit to");
 
-        var note = source.Kind == NetworkNodeKind.Transfer
+        var note = source.Kind is NetworkNodeKind.Transfer or NetworkNodeKind.Compare
             ? Evaluate(source)?.Note ?? ""
             : "σ straight from the tree leaf";
 
         return new DashboardFigure
         {
             Key = node.Key,
-            Display = $"{MeasureNumerics.Format(reading.Value)} {reading.Unit}".Trim(),
-            SigmaDisplay = double.IsNaN(reading.Sigma) || reading.Sigma <= 0
-                ? ""
-                : $"± {MeasureNumerics.FormatSigma(reading.Sigma)}",
+            Display = reading.IsBoolean
+                ? MeasureNumerics.FormatBoolean(reading.Value)
+                : $"{MeasureNumerics.Format(reading.Value)} {reading.Unit}".Trim(),
+            SigmaDisplay = reading.IsBoolean
+                ? MeasureNumerics.FormatSigmaLevel(reading.SigmaLevel)
+                : double.IsNaN(reading.Sigma) || reading.Sigma <= 0
+                    ? ""
+                    : $"± {MeasureNumerics.FormatSigma(reading.Sigma)}",
             Value = reading.Value,
             Sigma = reading.Sigma,
             Unit = reading.Unit,
             History = reading.History,
             SigmaHistory = reading.SigmaHistory,
+            IsBoolean = reading.IsBoolean,
+            SigmaLevel = reading.SigmaLevel,
             Note = note,
             Origin = FigureOrigin.Derived,
             Inputs = [Title(source)]
@@ -441,10 +668,19 @@ public sealed class NetworkGraph
             {
                 case NetworkNodeKind.Measure:
                 {
-                    if (Workspace.Instance.FindNode(node.Key)?.Reading is not { HasValue: true } reading) return null;
+                    if (Workspace.ReadingAt(node.Key) is not { HasValue: true } reading) return null;
                     return new TransferInput(
                         LeafTitle(node.Key), reading.Value, reading.Sigma, reading.Unit,
-                        reading.History, reading.SigmaHistory);
+                        reading.History, reading.SigmaHistory,
+                        IsBoolean: reading.IsBoolean);
+                }
+                case NetworkNodeKind.Compare:
+                {
+                    if (EvaluateComparatorNode(node, path) is not { } result) return null;
+                    return new TransferInput(
+                        Title(node), result.Value, result.Sigma, result.Unit,
+                        result.History, result.SigmaHistory,
+                        IsBoolean: true, SigmaLevel: result.SigmaLevel);
                 }
                 case NetworkNodeKind.Transfer:
                 {
@@ -487,11 +723,19 @@ public sealed class NetworkGraph
 
     // ── session ──────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Drops leaves whose dataset is no longer mounted, then recomputes what fed on them.</summary>
+    /// <summary>
+    /// Drops leaves nothing can answer for, then recomputes what fed on them.
+    ///
+    /// <para>
+    /// The test is whether a value exists at the path, not whether this machine mounted it. A
+    /// network restored beside a workspace that does not name its datasets — the same account on a
+    /// second machine — would otherwise have its cards deleted rather than drawn.
+    /// </para>
+    /// </summary>
     private void PruneUnmounted()
     {
         var orphans = nodes
-            .Where(node => node.Kind == NetworkNodeKind.Measure && Workspace.Instance.FindNode(node.Key) is null)
+            .Where(node => node.Kind == NetworkNodeKind.Measure && Workspace.ReadingAt(node.Key) is null)
             .Select(node => node.Id)
             .ToList();
 
@@ -512,7 +756,10 @@ public sealed class NetworkGraph
         nodes.Clear();
         edges.Clear();
         nextTransfer = 0;
+        nextCompare = 0;
+        nextSelect = 0;
         FigureCatalog.Instance.Reset();
+        TableCatalog.Instance.Reset();
         if (seedDemo) Seed();
         suspended--;
         Publish();

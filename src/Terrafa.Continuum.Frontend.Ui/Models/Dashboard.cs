@@ -133,6 +133,7 @@ public sealed class Dashboard
         {
             TileKind.Line => "line",
             TileKind.Bar => "bar",
+            TileKind.Grid => "grid",
             _ => "table"
         };
         var index = 1;

@@ -90,5 +90,10 @@ internal sealed partial class DataFeedJson : JsonSerializerContext;
 /// fit to show a user: the service's own <c>title — detail</c> when it replied, and the transport
 /// failure when it did not.
 /// </summary>
-public sealed class DataFeedException(string message, Exception? inner = null)
-    : Exception(message, inner);
+public sealed class DataFeedException : Exception
+{
+    public DataFeedException(string message, Exception? inner = null) : base(message, inner)
+    {
+        Console.WriteLine($"[datafeed] {message}");
+    }
+}

@@ -61,11 +61,12 @@ public sealed class FunctionLibrary
     public const string ClipsGroup = "clips";
     public const string TrigonometricGroup = "trigonometric";
     public const string AggregatesGroup = "aggregates";
+    public const string BooleanGroup = "boolean";
     public const string CompositesGroup = "composites";
     public const string RegressionGroup = "regression";
 
     public static IReadOnlyList<string> PrimitiveGroups { get; } =
-        [ArithmeticGroup, LogExpGroup, PowerGroup, ClipsGroup, TrigonometricGroup, AggregatesGroup];
+        [ArithmeticGroup, LogExpGroup, PowerGroup, ClipsGroup, TrigonometricGroup, AggregatesGroup, BooleanGroup];
 
     public static IReadOnlyList<string> EstimatorGroups { get; } = [RegressionGroup];
 
@@ -105,7 +106,15 @@ public sealed class FunctionLibrary
             Unary("tanh", TrigonometricGroup, Math.Tanh, inner => $"tanh({inner})", "C∞ · bounded"),
             Aggregate("max", values => values.Max(), "upper envelope of its arguments"),
             Aggregate("min", values => values.Min(), "lower envelope of its arguments"),
-            Aggregate("mean", values => values.Average(), "equal-weight average")
+            Aggregate("mean", values => values.Average(), "equal-weight average"),
+            // Determinations, encoded 1/0. On the network these live on a COMPARATOR node, which
+            // carries the σ level beside the answer; in a composition they are plain step
+            // functions. Strict and non-strict differ only on exact ties, which is exactly when
+            // the difference matters.
+            Binary("greater_than", BooleanGroup, (a, b) => a > b ? 1 : 0, (a, b) => $"{a} > {b}", "determination · σ level = |a−b|/√(σa²+σb²)"),
+            Binary("greater_equal", BooleanGroup, (a, b) => a >= b ? 1 : 0, (a, b) => $"{a} ≥ {b}", "determination · ties read true"),
+            Binary("less_than", BooleanGroup, (a, b) => a < b ? 1 : 0, (a, b) => $"{a} < {b}", "determination · σ level = |a−b|/√(σa²+σb²)"),
+            Binary("less_equal", BooleanGroup, (a, b) => a <= b ? 1 : 0, (a, b) => $"{a} ≤ {b}", "determination · ties read true")
         ];
         Estimators =
         [

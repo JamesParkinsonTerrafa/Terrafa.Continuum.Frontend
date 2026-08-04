@@ -6,6 +6,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Terrafa.Continuum.Frontend.Services;
 using Terrafa.Continuum.Frontend.Themes;
 
 namespace Terrafa.Continuum.Frontend.Controls;
@@ -13,6 +14,7 @@ namespace Terrafa.Continuum.Frontend.Controls;
 public class SettingsFlyout : Panel
 {
     public static event Action? ToggleRequested;
+    public static event Action? SignInRequested;
 
     public static void RequestToggle() => ToggleRequested?.Invoke();
 
@@ -62,6 +64,8 @@ public class SettingsFlyout : Panel
     private readonly TextBlock gridLinesOnLabel;
     private readonly TextBlock gridLinesOffLabel;
     private readonly TextBlock waveValue;
+    private readonly TextBlock accountName;
+    private readonly TextBlock accountAction;
 
     public SettingsFlyout()
     {
@@ -91,6 +95,19 @@ public class SettingsFlyout : Panel
         appearanceArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         csvArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
+        accountName = new TextBlock
+        {
+            FontSize = 10,
+            LetterSpacing = 1,
+            Foreground = Palette.TextSub
+        };
+        accountAction = new TextBlock
+        {
+            FontSize = 9,
+            LetterSpacing = 1,
+            FontWeight = FontWeight.Bold,
+            Foreground = Palette.Amber
+        };
         grainBody = BuildSectionBody();
         buttonBody = BuildSectionBody();
         bubbleBody = BuildSectionBody();
@@ -212,6 +229,7 @@ public class SettingsFlyout : Panel
 
         var column = new StackPanel();
         column.Children.Add(BuildHeaderRow());
+        column.Children.Add(BuildAccountRow());
         column.Children.Add(BuildTabLayoutRow());
         column.Children.Add(BuildThemeRow());
         column.Children.Add(BuildHintsRow());
@@ -258,10 +276,12 @@ public class SettingsFlyout : Panel
         HintSettings.Changed += RefreshHintLabels;
         SnapSettings.Changed += RefreshSnapLabels;
         TabLayoutSettings.Changed += RefreshTabLayoutLabels;
+        AuthSession.Instance.Changed += RefreshAccountRow;
         RefreshThemeLabels();
         RefreshHintLabels();
         RefreshSnapLabels();
         RefreshTabLayoutLabels();
+        RefreshAccountRow();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -271,6 +291,7 @@ public class SettingsFlyout : Panel
         HintSettings.Changed -= RefreshHintLabels;
         SnapSettings.Changed -= RefreshSnapLabels;
         TabLayoutSettings.Changed -= RefreshTabLayoutLabels;
+        AuthSession.Instance.Changed -= RefreshAccountRow;
     }
 
     private static TextBlock BuildToggleLabel(string text) => new()
@@ -334,6 +355,38 @@ public class SettingsFlyout : Panel
             Foreground = Palette.Amber
         });
         return BuildRow(content, separator: true);
+    }
+
+    private Border BuildAccountRow()
+    {
+        var content = new DockPanel();
+        DockPanel.SetDock(accountAction, Dock.Right);
+        content.Children.Add(accountAction);
+        content.Children.Add(accountName);
+
+        var row = BuildRow(content, separator: true);
+        row.Cursor = new Cursor(StandardCursorType.Hand);
+        row.PointerPressed += (_, e) =>
+        {
+            if (AuthSession.Instance.IsSignedIn)
+            {
+                AuthSession.Instance.SignOut();
+            }
+            else
+            {
+                Hide();
+                SignInRequested?.Invoke();
+            }
+            e.Handled = true;
+        };
+        return row;
+    }
+
+    private void RefreshAccountRow()
+    {
+        var isSignedIn = AuthSession.Instance.IsSignedIn;
+        accountName.Text = isSignedIn ? AuthSession.Instance.Username ?? "" : "NOT SIGNED IN";
+        accountAction.Text = isSignedIn ? "SIGN OUT" : "SIGN IN";
     }
 
     private Border BuildThemeRow() =>

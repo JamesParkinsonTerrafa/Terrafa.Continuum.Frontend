@@ -46,20 +46,31 @@
       <ContentControl DockPanel.Dock="Right"
                       VerticalAlignment="Center"
                       Content="{Binding RightContent, ElementName=Root}" />
-      <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-        <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="{DynamicResource FontSize12}" FontWeight="Bold"
-                   LetterSpacing="2" Cursor="Hand" />
-        <TextBlock Text="CONTINUUM CORE" FontSize="{DynamicResource FontSize12}" LetterSpacing="1"
-                   Foreground="{StaticResource TextMutedBrush}" />
-        <TextBlock Text="│" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextGhostBrush}" />
-        <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
-                   Foreground="{StaticResource AmberBrush}" />
-        <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
-                   Foreground="{StaticResource TextMutedBrush}" />
-        <TextBlock Text="· NORTHGATE TERMINALS, A FICTIONAL EUROPEAN TERMINAL AND BLENDER · 12 TANKS · 18 MONTHS OF HISTORY"
-                   FontSize="{DynamicResource FontSize12}"
-                   Foreground="{StaticResource TextFaintBrush}" />
-      </StackPanel>
+      <!-- The strap line is longer than the bar at narrow widths, and the fill child of a DockPanel
+           is free to paint over the docked buttons, so the run is clipped and masked out to nothing
+           before it reaches them. -->
+      <Border ClipToBounds="True">
+        <Border.OpacityMask>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+            <GradientStop Offset="0.88" Color="White" />
+            <GradientStop Offset="1.0" Color="Transparent" />
+          </LinearGradientBrush>
+        </Border.OpacityMask>
+        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+          <TextBlock x:Name="BrandButton" Classes="engraved" Text="TERRAFA" FontSize="{DynamicResource FontSize12}" FontWeight="Bold"
+                     LetterSpacing="2" Cursor="Hand" />
+          <TextBlock Text="CONTINUUM CORE" FontSize="{DynamicResource FontSize12}" LetterSpacing="1"
+                     Foreground="{StaticResource TextMutedBrush}" />
+          <TextBlock Text="│" FontSize="{DynamicResource FontSize12}" Foreground="{StaticResource TextGhostBrush}" />
+          <TextBlock Text="{Binding CommandText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
+                     Foreground="{StaticResource AmberBrush}" />
+          <TextBlock Text="{Binding SubtitleText, ElementName=Root}" FontSize="{DynamicResource FontSize12}"
+                     Foreground="{StaticResource TextMutedBrush}" />
+          <TextBlock Text="· NORTHGATE TERMINALS, A FICTIONAL EUROPEAN TERMINAL AND BLENDER · 12 TANKS · 18 MONTHS OF HISTORY"
+                     FontSize="{DynamicResource FontSize12}"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </StackPanel>
+      </Border>
     </DockPanel>
   </Border>
 </UserControl>

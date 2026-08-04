@@ -304,9 +304,10 @@ public partial class DataSourcesView : UserControl
             preview = series;
             previewMessage = null;
 
-            // The operator may have mounted from the structure-only pass while this query was
-            // running — values landing later belong on that mount too, not only on the preview.
-            if (workspace.IsMounted(dataset)) workspace.RefreshReadings(series);
+            // Values are found by path, so one write reaches the preview, any mount of this
+            // dataset, and every tile wired to it. Nothing walks a tree to hand them out.
+            ReadingStore.Instance.Write(series);
+            workspace.SetAxis(dataset, series.XAxis);
         }
         catch (Exception ex)
         {
@@ -1047,6 +1048,7 @@ public partial class DataSourcesView : UserControl
         Dialog.Show("ADD TO TREE", body, "ADD <GO>", () =>
         {
             workspace.Mount(schema, node);
+            _ = ReadingLoader.LoadDatasetAsync(catalog, schema.Dataset);
             RenderPreview();
             RebuildCatalogue();
             RebuildMounted();

@@ -33,6 +33,7 @@ public partial class NetworkView : UserControl
     private readonly NetworkGraph graph = NetworkGraph.Instance;
     private readonly Dictionary<string, RailRow> railRows = [];
     private readonly Dictionary<string, DiagramNode> placed = [];
+    private readonly Dictionary<string, string> cardObjections = [];
     private readonly HashSet<string> collapsedSubtrees = [];
     private readonly HashSet<string> canvasHoverPaths = [];
     private RailDrag? railDrag;
@@ -55,6 +56,7 @@ public partial class NetworkView : UserControl
         {
             NetworkGraph.EstimatorPortX or NetworkGraph.EstimatorPortY => (Palette.Cyan, [4, 4], 0.85),
             NetworkGraph.EstimatorPortPredict => (Palette.Green, null, 0.85),
+            NetworkGraph.ComparePortA or NetworkGraph.ComparePortB => (Palette.Amber, [4, 4], 0.85),
             _ => source.Card.Variant == NodeCardVariant.Measure
                 ? (source.Card.AccentOverride ?? Palette.Cyan, null, 0.7)
                 : target.Card.Variant == NodeCardVariant.Provisional
@@ -123,13 +125,19 @@ public partial class NetworkView : UserControl
         placed.Clear();
         canvasHoverPaths.Clear();
 
+        // The checker's findings, gathered once per render and read while the cards build — a
+        // card must state its objection in the same pass that draws the wire it objects to.
+        cardObjections.Clear();
+        foreach (var group in NetworkChecker.Check(graph).GroupBy(objection => objection.NodeId))
+            cardObjections[group.Key] = string.Join(" · ", group.Select(objection => objection.Message));
+
         foreach (var node in graph.Nodes)
         {
             placed[node.Id] = Diagram.AddNode(
                 node.Id,
                 BuildCard(node),
                 leftPort: node.Kind != NetworkNodeKind.Measure,
-                rightPort: node.Kind != NetworkNodeKind.Figure,
+                rightPort: node.Kind is not (NetworkNodeKind.Figure or NetworkNodeKind.Table),
                 new Point(node.X, node.Y));
         }
 
@@ -171,6 +179,9 @@ public partial class NetworkView : UserControl
         {
             NetworkNodeKind.Measure => BuildLeafCard(node),
             NetworkNodeKind.Figure => BuildFigureCard(node),
+            NetworkNodeKind.Compare => BuildComparatorCard(node),
+            NetworkNodeKind.Select => BuildSelectCard(node),
+            NetworkNodeKind.Table => BuildTableCard(node),
             _ => BuildTransferCard(node)
         };
         // One size, in whole grid units, and opaque against the canvas — with a snapped top-left
@@ -185,7 +196,7 @@ public partial class NetworkView : UserControl
     private NodeCard BuildLeafCard(NetworkNode node)
     {
         var subtree = workspace.SubtreeOf(node.Key);
-        var reading = workspace.FindNode(node.Key)?.Reading;
+        var reading = Workspace.ReadingAt(node.Key);
         var accentIndex = subtree?.AccentIndex ?? 0;
 
         return new NodeCard
@@ -196,7 +207,7 @@ public partial class NetworkView : UserControl
             Title = NetworkGraph.LeafTitle(node.Key),
             ValueMain = reading?.Display ?? "—",
             ValueAccent = reading?.SigmaDisplay ?? "",
-            Note = reading?.Detail ?? "leaf no longer mounted",
+            Note = reading?.Detail ?? "no value read for this leaf",
             AccentOverride = SubtreeAccents.Stroke(accentIndex),
             FillOverride = SubtreeAccents.Fill(accentIndex)
         };
@@ -228,8 +239,91 @@ public partial class NetworkView : UserControl
             ValueAccent = result is { } value && value.HasVariance
                 ? $"± {MeasureNumerics.FormatSigma(value.Sigma)}"
                 : "",
-            ExtraContent = TransferExtra(result, graph.InputsOf(node.Id).Count())
+            ExtraContent = TransferExtra(
+                result, graph.InputsOf(node.Id).Count(), cardObjections.GetValueOrDefault(node.Id))
         };
+    }
+
+    /// <summary>
+    /// A comparator states its determination and how many σ it holds by. The determination is the
+    /// headline; the σ level is the accent, in the slot a transfer uses for its ±σ — firmness
+    /// where variance would sit, which is exactly the trade the card is making.
+    /// </summary>
+    private NodeCard BuildComparatorCard(NetworkNode node)
+    {
+        var tag = node.Id.StartsWith("compare:", StringComparison.Ordinal)
+            ? node.Id["compare:".Length..].ToUpperInvariant()
+            : node.Id.ToUpperInvariant();
+
+        var result = graph.Evaluate(node);
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Transfer,
+            TagText = $"COMPARATOR · {tag}",
+            TagRight = "a ▸ b",
+            Title = graph.Title(node),
+            TitleSize = 12,
+            ValueMain = result is null ? "" : MeasureNumerics.FormatBoolean(result.Value),
+            ValueAccent = result is null ? "" : MeasureNumerics.FormatSigmaLevel(result.SigmaLevel),
+            ExtraContent = ComparatorExtra(node, result)
+        };
+    }
+
+    private Control ComparatorExtra(NetworkNode node, TransferResult? result)
+    {
+        var extra = new TextBlock
+        {
+            FontSize = TypographySettings.Size(9),
+            LineHeight = TypographySettings.Size(14),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextMuted
+        };
+
+        var inlines = new List<Inline>();
+        foreach (var port in NetworkGraph.ComparePorts)
+        {
+            var source = graph.SourceTitleOnPort(node, port);
+            inlines.Add(new Run($"{port} ← ") { Foreground = Palette.TextFaint });
+            inlines.Add(source is null
+                ? new Run("—") { Foreground = Palette.Amber }
+                : new Run(source) { Foreground = Palette.Amber });
+            inlines.Add(new LineBreak());
+        }
+
+        var checkerObjection = cardObjections.GetValueOrDefault(node.Id);
+        if (result is null)
+        {
+            // The checker's finding is the likelier explanation when evaluation declined — a
+            // cross-table comparison — so it takes the slot rather than being appended twice.
+            // And a cross-table comparator that feeds a SELECT is not objected to at all: the
+            // join is its row order, and the card says where its answer lives.
+            var objection = TransferMath.ComparisonObjection(
+                graph.InputOnPort(node, NetworkGraph.ComparePortA),
+                graph.InputOnPort(node, NetworkGraph.ComparePortB));
+            var outgoing = graph.Edges.Where(edge => edge.FromId == node.Id).ToList();
+            var feedsSelect = outgoing.Count > 0 &&
+                outgoing.All(edge => graph.Find(edge.ToId) is { Kind: NetworkNodeKind.Select });
+
+            if (objection is null && checkerObjection is null && feedsSelect)
+                inlines.Add(new Run("cross-table — evaluated per joined row by the SELECT it feeds"));
+            else
+                inlines.Add(new Run(objection ?? checkerObjection ?? "operator missing from the library")
+                {
+                    Foreground = Palette.Amber
+                });
+        }
+        else
+        {
+            inlines.Add(new Run(result.Note));
+            if (checkerObjection is not null)
+            {
+                inlines.Add(new LineBreak());
+                inlines.Add(new Run($"⚠ {checkerObjection}") { Foreground = Palette.Amber });
+            }
+        }
+
+        extra.Inlines = [.. inlines];
+        return extra;
     }
 
     private static NodeCard BuildOpaqueTransferCard(NetworkNode node, string tag)
@@ -322,7 +416,7 @@ public partial class NetworkView : UserControl
         return extra;
     }
 
-    private static Control TransferExtra(TransferResult? result, int inputCount)
+    private static Control TransferExtra(TransferResult? result, int inputCount, string? objection)
     {
         var extra = new TextBlock
         {
@@ -332,32 +426,109 @@ public partial class NetworkView : UserControl
             Foreground = Palette.TextMuted
         };
 
+        var inlines = new List<Inline>();
         if (result is null)
         {
-            extra.Inlines =
-            [
-                new Run(inputCount == 0
-                    ? "no inputs — wire a leaf into the left port"
-                    : "inputs carry nothing this transfer can push")
-                {
-                    Foreground = Palette.Amber
-                }
-            ];
-            return extra;
+            inlines.Add(new Run(inputCount == 0
+                ? "no inputs — wire a leaf into the left port"
+                : "inputs carry nothing this transfer can push")
+            {
+                Foreground = Palette.Amber
+            });
+        }
+        else
+        {
+            inlines.Add(new Run("ν ≪ µ "));
+            inlines.Add(new Run("✓") { Foreground = Palette.Green });
+            inlines.Add(new Run(" · "));
+            inlines.Add(result.Linearised
+                ? new Run("C¹ (linear) ✓") { Foreground = Palette.Green }
+                : new Run("NONLINEAR") { Foreground = Palette.Red });
+            inlines.Add(new LineBreak());
+            inlines.Add(new Run(result.Note));
         }
 
-        extra.Inlines =
-        [
-            new Run("ν ≪ µ "),
-            new Run("✓") { Foreground = Palette.Green },
-            new Run(" · "),
-            result.Linearised
-                ? new Run("C¹ (linear) ✓") { Foreground = Palette.Green }
-                : new Run("NONLINEAR") { Foreground = Palette.Red },
-            new LineBreak(),
-            new Run(result.Note)
-        ];
+        if (objection is not null)
+        {
+            inlines.Add(new LineBreak());
+            inlines.Add(new Run($"⚠ {objection}") { Foreground = Palette.Amber });
+        }
+
+        extra.Inlines = [.. inlines];
         return extra;
+    }
+
+    private NodeCard BuildSelectCard(NetworkNode node)
+    {
+        var tag = node.Id.StartsWith("select:", StringComparison.Ordinal)
+            ? node.Id["select:".Length..].ToUpperInvariant()
+            : node.Id.ToUpperInvariant();
+
+        var table = graph.EvaluateSelect(node);
+        return new NodeCard
+        {
+            Variant = NodeCardVariant.Transfer,
+            TagText = $"SELECT · {tag}",
+            TagRight = "rows",
+            Title = graph.Title(node),
+            TitleSize = 12,
+            ValueMain = table.HasRows ? table.StateNote : "",
+            ExtraContent = SelectExtra(node, table)
+        };
+    }
+
+    private Control SelectExtra(NetworkNode node, DerivedTable table)
+    {
+        var extra = new TextBlock
+        {
+            FontSize = TypographySettings.Size(9),
+            LineHeight = TypographySettings.Size(14),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.TextMuted
+        };
+
+        var inlines = new List<Inline>
+        {
+            // The note carries the whole story either way — counts when it evaluates, and the
+            // objection (two tables, no cells, nothing wired) when it does not.
+            new Run(table.Note) { Foreground = table.HasRows ? Palette.TextMuted : Palette.Amber }
+        };
+
+        if (cardObjections.GetValueOrDefault(node.Id) is { } checkerObjection)
+        {
+            inlines.Add(new LineBreak());
+            inlines.Add(new Run($"⚠ {checkerObjection}") { Foreground = Palette.Amber });
+        }
+
+        extra.Inlines = [.. inlines];
+        return extra;
+    }
+
+    private static NodeCard BuildTableCard(NetworkNode node)
+    {
+        var table = TableCatalog.Instance.Find(node.Key);
+        if (table is null)
+        {
+            return new NodeCard
+            {
+                Variant = NodeCardVariant.Provisional,
+                TagText = "DASHBOARD TABLE · MISSING",
+                Title = $"tbl.{node.Key}",
+                Note = "not in the table catalogue"
+            };
+        }
+
+        var empty = !table.HasRows;
+        return new NodeCard
+        {
+            Variant = empty ? NodeCardVariant.Provisional : NodeCardVariant.Figure,
+            TagText = empty ? "DASHBOARD TABLE · EMPTY" : "DASHBOARD TABLE",
+            TagRight = empty ? "" : "committed",
+            Title = table.Name,
+            ValueMain = empty ? "—" : table.StateNote,
+            ValueSize = 16,
+            Note = table.Note
+        };
     }
 
     /// <summary>
@@ -410,6 +581,24 @@ public partial class NetworkView : UserControl
                 ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
             ],
             NetworkNodeKind.Figure =>
+            [
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            NetworkNodeKind.Compare =>
+            [
+                ("CHANGE OPERATOR", () => Mutate(() => graph.CycleOperator(model))),
+                ("SWAP WIRES a ↔ b", () => Mutate(() => graph.SwapCompareWires(model))),
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            NetworkNodeKind.Select =>
+            [
+                ("COMMIT AS DASHBOARD TABLE", () => ShowTableDialog(model.X + 300, model.Y, model.Id)),
+                ("CLEAR INPUTS", () => ClearInputs(node.Id)),
+                ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
+            ],
+            NetworkNodeKind.Table =>
             [
                 ("CLEAR INPUTS", () => ClearInputs(node.Id)),
                 ("REMOVE FROM DIAGRAM", () => RemoveNode(node.Id))
@@ -474,10 +663,28 @@ public partial class NetworkView : UserControl
             point => Mutate(() => graph.AddEstimator("fit_linear", point.X - 125, point.Y - 40))));
 
         BuildList.Children.Add(BuildElementRow(
+            "COMPARATOR",
+            "tests a against b · states the determination and how many σ it holds by",
+            Palette.Amber,
+            point => Mutate(() => graph.AddComparator(point.X - 125, point.Y - 40))));
+
+        BuildList.Children.Add(BuildElementRow(
+            "SELECT",
+            "gathers columns into rows · one table for now — cross-table matches arrive with ≡ links",
+            Palette.Amber,
+            point => Mutate(() => graph.AddSelect(point.X - 125, point.Y - 40))));
+
+        BuildList.Children.Add(BuildElementRow(
             "DASHBOARD FIG",
             "commits a value the dashboard can plot",
             Palette.Green,
             point => ShowFigureDialog(point.X - 135, point.Y - 40, wireFrom: null)));
+
+        BuildList.Children.Add(BuildElementRow(
+            "DASHBOARD TABLE",
+            "commits a select's rows the dashboard can grid",
+            Palette.Green,
+            point => ShowTableDialog(point.X - 135, point.Y - 40, wireFrom: null)));
     }
 
     private Border BuildElementRow(string label, string detail, IBrush accent, Action<Point> drop)
@@ -527,12 +734,15 @@ public partial class NetworkView : UserControl
             MeasureList.Children.Add(SubtreeHeader(subtree));
             if (collapsedSubtrees.Contains(subtree.Dataset)) continue;
 
-            foreach (var objectNode in subtree.Root.Descendants().Where(node =>
+            foreach (var objectNode in new[] { subtree.Root }.Concat(subtree.Root.Descendants()).Where(node =>
                          node.Kind == DataNodeKind.Object &&
                          node.Children.Any(child => child.Kind == DataNodeKind.Measure)))
             {
-                var relativePath = objectNode.Path[(subtree.Root.Path.Length + 1)..].Replace(".", " / ");
-                MeasureList.Children.Add(RailHeader($"{relativePath} /", 12, Palette.TextMuted));
+                if (objectNode != subtree.Root)
+                {
+                    var relativePath = objectNode.Path[(subtree.Root.Path.Length + 1)..].Replace(".", " / ");
+                    MeasureList.Children.Add(RailHeader($"{relativePath} /", 12, Palette.TextMuted));
+                }
 
                 foreach (var measure in objectNode.Children.Where(child => child.Kind == DataNodeKind.Measure))
                     MeasureList.Children.Add(BuildRailRow(measure, subtree));
@@ -767,6 +977,69 @@ public partial class NetworkView : UserControl
         });
     }
 
+    /// <summary>
+    /// Names the table before it exists, the way <see cref="ShowFigureDialog"/> names a figure —
+    /// a committed table is addressed by name from the tile editor, so it is asked for up front.
+    /// </summary>
+    private void ShowTableDialog(double x, double y, string? wireFrom)
+    {
+        var suggestion = TableCatalog.Instance.NextKey("table");
+
+        var box = new TextBox { Classes = { "field" }, Text = suggestion, Watermark = "table name" };
+        var preview = new TextBlock { FontSize = TypographySettings.Size(11), Foreground = Palette.Green };
+        var warning = new TextBlock
+        {
+            FontSize = TypographySettings.Size(10),
+            Margin = new Thickness(0, 4, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.Amber
+        };
+
+        void Sync()
+        {
+            var key = Slug(box.Text ?? "");
+            preview.Text = key.Length == 0 ? "tbl.—" : $"tbl.{key}";
+            warning.Text = key.Length == 0
+                ? "a table needs a name — it is how the tile editor addresses it"
+                : TableCatalog.Instance.Contains(key)
+                    ? $"tbl.{key} already exists — committing here replaces what it publishes"
+                    : "";
+        }
+
+        box.TextChanged += (_, _) => Sync();
+        Sync();
+
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(DialogBlock("NAME", new SquircleBorder
+        {
+            Classes = { "emboss-press" },
+            Background = Palette.BgField,
+            Child = box
+        }));
+        body.Children.Add(DialogBlock("PUBLISHES AS", preview));
+        body.Children.Add(DialogBlock("SOURCE", new TextBlock
+        {
+            Text = wireFrom is not null && graph.Find(wireFrom) is { } select
+                ? graph.Title(select)
+                : "nothing yet — wire a SELECT into its left port once it lands",
+            FontSize = TypographySettings.Size(11),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Palette.Text
+        }));
+        body.Children.Add(warning);
+
+        Dialog.Show("DASHBOARD TABLE", body, "COMMIT <GO>", () =>
+        {
+            var key = Slug(box.Text ?? "");
+            if (key.Length == 0) return false;
+
+            var node = graph.AddTableSink(key, x, y);
+            if (wireFrom is not null) graph.Connect(wireFrom, node.Id);
+            Render();
+            return true;
+        });
+    }
+
     /// <summary>A figure key: lowercase, words joined by underscores, nothing else.</summary>
     private static string Slug(string text)
     {
@@ -881,8 +1154,11 @@ public partial class NetworkView : UserControl
                 $"{subtree.Dataset.ToLowerInvariant()} leaf"));
         }
         LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, false, "TRANSFER — density dν/dµ"));
+        LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, true, "COMPARATOR — a/b wires dashed"));
         LegendPanel.Children.Add(LegendRow(Palette.Cyan, Palette.CyanFill, true, "REGRESSOR — training wires dashed"));
+        LegendPanel.Children.Add(LegendRow(Palette.Amber, Palette.AmberFill, false, "SELECT — columns → rows"));
         LegendPanel.Children.Add(LegendRow(Palette.Green, Palette.GreenFill, false, "FIGURE — projection E[X|𝒢]"));
+        LegendPanel.Children.Add(LegendRow(Palette.Green, Palette.GreenFill, false, "TABLE — committed rows"));
         LegendPanel.Children.Add(LegendRow(Palette.Purple, null, true, "PROVISIONAL — under-determined"));
     }
 

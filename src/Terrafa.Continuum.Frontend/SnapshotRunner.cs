@@ -44,6 +44,8 @@ public static class SnapshotRunner
         CaptureBubbleHandoffProbe(outputDir);
         CaptureNavReorderProbe(outputDir);
         CaptureRegressorProbe(outputDir);
+        CaptureComparatorProbe(outputDir);
+        CaptureGridProbe(outputDir);
         CaptureTransferFunctionProbe(outputDir);
         CaptureMapProbe(outputDir);
         CaptureMapUploadProbe(outputDir);
@@ -466,6 +468,7 @@ public static class SnapshotRunner
             SystemDecorations = SystemDecorations.None
         };
         window.Show();
+        window.ShowScreen(MainView.NetworkScreen);
         Pump();
 
         var view = (NetworkView)window.ViewHost.Content!;
@@ -623,6 +626,7 @@ public static class SnapshotRunner
             SystemDecorations = SystemDecorations.None
         };
         window.Show();
+        window.ShowScreen(MainView.NetworkScreen);
         Pump();
 
         var network = (NetworkView)window.ViewHost.Content!;
@@ -684,6 +688,7 @@ public static class SnapshotRunner
             SystemDecorations = SystemDecorations.None
         };
         window.Show();
+        window.ShowScreen(MainView.NetworkScreen);
         Pump();
 
         var network = (NetworkView)window.ViewHost.Content!;
@@ -1134,7 +1139,10 @@ public static class SnapshotRunner
 
         void CreateFunctionTab()
         {
-            OpenMenu(view.LibraryList);
+            // Over a named primitive, not the list's centre: every primitive's menu carries
+            // CREATE FUNCTION, whereas the centre of a growing list eventually lands on a row —
+            // a group header, an estimator — whose menu does not.
+            OpenMenu(LibraryEntry("exp"));
             ClickMenuItem("CREATE FUNCTION");
         }
 
@@ -1270,6 +1278,181 @@ public static class SnapshotRunner
         window.Close();
 
         NetworkGraph.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>
+    /// Two like-united σ-carrying leaves through a comparator into a boolean figure — the frame
+    /// that shows a determination stating its σ level, and the card refusing neither.
+    /// </summary>
+    private static void CaptureComparatorProbe(string outputDir)
+    {
+        var graph = NetworkGraph.Instance;
+        var root = Workspace.Instance.Find("SITE_ALPHA")!.Root.Path;
+        var comparator = graph.AddComparator(470, 620);
+        graph.Connect($"{root}.tank_farm.tank_01.level", comparator.Id);
+        graph.Connect($"{root}.tank_farm.tank_02.level", comparator.Id);
+        var figure = graph.AddFigure("tank_01_ahead", 902, 640);
+        graph.Connect(comparator.Id, figure.Id);
+
+        Console.WriteLine($"comparator probe: {graph.Title(comparator)}");
+        var result = graph.Evaluate(comparator);
+        Console.WriteLine(
+            $"comparator probe: {(result is null ? "no result" : $"{MeasureNumerics.FormatBoolean(result.Value)} · {MeasureNumerics.FormatSigmaLevel(result.SigmaLevel)} · {result.Note}")}");
+
+        graph.CycleOperator(comparator);
+        Console.WriteLine(
+            $"comparator probe: after cycling operator — {graph.Title(comparator)} = " +
+            $"{(graph.Evaluate(comparator) is { } cycled ? MeasureNumerics.FormatBoolean(cycled.Value) : "no result")}");
+        for (var i = 0; i < 3; i++) graph.CycleOperator(comparator);
+
+        var committed = FigureCatalog.Instance.Find("tank_01_ahead");
+        Console.WriteLine(
+            $"comparator probe: fig.tank_01_ahead = {committed?.Display ?? "—"} · " +
+            $"{committed?.SigmaDisplay ?? ""} · {committed?.Note ?? ""}");
+
+        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+        Capture(window, outputDir, "1-netw-compare");
+        window.Close();
+
+        NetworkGraph.Instance.Reset(seedDemo: true);
+    }
+
+    /// <summary>
+    /// The parcels shape end to end: a hand-built keyed table, selected into a committed derived
+    /// table, drawn as a grid tile with its booleans as pills — the frame the whole feature
+    /// exists to produce.
+    /// </summary>
+    private static void CaptureGridProbe(string outputDir)
+    {
+        const string dataset = "synthetic_dev.parcels";
+        var root = new DataTreeNode { Name = dataset, Path = dataset, Kind = DataNodeKind.Object, Tag = "SUBTREE ROOT" };
+        var prefix = dataset;
+
+        void Text(string name, params string[] cells) => root.Children.Add(new DataTreeNode
+        {
+            Name = name,
+            Path = $"{prefix}.{name}",
+            Kind = DataNodeKind.Measure,
+            Reading = new Measure { Display = cells[^1], Cells = cells }
+        });
+
+        void Number(string name, string unit, params double[] values) => root.Children.Add(new DataTreeNode
+        {
+            Name = name,
+            Path = $"{prefix}.{name}",
+            Kind = DataNodeKind.Measure,
+            Reading = new Measure
+            {
+                Display = $"{values[^1]} {unit}",
+                Value = values[^1],
+                Unit = unit,
+                History = values,
+                Cells = [.. values.Select(value => (string?)value.ToString(System.Globalization.CultureInfo.InvariantCulture))]
+            }
+        });
+
+        Text("parcel", "TK-11", "TK-10", "TK-02", "TK-06", "TK-12", "TK-04");
+        Text("productid", "EN590", "JETA1", "EN590", "FAME", "FAME", "EN590");
+        Text("contractid", "C1", "C2", "C1", "C3", "C3", "C1");
+        Number("volume", "bbl", 12480, 9640, 9882, 5240, 3890, 11750);
+        Number("condition_at_lift", "h", 18.1, 24.3, 17.8, 5.5, 7.1, 20.8);
+        Number("condition_at_lift__sigma", "h", 0.4, 0.4, 0.4, 0.4, 0.4, 0.4);
+
+        const string contracts = "synthetic_dev.contract_requirements";
+        var contractsRoot = new DataTreeNode { Name = contracts, Path = contracts, Kind = DataNodeKind.Object, Tag = "SUBTREE ROOT" };
+        var hold = root;
+        root = contractsRoot;
+        prefix = contracts;
+        Text("productid", "EN590", "JETA1", "FAME");
+        Text("contractid", "C1", "C2", "C3");
+        Number("required_value", "h", 20, 25, 8);
+        Number("required_value__sigma", "h", 0.5, 0.5, 0.5);
+        root = hold;
+        prefix = dataset;
+
+        var schema = new DatasetSchema(dataset, "probe", "table", "—", "—", "—", root) { XAxis = "parcel" };
+        var contractsSchema = new DatasetSchema(contracts, "probe", "table", "—", "—", "—", contractsRoot) { XAxis = "productid" };
+        ReadingStore.Instance.Write(schema);
+        ReadingStore.Instance.Write(contractsSchema);
+        Workspace.Instance.Mount(schema, schema.Root);
+        Workspace.Instance.Mount(contractsSchema, contractsSchema.Root);
+        Workspace.Instance.AddLink($"{dataset}.productid", $"{contracts}.productid", SubtreeLinkKind.Equality);
+        Workspace.Instance.AddLink($"{dataset}.contractid", $"{contracts}.contractid", SubtreeLinkKind.Equality);
+
+        var graph = NetworkGraph.Instance;
+        graph.Reset(seedDemo: false);
+        string[] names = ["parcel", "productid", "volume", "condition_at_lift"];
+        for (var i = 0; i < names.Length; i++)
+            graph.PlaceMeasure($"{dataset}.{names[i]}", 75, 100 + i * 125);
+        graph.PlaceMeasure($"{contracts}.required_value", 75, 650);
+
+        // condition_at_lift < required_value — under the limit is on spec, which is the
+        // screenshot's reading. Cycled from greater_than: greater_equal, then less_than.
+        var comparator = graph.AddComparator(470, 585);
+        graph.Connect($"{dataset}.condition_at_lift", comparator.Id);
+        graph.Connect($"{contracts}.required_value", comparator.Id);
+        graph.CycleOperator(comparator);
+        graph.CycleOperator(comparator);
+
+        var select = graph.AddSelect(470, 210);
+        foreach (var name in names) graph.Connect($"{dataset}.{name}", select.Id);
+        graph.Connect($"{contracts}.required_value", select.Id);
+        graph.Connect(comparator.Id, select.Id);
+        var sink = graph.AddTableSink("parcel_conditions", 940, 235);
+        graph.Connect(select.Id, sink.Id);
+
+        var netView = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var netWindow = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = netView
+        };
+        netWindow.Show();
+        Pump();
+        Capture(netWindow, outputDir, "1-netw-select");
+        netWindow.Close();
+
+        var committed = TableCatalog.Instance.Find("parcel_conditions");
+        Console.WriteLine($"grid probe: {committed?.Name} = {committed?.StateNote} · {committed?.Note}");
+
+        var board = Dashboard.Instance;
+        var tile = new DashboardTile(TileKind.Grid, "tile.parcel_conditions")
+        {
+            IndexLeaf = "parcel",
+            HighlightBooleans = true
+        };
+        tile.Sources.Add(new TileSource(TileSourceKind.Table, "parcel_conditions"));
+        board.Add(tile, SnapSettings.GridSize, SnapSettings.GridSize, 720, 420);
+
+        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = view
+        };
+        window.Show();
+        Pump();
+        Capture(window, outputDir, "3-dash-grid");
+        window.Close();
+
+        board.Remove(tile);
+        graph.Reset(seedDemo: true);
+        Workspace.Instance.Unmount(dataset);
+        Workspace.Instance.Unmount(contracts);
+        ReadingStore.Instance.Clear();
     }
 
     /// <summary>

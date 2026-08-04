@@ -22,7 +22,7 @@ public static class TypographySettings
 
     private static IResourceDictionary? registeredResources;
 
-    public static double Scale { get; private set; } = 1.0;
+    public static double Scale { get; private set; } = MaxScale;
 
     public static event Action? Changed;
 

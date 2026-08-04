@@ -72,6 +72,10 @@ public static class TileView
 
     private static Control BuildBody(DashboardTile tile, out TextBlock footnote)
     {
+        // A grid draws a table's rows as they are — it neither aggregates nor asserts, so the
+        // variance blank-guard below does not apply to it: σ levels ride on boolean cells instead.
+        if (tile.Kind == TileKind.Grid) return BuildGrid(tile, out footnote);
+
         if (!tile.IsWired)
         {
             footnote = Footnote("double-click to name the tile and pick its data sources", Palette.TextFaint);
@@ -119,7 +123,8 @@ public static class TileView
             footnote = Footnote("switch variance off to prototype without σ", Palette.TextFaint);
             return Placeholder(
                 "NO σ — TILE BLANK",
-                $"not wired for variance: {string.Join(" · ", bare)}",
+                $"by design, not a fault: a source with no σ is left blank rather than drawn as if " +
+                $"it were certain — {string.Join(" · ", bare)}",
                 Palette.Amber);
         }
 
@@ -319,6 +324,107 @@ public static class TileView
         return new ScrollViewer { Content = rows };
     }
 
+    private static Control BuildGrid(DashboardTile tile, out TextBlock footnote)
+    {
+        var source = tile.Sources.FirstOrDefault(candidate => candidate.Kind == TileSourceKind.Table);
+        if (source is null)
+        {
+            footnote = Footnote("double-click to pick a derived table", Palette.TextFaint);
+            return Placeholder("EMPTY GRID", "no derived table wired — commit one on 4) NETWORK", Palette.TextGhost);
+        }
+
+        var table = TableCatalog.Instance.Find(source.Path);
+        if (table is null)
+        {
+            footnote = Footnote("the table left the catalogue — rewire the tile", Palette.Red);
+            return Placeholder("SOURCE MISSING", source.Display, Palette.Red);
+        }
+
+        // An empty table carries its own explanation — the select's objection travels with it, so
+        // the tile states why rather than blanking silently.
+        if (!table.HasRows)
+        {
+            footnote = Footnote(table.Name, Palette.TextFaint);
+            return Placeholder("EMPTY TABLE", table.Note, Palette.Amber);
+        }
+
+        var index = DerivedTableView.ResolveIndex(table, tile.IndexLeaf);
+        var columns = DerivedTableView.OrderedColumns(table, index);
+        var rowOrder = DerivedTableView.OrderedRows(table, index);
+        var showLevels = VarianceSettings.Enabled;
+
+        var definitions = string.Join(",", columns.Select((_, position) => position == 0 ? "1.2*" : "1*"));
+        var stack = new StackPanel();
+
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions(definitions), Margin = new Thickness(0, 0, 0, 2) };
+        for (var position = 0; position < columns.Count; position++)
+        {
+            var column = columns[position];
+            var title = column.Unit.Length > 0 ? $"{column.Title} ({column.Unit})" : column.Title;
+            AddCell(header, position, HeaderCell(title.ToUpperInvariant()));
+        }
+        stack.Children.Add(header);
+
+        foreach (var row in rowOrder)
+        {
+            var line = new Grid { ColumnDefinitions = new ColumnDefinitions(definitions) };
+            for (var position = 0; position < columns.Count; position++)
+            {
+                var column = columns[position];
+                var cell = column.IsBoolean && tile.HighlightBooleans
+                    ? BooleanPill(column, row, showLevels)
+                    : BodyCell(
+                        GridCellText(column, row, showLevels),
+                        position == 0 ? Palette.TextBright : Palette.TextStrong);
+                AddCell(line, position, cell);
+            }
+            stack.Children.Add(new Border
+            {
+                BorderBrush = Palette.GridFaint,
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Padding = new Thickness(0, 4),
+                Child = line
+            });
+        }
+
+        var plain = !tile.HighlightBooleans && columns.Any(column => column.IsBoolean);
+        footnote = Footnote(
+            $"{table.RowCount} row(s) · {table.Name} · index {index}{(plain ? " · booleans plain" : "")}",
+            Palette.TextFaint);
+        return new ScrollViewer { Content = stack };
+    }
+
+    private static string GridCellText(TableColumnValue column, int row, bool showLevels)
+    {
+        var text = row < column.Cells.Count ? column.Cells[row] : "—";
+        if (!column.IsBoolean || !showLevels) return text;
+        var level = row < column.SigmaLevels.Count ? column.SigmaLevels[row] : double.NaN;
+        return double.IsNaN(level) ? text : $"{text} · {MeasureNumerics.FormatSigmaLevel(level)}";
+    }
+
+    /// <summary>The determination as a pill: green for true, red for false, in the tinted-fill
+    /// language the charts already use for bounds.</summary>
+    private static Control BooleanPill(TableColumnValue column, int row, bool showLevels)
+    {
+        var value = row < column.Values.Count ? column.Values[row] : double.NaN;
+        if (double.IsNaN(value)) return BodyCell("—", Palette.TextMuted);
+
+        var accent = value != 0 ? Palette.Green : Palette.Red;
+        return new Border
+        {
+            Background = Fill(accent, 0.16),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8, 1),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = GridCellText(column, row, showLevels),
+                FontSize = TypographySettings.Size(10),
+                Foreground = accent
+            }
+        };
+    }
+
     private static void AddCell(Grid grid, int column, Control cell)
     {
         Grid.SetColumn(cell, column);
@@ -330,7 +436,9 @@ public static class TileView
         Text = text,
         FontSize = TypographySettings.Size(9),
         LetterSpacing = 1,
-        Foreground = Palette.TextFaint
+        Foreground = Palette.TextFaint,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        Margin = new Thickness(0, 0, 6, 0)
     };
 
     private static TextBlock BodyCell(string text, IBrush brush) => new()

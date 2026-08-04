@@ -82,6 +82,19 @@ public sealed class Workspace
         return null;
     }
 
+    /// <summary>
+    /// The value at a leaf path, wherever it is held.
+    ///
+    /// <para>
+    /// <see cref="ReadingStore"/> answers for anything that has been read, whether or not this
+    /// machine mounted the dataset. The mounted tree answers for the demo data, which declares its
+    /// values inline and never goes through a query. Everything that reads a value by path goes
+    /// through here, so a tile, a network node and the tree cannot disagree about what exists.
+    /// </para>
+    /// </summary>
+    public static Measure? ReadingAt(string path) =>
+        ReadingStore.Instance.Find(path) ?? Instance.FindNode(path)?.Reading;
+
     public MountedSubtree? SubtreeOf(string path) =>
         subtrees.FirstOrDefault(subtree => subtree.Root.Find(path) is not null);
 
@@ -92,6 +105,32 @@ public sealed class Workspace
     public MountedSubtree Mount(DatasetSchema schema, DataTreeNode node)
     {
         var subtree = Find(schema.Dataset) ?? CreateSubtree(schema);
+        GraftInto(subtree, schema, node);
+        Changed?.Invoke();
+        return subtree;
+    }
+
+    /// <summary>
+    /// An empty subtree for a dataset, not attached to any workspace. A restore builds its mounts
+    /// this way and swaps them in at the end, so a restore that fails part way leaves the tree it
+    /// found on screen.
+    /// </summary>
+    public static MountedSubtree NewSubtree(DatasetSchema schema, int accentIndex) => new()
+    {
+        Dataset = schema.Dataset,
+        AccentIndex = accentIndex,
+        Root = new DataTreeNode
+        {
+            Name = schema.Root.Name,
+            Path = schema.Root.Path,
+            Kind = DataNodeKind.Object,
+            Tag = "SUBTREE ROOT"
+        }
+    };
+
+    /// <summary>The graft itself, against any subtree — mounted or held to one side.</summary>
+    public static void GraftInto(MountedSubtree subtree, DatasetSchema schema, DataTreeNode node)
+    {
         subtree.Cadence = schema.Cadence;
         subtree.Contract = schema.Contract;
         if (schema.XAxis.Length > 0) subtree.XAxis = schema.XAxis;
@@ -103,9 +142,6 @@ public sealed class Workspace
 
         if (chain.Count > 1) Graft(cursor, node);
         else foreach (var child in node.Children) Graft(cursor, child);
-
-        Changed?.Invoke();
-        return subtree;
     }
 
     /// <summary>
@@ -199,18 +235,7 @@ public sealed class Workspace
 
     private MountedSubtree CreateSubtree(DatasetSchema schema)
     {
-        var subtree = new MountedSubtree
-        {
-            Dataset = schema.Dataset,
-            AccentIndex = subtrees.Count,
-            Root = new DataTreeNode
-            {
-                Name = schema.Root.Name,
-                Path = schema.Root.Path,
-                Kind = DataNodeKind.Object,
-                Tag = "SUBTREE ROOT"
-            }
-        };
+        var subtree = NewSubtree(schema, subtrees.Count);
         subtrees.Add(subtree);
         return subtree;
     }
@@ -246,10 +271,8 @@ public sealed class Workspace
             parent.Children.Add(Clone(source, withChildren: true));
             return;
         }
-        // Re-adding a node the mount already holds refreshes what is behind it: the newest read
-        // wins. Without this, a subtree mounted while its first fetch was still in flight kept
-        // its empty readings forever, and re-adding it did nothing.
-        if (source.Reading is not null) existing.Reading = source.Reading;
+        // Nothing to copy across for a node the mount already holds. Values are found by path in
+        // ReadingStore, so both copies read the same number and re-mounting cannot refresh one.
         foreach (var child in source.Children)
             Graft(existing, child);
     }
@@ -263,7 +286,9 @@ public sealed class Workspace
             Kind = source.Kind,
             Tag = source.Tag,
             IsNew = source.IsNew,
-            Reading = source.Reading
+            // What the tree declared, which is all the demo data has. A live leaf's value is found
+            // by path and is not part of the copy.
+            Reading = source.DeclaredReading
         };
         if (withChildren)
         {
@@ -274,37 +299,47 @@ public sealed class Workspace
     }
 
     /// <summary>
-    /// Writes a fresh read's values onto an already-mounted subtree, node by path. Mounting is
-    /// deliberately shape-preserving — it never adds leaves the operator did not pick — but the
-    /// values behind the picked leaves belong to the newest read: a dataset mounted while its
-    /// first fetch was still in flight would otherwise sit valueless until someone unmounted it.
+    /// Records the axis a dataset's values were read against. The subtree keeps it so a screen can
+    /// say what a chart's x axis is rather than implying the points are evenly spaced in time.
     /// </summary>
-    public void RefreshReadings(DatasetSchema schema)
+    public void SetAxis(string dataset, string xAxis)
     {
-        if (Find(schema.Dataset) is not { } subtree) return;
+        if (xAxis.Length == 0) return;
+        if (Find(dataset) is not { } subtree) return;
+        if (subtree.XAxis == xAxis) return;
 
-        var refreshed = false;
-        foreach (var node in subtree.Root.Descendants())
-        {
-            if (schema.Root.Find(node.Path)?.Reading is not { } fresh) continue;
-            node.Reading = fresh;
-            refreshed = true;
-        }
-
-        if (!refreshed) return;
-        if (schema.XAxis.Length > 0) subtree.XAxis = schema.XAxis;
+        subtree.XAxis = xAxis;
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Replaces every mounted subtree in one step, for a restore that must not tear down what is on
+    /// screen before it knows the new tree arrived. An empty list is refused for that reason: a
+    /// restore that mounted nothing leaves the previous tree standing.
+    /// </summary>
+    public bool Swap(IReadOnlyList<MountedSubtree> replacements, IReadOnlyList<SubtreeLink> replacementLinks)
+    {
+        if (replacements.Count == 0) return false;
+
+        subtrees.Clear();
+        subtrees.AddRange(replacements);
+        links.Clear();
+        links.AddRange(replacementLinks);
+        Changed?.Invoke();
+        return true;
     }
 
     /// <summary>
     /// Empties the workspace, optionally re-seeding the demo mount. Called when the session
     /// changes: a subtree mounted from the demo catalogue must not outlive it, or the tree and
-    /// network screens keep drawing leaves whose dataset is no longer listed anywhere.
+    /// network screens keep drawing leaves whose dataset is no longer listed anywhere. The values
+    /// go with it — one account's readings must not show under the next one.
     /// </summary>
     public void Reset(bool seedDemo)
     {
         subtrees.Clear();
         links.Clear();
+        ReadingStore.Instance.Clear();
         if (seedDemo) SeedDefaultMount();
         Changed?.Invoke();
     }

@@ -31,6 +31,15 @@ public sealed class DashboardFigure
     /// <summary>σ per entry in <see cref="History"/> where the chain produced a varying one.</summary>
     public IReadOnlyList<double> SigmaHistory { get; init; } = [];
 
+    /// <summary>
+    /// True for a committed determination. <see cref="SigmaDisplay"/> then carries the σ level
+    /// ("2.3σ"), not a ±σ — a determination has firmness, not variance.
+    /// </summary>
+    public bool IsBoolean { get; init; }
+
+    /// <summary>The margin in σ units behind a boolean figure. NaN when an input carried no σ.</summary>
+    public double SigmaLevel { get; init; } = double.NaN;
+
     public string Note { get; init; } = "";
 
     public FigureOrigin Origin { get; init; }
@@ -137,6 +146,8 @@ public sealed class FigureCatalog
         left.Note == right.Note &&
         left.Origin == right.Origin &&
         left.IsProvisional == right.IsProvisional &&
+        left.IsBoolean == right.IsBoolean &&
+        Nearly(left.SigmaLevel, right.SigmaLevel) &&
         Nearly(left.Value, right.Value) &&
         Nearly(left.Sigma, right.Sigma) &&
         left.History.Count == right.History.Count &&

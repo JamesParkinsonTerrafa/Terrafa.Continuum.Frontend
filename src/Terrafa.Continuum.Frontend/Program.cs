@@ -17,6 +17,13 @@ internal static class Program
             SnapshotRunner.Run(args[snapshotIndex + 1]);
             return;
         }
+        var probeIndex = Array.IndexOf(args, "--probe");
+        if (probeIndex >= 0 && probeIndex + 1 < args.Length)
+        {
+            DataProbe.RunAsync(args[probeIndex + 1]).GetAwaiter().GetResult();
+            return;
+        }
+
         // Restore runs concurrently with startup: MainView rebuilds on AuthSession.Changed, so a
         // session that lands after the first frame swaps demo data for live just like a sign-in.
         // Snapshot runs are excluded above so screenshots stay deterministic.

@@ -376,12 +376,19 @@ public class SeriesTests
 
     /// <summary>
     /// The lig_biodiesel_calibrated shape before the table was fixed: one timestamp carrying a
-    /// row per analyte and sensor. No column is a series through that — a line would thread
-    /// readings from different instruments — so nothing draws and nothing quotes a "newest"
-    /// value off an arbitrary tied row. The client detects and reports; the fix is the table's.
+    /// row per analyte and sensor. The client counts the repeats and reports them, and keeps
+    /// every cell it was sent.
+    ///
+    /// <para>
+    /// It used to discard the whole read instead. That cost more than a chart: cells are the
+    /// row-faithful record a grid and a join read from, and a lookup table repeats its keys by
+    /// design — <c>contract_requirements</c> has thirteen rows against one productid and is not
+    /// malformed for it. Dropping its cells emptied every join that crossed it. Detection is
+    /// worth keeping; deciding what is fit to keep is not the read path's call.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task InterleavedRowsProduceNoSeriesAndNoArbitraryReading()
+    public async Task InterleavedRowsAreReportedButKeepTheirCells()
     {
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("analyte", "varchar"), ("value", "double")],
@@ -398,15 +405,22 @@ public class SeriesTests
 
         var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
 
+        // Still detected, and still said out loud on the leaf — that is what a screen reads to
+        // warn that no column here is a series.
         Assert.Equal(3, schema.RowsPerPoint);
 
-        // "value" is numeric wherever it exists — exactly the column that would have drawn a
-        // plausible-looking zigzag across the three analytes.
         var value = Leaf(schema, "value");
-        Assert.Empty(value.History);
-        Assert.False(value.HasValue);
-        Assert.Equal("—", value.Display);
         Assert.Contains("rows/point — expected one", value.Detail);
+
+        // Every row of the response, oldest first, nulls held in place. A join indexes cells by
+        // row, so a dropped null would slide every value below it onto the wrong row.
+        Assert.Equal(["0.30", "0.11", null, "0.31", "0.12", null], value.Cells);
+
+        // The repeated column keeps its cells too. This is the one the join reads: it is a key,
+        // not a series, and its repeats are the whole reason it can be joined on.
+        Assert.Equal(
+            ["acid_number", "methanol", "water", "acid_number", "methanol", "water"],
+            Leaf(schema, "analyte").Cells);
     }
 
     /// <summary>
@@ -477,13 +491,93 @@ public class SeriesTests
     }
 
     /// <summary>
-    /// A dataset mounted while its first fetch was still in flight went in valueless — and
-    /// stayed that way, because grafting deliberately never re-shapes an existing mount. The
-    /// values belong to the newest read: when the series lands, an already-mounted subtree is
-    /// refreshed in place, and re-adding a node overwrites what is behind it.
+    /// Parquet is columnar, so a narrower projection scans fewer bytes. A read driven by what
+    /// someone selected asks for those columns and no others — plus two the request cannot work
+    /// without: the axis, and the σ beside a selected leaf.
     /// </summary>
     [Fact]
-    public async Task AMountMadeBeforeTheSeriesLandedIsRefreshedInPlace()
+    public async Task TheProjectionAsksOnlyForTheSelectedLeaves()
+    {
+        using var transport = new FakeDataFeed(
+            columns:
+            [
+                ("timestamp", "bigint"),
+                ("level", "double"),
+                ("level__sigma", "double"),
+                ("temp", "double"),
+                ("grade", "varchar")
+            ],
+            rows: [["200", "2", "0.2", "20", "EN590"], ["100", "1", "0.1", "10", "EN590"]]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.level"]);
+
+        var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
+        Assert.Contains("columns=timestamp", request);
+        Assert.Contains("columns=level", request);
+        Assert.Contains("columns=level__sigma", request);
+
+        // The columns nobody asked for stay out of the scan.
+        Assert.DoesNotContain("columns=temp", request);
+        Assert.DoesNotContain("columns=grade", request);
+    }
+
+    /// <summary>
+    /// The column a table splits its sensors on is never selected, and never optional. Dropping it
+    /// from a narrowed read would collapse the member subtrees and change the tree's shape between
+    /// one read and the next.
+    /// </summary>
+    [Fact]
+    public async Task ANarrowedReadKeepsTheMemberColumn()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("sensor_id", "varchar"), ("level", "double"), ("temp", "double")],
+            rows:
+            [
+                ["200", "LIG-02", "22", "32"],
+                ["200", "LIG-01", "21", "31"],
+                ["100", "LIG-02", "12", "12"],
+                ["100", "LIG-01", "11", "11"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.LIG-01.level"]);
+
+        var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
+        Assert.Contains("columns=sensor_id", request);
+        Assert.DoesNotContain("columns=temp", request);
+
+        // And the split still happens, against the selected leaf's own rows.
+        Assert.Equal([11, 21], schema.Root.Find($"{Dataset}.LIG-01.level")?.Reading?.History);
+    }
+
+    /// <summary>
+    /// A selection that matches no column is stale, not an instruction to read nothing. Reading
+    /// the axis alone would blank every leaf on screen, so the read falls back to the whole table.
+    /// </summary>
+    [Fact]
+    public async Task ASelectionThatMatchesNothingReadsTheWholeTable()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("level", "double")],
+            rows: [["200", "2"], ["100", "1"]]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.column_that_left"]);
+
+        var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
+        Assert.Contains("columns=level", request);
+    }
+
+    /// <summary>
+    /// A mount holds no values. A dataset mounted while its first fetch was still in flight went in
+    /// valueless and used to stay that way, because grafting deliberately never re-shapes an
+    /// existing mount. Values are found by path in <see cref="ReadingStore"/> now, so the mounted
+    /// node reports the read the moment it lands. Nothing walks the tree, and nothing has to be
+    /// unmounted and mounted again to pick a value up.
+    /// </summary>
+    [Fact]
+    public async Task AMountHoldsNoValues_SoOneWriteReachesIt()
     {
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
@@ -501,9 +595,10 @@ public class SeriesTests
             Assert.NotNull(mounted);
             Assert.Empty(mounted.Reading!.History);
 
-            // The series lands; the mount is refreshed the way DataSourcesView does it.
+            // The series lands. One write, and the already-mounted node reads through to it.
             var series = await catalog.GetSeriesAsync(Dataset, "timestamp");
-            workspace.RefreshReadings(series);
+            ReadingStore.Instance.Write(series);
+            workspace.SetAxis(Dataset, series.XAxis);
 
             Assert.Equal([1, 2], mounted.Reading!.History);
             Assert.Equal("timestamp", workspace.Find(Dataset)?.XAxis);
@@ -511,11 +606,201 @@ public class SeriesTests
             // And a tile wired to it draws, which is the point of the whole exercise.
             var resolved = TileData.Resolve(new TileSource(TileSourceKind.Measure, $"{Dataset}.level"));
             Assert.Equal([1, 2], resolved!.History);
+
+            // The mount is not what makes it draw. Unmounting leaves the value where it is, so a
+            // dashboard saved on one machine still resolves on another that never mounted this.
+            workspace.Unmount(Dataset);
+            var unmounted = TileData.Resolve(new TileSource(TileSourceKind.Measure, $"{Dataset}.level"));
+            Assert.Equal([1, 2], unmounted!.History);
         }
         finally
         {
             workspace.Unmount(Dataset);
+            ReadingStore.Instance.Clear();
         }
+    }
+
+    /// <summary>
+    /// A boolean column is a determination, not a quantity: its declared type — not cell
+    /// sniffing — reads the cells as a 0/1 series, the newest cell is the reading, and the
+    /// display keeps the text it arrived as. No σ appears anywhere: a determination read off a
+    /// table is a statement, and inventing a band around one is exactly what the app refuses.
+    /// </summary>
+    [Fact]
+    public async Task ABooleanColumnBecomesADeterminationSeries()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("on_spec", "boolean")],
+            rows:
+            [
+                ["300", "true"],
+                ["200", "false"],
+                ["100", "true"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var leaf = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "on_spec");
+
+        Assert.True(leaf.IsBoolean);
+        Assert.Equal([1, 0, 1], leaf.History);
+        Assert.Equal(1, leaf.Value);
+        Assert.Equal("true", leaf.Display);
+        Assert.Equal(["true", "false", "true"], leaf.Cells);
+        Assert.False(leaf.HasVariance);
+    }
+
+    /// <summary>
+    /// Every leaf keeps its raw cells, one entry per fetched row with nulls preserved. History
+    /// cannot serve a join: it drops nulls per column, so its indices stop corresponding across
+    /// columns the moment any column has a hole. Cells is the row-faithful record — including
+    /// for text columns, which carry no series at all but whose cells are exactly what a join
+    /// key is made of.
+    /// </summary>
+    [Fact]
+    public async Task EveryLeafKeepsRowFaithfulCells_NullsAndTextIncluded()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("grade", "varchar"), ("level", "double")],
+            rows:
+            [
+                ["300", "JETA1", "3"],
+                ["200", "EN590", null],
+                ["100", "EN590", "1"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+
+        Assert.Equal(["EN590", "EN590", "JETA1"], Leaf(schema, "grade").Cells);
+        Assert.Equal(["1", null, "3"], Leaf(schema, "level").Cells);
+        Assert.Equal(["100", "200", "300"], Leaf(schema, "timestamp").Cells);
+
+        // And the chart-facing series still skips the hole, as it always has.
+        Assert.Equal([1, 3], Leaf(schema, "level").History);
+    }
+
+    /// <summary>
+    /// The parcels shape: a keyed table whose axis is text and whose key columns are
+    /// categorical. Nothing in it is a time series, yet the numeric column still reads as one
+    /// ordered by the key, and every key cell is retained row-faithfully — the shape a join
+    /// runs on.
+    /// </summary>
+    [Fact]
+    public async Task AKeyedTableWithATextAxisKeepsItsKeysAndReadsItsNumbers()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("parcel", "varchar"), ("productid", "varchar"), ("condition_at_lift", "double")],
+            rows:
+            [
+                ["TK-03", "FAME", "11.3"],
+                ["TK-02", "EN590", "17.8"],
+                ["TK-01", "EN590", "24.6"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(Dataset, "parcel");
+
+        Assert.Equal(1, schema.RowsPerPoint);
+        Assert.Equal(["TK-01", "TK-02", "TK-03"], Leaf(schema, "parcel").Cells);
+        Assert.Equal(["EN590", "EN590", "FAME"], Leaf(schema, "productid").Cells);
+        Assert.Equal([24.6, 17.8, 11.3], Leaf(schema, "condition_at_lift").History);
+
+        var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
+        Assert.Contains("orderBy=parcel%20desc", request);
+    }
+
+    /// <summary>
+    /// The scalar boolean story end to end: two measured columns, compared on the network, and
+    /// committed as a dashboard figure that states its determination and how firmly it holds —
+    /// "true · 1σ" — with the per-row determinations behind it as its history.
+    /// </summary>
+    [Fact]
+    public async Task TwoColumnsCompareIntoABooleanDashboardFigure()
+    {
+        using var transport = new FakeDataFeed(
+            columns:
+            [
+                ("timestamp", "bigint"),
+                ("level", "double"), ("level__sigma", "double"),
+                ("capacity", "double"), ("capacity__sigma", "double")
+            ],
+            rows:
+            [
+                ["200", "30", "3", "25", "4"],
+                ["100", "10", "3", "25", "4"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        ReadingStore.Instance.Write(schema);
+        var graph = NetworkGraph.Instance;
+        graph.Reset(seedDemo: false);
+        try
+        {
+            var level = graph.PlaceMeasure($"{Dataset}.level", 0, 0);
+            var capacity = graph.PlaceMeasure($"{Dataset}.capacity", 0, 100);
+            var comparator = graph.AddComparator(300, 50);
+            graph.Connect(level.Id, comparator.Id);
+            graph.Connect(capacity.Id, comparator.Id);
+            var figure = graph.AddFigure("over_capacity", 600, 50);
+            graph.Connect(comparator.Id, figure.Id);
+
+            var committed = FigureCatalog.Instance.Find("over_capacity");
+            Assert.NotNull(committed);
+            Assert.True(committed.IsBoolean);
+            Assert.Equal("true", committed.Display);
+            Assert.Equal(1, committed.Value);
+
+            // |30−25| / √(3² + 4²) = 1 — the σ level rides in the slot a ±σ would use.
+            Assert.Equal("1σ", committed.SigmaDisplay);
+            Assert.Equal(1, committed.SigmaLevel, 12);
+
+            // The row before, 10 was under 25 — the history is the determination per row.
+            Assert.Equal([0, 1], committed.History);
+        }
+        finally
+        {
+            graph.Reset(seedDemo: true);
+            ReadingStore.Instance.Clear();
+        }
+    }
+
+    /// <summary>
+    /// A table with no column by the requested name has no axis — the request carries no ordering
+    /// and no filter, and the rows arrive as the table gave them.
+    ///
+    /// <para>
+    /// Pressing the first column into the role instead is what broke the contract grid: it ordered
+    /// <c>contract_requirements</c> by productid, which repeats thirteen times over, and filtered
+    /// out every row that column was null on. Neither was asked for, and a grid orders itself by
+    /// its own index column anyway.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ATableWithNoAxisIsNeitherOrderedNorFiltered()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("productid", "varchar"), ("contractid", "varchar"), ("required_value", "double")],
+            rows:
+            [
+                ["PRD-UCOME", "CON-2", "42.0"],
+                ["PRD-UCOME", "CON-1", "40.0"],
+                ["PRD-RME", "CON-3", "38.0"]
+            ]);
+        using var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+
+        var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
+        Assert.DoesNotContain("orderBy", request);
+        Assert.DoesNotContain("filter", request);
+
+        // Table order, not reversed: there was no descending sort to undo.
+        Assert.Equal(["PRD-UCOME", "PRD-UCOME", "PRD-RME"], Leaf(schema, "productid").Cells);
+        Assert.Equal(["CON-2", "CON-1", "CON-3"], Leaf(schema, "contractid").Cells);
+
+        // The join key repeats and keeps every cell — the failure this whole change exists for.
+        Assert.Equal(3, Leaf(schema, "productid").Cells.Count);
     }
 
     private static Measure Leaf(DatasetSchema schema, string column)

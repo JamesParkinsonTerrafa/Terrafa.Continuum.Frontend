@@ -20,7 +20,9 @@ public sealed record TransferInput(
     double Sigma,
     string Unit,
     IReadOnlyList<double> History,
-    IReadOnlyList<double> SigmaHistory)
+    IReadOnlyList<double> SigmaHistory,
+    bool IsBoolean = false,
+    double SigmaLevel = double.NaN)
 {
     public double ValueAt(int index) => index >= 0 && index < History.Count ? History[index] : Value;
 
@@ -28,6 +30,12 @@ public sealed record TransferInput(
 }
 
 /// <summary>What came out of a transfer, in the same shape a leaf reading arrives in.</summary>
+/// <param name="IsBoolean">True for a comparator's output — a determination, encoded 1/0.</param>
+/// <param name="SigmaLevel">
+/// The margin in σ units behind a determination, |a−b|/√(σa²+σb²) — unsigned; the direction is
+/// the determination itself. NaN in the vacuous regime (an input's σ unknown), infinite when the
+/// spread is exactly zero and the determination is exact.
+/// </param>
 public sealed record TransferResult(
     double Value,
     double Sigma,
@@ -35,7 +43,10 @@ public sealed record TransferResult(
     IReadOnlyList<double> History,
     IReadOnlyList<double> SigmaHistory,
     bool Linearised,
-    string Note)
+    string Note,
+    bool IsBoolean = false,
+    double SigmaLevel = double.NaN,
+    IReadOnlyList<double>? SigmaLevelHistory = null)
 {
     public bool HasVariance => !double.IsNaN(Sigma) && Sigma > 0;
 }
@@ -133,6 +144,97 @@ public static class TransferMath
                    "Series read from one dataset align row-by-row; pairing these by index would invent data";
         }
         return yTrain.History.Count < 2 ? "a line through fewer than two training points is not a fit" : null;
+    }
+
+    // ── comparison ───────────────────────────────────────────────────────────
+
+    private readonly record struct Determination(double Value, double Level);
+
+    /// <summary>
+    /// Why the comparison cannot run, or null when it can. Like units only: "18 bbl > 20 h" is
+    /// not a statement either way, and evaluating it anyway would dress a category error up as a
+    /// determination.
+    /// </summary>
+    public static string? ComparisonObjection(TransferInput? a, TransferInput? b)
+    {
+        var missing = new List<string>();
+        if (a is null) missing.Add("a");
+        if (b is null) missing.Add("b");
+        if (missing.Count > 0)
+            return $"nothing usable on {string.Join(", ", missing)} — wire the port, or the leaf behind it carries no value";
+        if (a!.Unit.Length > 0 && b!.Unit.Length > 0 && a.Unit != b.Unit)
+            return $"cannot compare {a.Unit} with {b.Unit} — like units only";
+        return null;
+    }
+
+    /// <summary>
+    /// Compares a against b and states how firmly. The determination is the operator applied to
+    /// the readings; the σ level is the margin in σ units, |a−b|/√(σa²+σb²), inputs independent.
+    /// Either σ being NaN means unknown variance — the same house rule <see cref="Combine"/>
+    /// applies — so the level is withheld rather than computed from a variance nobody measured:
+    /// the vacuous regime, shown as "no σ". A spread of exactly zero makes the determination
+    /// exact, which an infinite level is the honest spelling of.
+    /// </summary>
+    public static TransferResult? EvaluateComparison(LibraryFunction operation, TransferInput? a, TransferInput? b)
+    {
+        if (ComparisonObjection(a, b) is not null) return null;
+        if (double.IsNaN(a!.Value) || double.IsNaN(b!.Value)) return null;
+
+        var head = Compare(operation, a.Value, a.Sigma, b.Value, b.Sigma);
+
+        var length = Math.Min(a.History.Count, b.History.Count);
+        var determinations = new List<double>(length);
+        var levels = new List<double>(length);
+        for (var index = 0; index < length; index++)
+        {
+            var step = Compare(operation, a.ValueAt(index), a.SigmaAt(index), b.ValueAt(index), b.SigmaAt(index));
+            determinations.Add(step.Value);
+            levels.Add(step.Level);
+        }
+
+        var note = double.IsNaN(head.Level)
+            ? "no σ level — an input carries no σ · determination stated bare"
+            : double.IsPositiveInfinity(head.Level)
+                ? "inputs carry no spread — the determination is exact"
+                : "σ level = |a−b|/√(σa²+σb²) · inputs independent";
+
+        return new TransferResult(
+            head.Value, double.NaN, "", determinations, [],
+            Linearised: false,
+            Note: note,
+            IsBoolean: true,
+            SigmaLevel: head.Level,
+            SigmaLevelHistory: levels.Any(level => !double.IsNaN(level)) ? levels : null);
+    }
+
+    /// <summary>
+    /// One comparison step, for callers that pair values row-by-row themselves — the select's
+    /// computed columns, whose row order comes from the join rather than from series indices.
+    /// </summary>
+    public static (double Determination, double SigmaLevel) CompareValues(
+        LibraryFunction operation, double a, double sigmaA, double b, double sigmaB)
+    {
+        var step = Compare(operation, a, sigmaA, b, sigmaB);
+        return (step.Value, step.Level);
+    }
+
+    private static Determination Compare(LibraryFunction operation, double a, double sigmaA, double b, double sigmaB)
+    {
+        var determination = operation.Apply([a, b]);
+        if (double.IsNaN(sigmaA) || double.IsNaN(sigmaB)) return new Determination(determination, double.NaN);
+        var spread = Math.Sqrt(sigmaA * sigmaA + sigmaB * sigmaB);
+        return new Determination(
+            determination,
+            spread > 0 ? Math.Abs(a - b) / spread : double.PositiveInfinity);
+    }
+
+    /// <summary>The formula a comparator card titles itself with, e.g. "level > capacity".</summary>
+    public static string ComparisonFormula(LibraryFunction? operation, string? aLabel, string? bLabel)
+    {
+        var formula = operation is null
+            ? $"{aLabel ?? "a"} ? {bLabel ?? "b"}"
+            : operation.FormatApplied([aLabel ?? "a", bLabel ?? "b"]);
+        return formula.Length > 34 ? formula[..33] + "…" : formula;
     }
 
     public static string EstimatorFormula(string name, string? xLabel, string? yLabel, string? predictLabel)

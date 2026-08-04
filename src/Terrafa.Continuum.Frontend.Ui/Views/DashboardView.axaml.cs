@@ -29,7 +29,8 @@ public partial class DashboardView : UserControl
         [
             new ElementEntry("LINE CHART", "series over time · bounds as upper and lower traces", TileKind.Line),
             new ElementEntry("BAR CHART", "one bar per source · bounds as whiskers", TileKind.Bar),
-            new ElementEntry("TABLE", "one row per source · bounds as a ± column", TileKind.Table)
+            new ElementEntry("TABLE", "one row per source · bounds as a ± column", TileKind.Table),
+            new ElementEntry("DATA GRID", "rows of a derived table · booleans as pills", TileKind.Grid)
         ])
     ];
 
@@ -82,9 +83,10 @@ public partial class DashboardView : UserControl
         base.OnAttachedToVisualTree(e);
         VarianceSettings.Changed += OnVarianceChanged;
 
-        // A figure committed on the network canvas, or a dataset mounted on DATA SOURCES, changes
-        // both what this screen offers as a source and what the wired tiles are drawing.
+        // A figure or table committed on the network canvas, or a dataset mounted on DATA SOURCES,
+        // changes both what this screen offers as a source and what the wired tiles are drawing.
         FigureCatalog.Instance.Changed += OnSourcesChanged;
+        TableCatalog.Instance.Changed += OnSourcesChanged;
         Workspace.Instance.Changed += OnSourcesChanged;
         board.Changed += SyncBoard;
 
@@ -98,6 +100,7 @@ public partial class DashboardView : UserControl
         base.OnDetachedFromVisualTree(e);
         VarianceSettings.Changed -= OnVarianceChanged;
         FigureCatalog.Instance.Changed -= OnSourcesChanged;
+        TableCatalog.Instance.Changed -= OnSourcesChanged;
         Workspace.Instance.Changed -= OnSourcesChanged;
         board.Changed -= SyncBoard;
     }
@@ -534,6 +537,21 @@ public partial class DashboardView : UserControl
         EditorBody.Children.Add(FieldLabel("DATA SOURCES"));
         EditorBody.Children.Add(BuildSourceList(tile));
 
+        if (tile.Kind == TileKind.Grid)
+        {
+            BuildGridOptions(tile);
+            var bound = tile.Sources.FirstOrDefault(source => source.Kind == TileSourceKind.Table);
+            var boundTable = bound is null ? null : TableCatalog.Instance.Find(bound.Path);
+            EditorFooter.Text = bound is null
+                ? "Not wired. Pick a derived table below — commit one from a SELECT on 4) NETWORK."
+                : boundTable is null
+                    ? $"{bound.Display} is no longer in the catalogue — rewire the tile."
+                    : boundTable.HasRows
+                        ? $"{boundTable.Name} · {boundTable.StateNote} · rows drawn as they are — σ levels ride on boolean cells while variance is on"
+                        : $"{boundTable.Name} is empty — {boundTable.Note}";
+            return;
+        }
+
         var wired = tile.Sources.Count;
         var resolved = tile.Sources.Select(TileData.Resolve).OfType<TileSeries>().ToList();
         var silent = resolved.Count(series => !series.HasValue);
@@ -586,7 +604,7 @@ public partial class DashboardView : UserControl
     private Control BuildKindRow(DashboardTile tile)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        foreach (var kind in new[] { TileKind.Line, TileKind.Bar, TileKind.Table })
+        foreach (var kind in new[] { TileKind.Line, TileKind.Bar, TileKind.Table, TileKind.Grid })
         {
             var isActive = tile.Kind == kind;
             var text = new TextBlock
@@ -622,6 +640,10 @@ public partial class DashboardView : UserControl
 
     private Control BuildSourceList(DashboardTile tile)
     {
+        // A grid draws one derived table, so its picker offers exactly those — measures and
+        // figures are scalar shapes a grid has no row for.
+        if (tile.Kind == TileKind.Grid) return BuildTableSourceList(tile);
+
         var list = new StackPanel { Spacing = 2 };
 
         if (FigureCatalog.Instance.Figures.Count > 0)
@@ -750,6 +772,159 @@ public partial class DashboardView : UserControl
             board.NotifyEdited();
             RefreshTile(tile);
             UpdateStatus();
+            BuildEditorBody();
+        };
+        return shell;
+    }
+
+    private Control BuildTableSourceList(DashboardTile tile)
+    {
+        var list = new StackPanel { Spacing = 2 };
+        if (TableCatalog.Instance.Tables.Count == 0)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = "no derived tables — commit one from a SELECT on 4) NETWORK",
+                FontSize = TypographySettings.Size(11),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Palette.TextFaint
+            });
+            return list;
+        }
+
+        list.Children.Add(GroupHeader("derived tables /"));
+        foreach (var table in TableCatalog.Instance.Tables)
+            list.Children.Add(TableSourceRow(tile, table));
+        return list;
+    }
+
+    /// <summary>
+    /// Radio semantics rather than the checkbox the other sources use: a grid draws one table,
+    /// so picking a second replaces the first instead of stacking under it.
+    /// </summary>
+    private Control TableSourceRow(DashboardTile tile, DerivedTable table)
+    {
+        var selected = tile.Sources.Any(source => source.Matches(TileSourceKind.Table, table.Key));
+        var brush = selected ? Palette.Green : Palette.TextFaint;
+
+        var check = new TextBlock { Text = selected ? "[x]" : "[ ]", FontSize = TypographySettings.Size(11), Foreground = brush };
+        var name = new TextBlock
+        {
+            Text = table.Name,
+            FontSize = TypographySettings.Size(11),
+            Foreground = brush,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        var state = new TextBlock
+        {
+            Text = table.StateNote,
+            FontSize = TypographySettings.Size(10),
+            Foreground = table.HasRows ? Palette.TextFaint : Palette.Amber
+        };
+
+        var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        left.Children.Add(check);
+        left.Children.Add(name);
+
+        var row = new DockPanel();
+        DockPanel.SetDock(state, Dock.Right);
+        row.Children.Add(state);
+        row.Children.Add(left);
+
+        var shell = new Border
+        {
+            Margin = new Thickness(10, 0, 0, 0),
+            Padding = new Thickness(4, 2),
+            Background = Brushes.Transparent,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = row
+        };
+        shell.PointerEntered += (_, _) => shell.Background = Palette.BgField;
+        shell.PointerExited += (_, _) => shell.Background = Brushes.Transparent;
+        shell.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            tile.Sources.RemoveAll(source => source.Kind == TileSourceKind.Table);
+            if (!selected) tile.Sources.Add(new TileSource(TileSourceKind.Table, table.Key));
+            board.NotifyEdited();
+            RefreshTile(tile);
+            UpdateStatus();
+            BuildEditorBody();
+        };
+        return shell;
+    }
+
+    /// <summary>The grid's own controls — which column leads, and whether booleans light up.</summary>
+    private void BuildGridOptions(DashboardTile tile)
+    {
+        var source = tile.Sources.FirstOrDefault(candidate => candidate.Kind == TileSourceKind.Table);
+        if (source is null || TableCatalog.Instance.Find(source.Path) is not { HasRows: true } table) return;
+
+        EditorBody.Children.Add(FieldLabel("INDEX"));
+        var resolved = DerivedTableView.ResolveIndex(table, tile.IndexLeaf);
+        var keys = new WrapPanel { Margin = new Thickness(0, 2, 0, 4) };
+        foreach (var column in table.Columns)
+            keys.Children.Add(IndexKey(tile, column.Title, column.Title == resolved));
+        EditorBody.Children.Add(keys);
+
+        EditorBody.Children.Add(FieldLabel("BOOLEANS"));
+        EditorBody.Children.Add(HighlightToggle(tile));
+    }
+
+    private Control IndexKey(DashboardTile tile, string title, bool isActive)
+    {
+        var text = new TextBlock
+        {
+            Text = title,
+            FontSize = TypographySettings.Size(9),
+            Foreground = isActive ? Palette.Amber : Palette.TextMuted
+        };
+        var shell = new SquircleBorder
+        {
+            Classes = { isActive ? "emboss-press" : "emboss" },
+            Padding = new Thickness(7, 3),
+            Margin = new Thickness(0, 2, 4, 0),
+            Background = Palette.EmbossSurface,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = text
+        };
+        shell.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            tile.IndexLeaf = title;
+            board.NotifyEdited();
+            RefreshTile(tile);
+            BuildEditorBody();
+        };
+        return shell;
+    }
+
+    private Control HighlightToggle(DashboardTile tile)
+    {
+        var on = tile.HighlightBooleans;
+        var text = new TextBlock
+        {
+            Text = on ? "[x] HIGHLIGHT BOOLEANS" : "[ ] HIGHLIGHT BOOLEANS",
+            FontSize = TypographySettings.Size(10),
+            LetterSpacing = 1,
+            Foreground = on ? Palette.Amber : Palette.TextMuted
+        };
+        var shell = new SquircleBorder
+        {
+            Classes = { on ? "emboss-press" : "emboss" },
+            Padding = new Thickness(12, 5),
+            Margin = new Thickness(0, 2, 0, 0),
+            Background = Palette.EmbossSurface,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = text,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        shell.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            tile.HighlightBooleans = !tile.HighlightBooleans;
+            board.NotifyEdited();
+            RefreshTile(tile);
             BuildEditorBody();
         };
         return shell;

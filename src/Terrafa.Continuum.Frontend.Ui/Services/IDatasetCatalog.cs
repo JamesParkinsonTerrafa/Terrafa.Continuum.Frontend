@@ -54,5 +54,12 @@ public interface IDatasetCatalog
     /// the rows arrive in whatever order the engine produced them, and a line through those is a
     /// fabrication. See <see cref="SeriesAxis"/>.
     /// </param>
-    Task<DatasetSchema> GetSeriesAsync(string dataset, string xAxis);
+    /// <param name="wanted">
+    /// Full paths of the leaves to read, or null to read the whole table. Parquet is columnar, so a
+    /// narrower projection scans fewer bytes: reading the leaves someone actually selected costs
+    /// less than reading all of them. A σ carrier beside a wanted leaf comes along with it, and so
+    /// does the axis. Leaves outside the list arrive with no value, as they always have.
+    /// </param>
+    Task<DatasetSchema> GetSeriesAsync(
+        string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null);
 }

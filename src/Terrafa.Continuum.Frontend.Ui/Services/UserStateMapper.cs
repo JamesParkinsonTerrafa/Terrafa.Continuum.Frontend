@@ -95,7 +95,9 @@ public static class UserStateMapper
                 [
                     .. placement.Tile.Sources.Select(source => new TileSourceState(
                         source.Kind.ToString(), source.Path, source.SigmaFigureKey))
-                ]))
+                ],
+                placement.Tile.IndexLeaf.Length > 0 ? placement.Tile.IndexLeaf : null,
+                placement.Tile.HighlightBooleans))
         ]);
 
     public static void ApplyDashboard(DashboardState state)
@@ -104,7 +106,11 @@ public static class UserStateMapper
         foreach (var tileState in state.Tiles ?? [])
         {
             if (!Enum.TryParse<TileKind>(tileState.Kind, out var kind)) continue;
-            var tile = new DashboardTile(kind, tileState.Name ?? "");
+            var tile = new DashboardTile(kind, tileState.Name ?? "")
+            {
+                IndexLeaf = tileState.IndexLeaf ?? "",
+                HighlightBooleans = tileState.HighlightBooleans
+            };
             foreach (var source in tileState.Sources ?? [])
             {
                 if (source.Path is not { Length: > 0 } path) continue;
@@ -237,13 +243,33 @@ public static class UserStateMapper
         ]);
 
     /// <summary>
-    /// Re-mounts each saved dataset from its schema, leaf by saved leaf, then restores the links.
-    /// Network-dependent and per-dataset tolerant: a dataset that no longer resolves is skipped,
-    /// and everything else still mounts.
+    /// Rebuilds each saved dataset's subtree from its schema, leaf by saved leaf, then swaps the
+    /// whole set in at once.
+    ///
+    /// <para>
+    /// The build happens to one side and the swap happens at the end. Emptying the workspace first
+    /// is what turned an unreachable service into an empty screen: the tree went, nothing replaced
+    /// it, and every tile wired to it reported its source missing. A restore that mounts nothing
+    /// now leaves the tree it found in place.
+    /// </para>
+    ///
+    /// <para>
+    /// This restores structure only. The values behind the leaves are read afterwards by
+    /// <see cref="ReadingLoader"/>, against the selection this rebuilt.
+    /// </para>
     /// </summary>
     public static async Task ApplyWorkspaceAsync(WorkspaceState state, IDatasetCatalog catalog)
     {
-        Workspace.Instance.Reset(seedDemo: false);
+        var rebuilt = new List<MountedSubtree>();
+
+        // The whole-restore promise, held per dataset: a saved mount the catalogue cannot rebuild
+        // keeps whatever this machine already has for it. The demo site is the standing case — it
+        // is seeded on every machine and served by no live catalogue, so a signed-in restore that
+        // rebuilt any live dataset used to swap it away and kill every tile wired to it.
+        void KeepExisting(string dataset)
+        {
+            if (Workspace.Instance.Find(dataset) is { } existing) rebuilt.Add(existing);
+        }
 
         foreach (var mount in state.Mounts ?? [])
         {
@@ -252,34 +278,47 @@ public static class UserStateMapper
             DatasetSchema schema;
             try
             {
-                schema = mount.XAxis is { Length: > 0 } axis
-                    ? await catalog.GetSeriesAsync(dataset, axis)
-                    : await catalog.GetSchemaAsync(dataset);
+                schema = await catalog.GetSchemaAsync(dataset);
             }
             catch (Exception)
             {
+                KeepExisting(dataset);
                 continue;
             }
 
+            var subtree = Workspace.NewSubtree(schema, rebuilt.Count);
             var mounted = false;
             foreach (var path in mount.LeafPaths ?? [])
             {
                 if (schema.Root.Find(path) is not { } node) continue;
-                Workspace.Instance.Mount(schema, node);
+                Workspace.GraftInto(subtree, schema, node);
                 mounted = true;
             }
-            if (!mounted) continue;
+            if (!mounted)
+            {
+                KeepExisting(dataset);
+                continue;
+            }
 
-            if (Workspace.Instance.Find(dataset) is { } subtree)
-                Workspace.Instance.SetVisible(subtree, mount.Visible);
+            subtree.Visible = mount.Visible;
+            if (mount.XAxis is { Length: > 0 } axis) subtree.XAxis = axis;
+            rebuilt.Add(subtree);
         }
 
+        var links = new List<SubtreeLink>();
         foreach (var link in state.Links ?? [])
         {
             if (link.LeftPath is not { Length: > 0 } left || link.RightPath is not { Length: > 0 } right) continue;
             if (!Enum.TryParse<SubtreeLinkKind>(link.Kind, out var kind)) continue;
-            Workspace.Instance.AddLink(left, right, kind);
+            if (left == right) continue;
+            if (rebuilt.FirstOrDefault(subtree => subtree.Root.Find(left) is not null) is not { } leftSubtree) continue;
+            if (rebuilt.FirstOrDefault(subtree => subtree.Root.Find(right) is not null) is not { } rightSubtree) continue;
+            if (leftSubtree == rightSubtree) continue;
+
+            links.Add(new SubtreeLink { LeftPath = left, RightPath = right, Kind = kind });
         }
+
+        Workspace.Instance.Swap(rebuilt, links);
     }
 
     // ── network ──────────────────────────────────────────────────────────────
@@ -297,7 +336,8 @@ public static class UserStateMapper
                 node.Stage,
                 node.Estimator,
                 node.IsOpaque,
-                node.OpaqueTitle))
+                node.OpaqueTitle,
+                node.Operator.Length > 0 ? node.Operator : null))
         ],
         [
             .. NetworkGraph.Instance.Edges.Select(edge => new NetworkEdgeState(
@@ -323,7 +363,8 @@ public static class UserStateMapper
                 Stage = nodeState.Stage ?? "",
                 Estimator = nodeState.Estimator ?? "",
                 IsOpaque = nodeState.IsOpaque,
-                OpaqueTitle = nodeState.OpaqueTitle ?? ""
+                OpaqueTitle = nodeState.OpaqueTitle ?? "",
+                Operator = nodeState.Operator ?? ""
             });
         }
 

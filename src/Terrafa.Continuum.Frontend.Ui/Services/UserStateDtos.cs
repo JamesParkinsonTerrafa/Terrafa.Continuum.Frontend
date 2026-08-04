@@ -61,7 +61,9 @@ public sealed record TileState(
     double Y,
     double Width,
     double Height,
-    IReadOnlyList<TileSourceState>? Sources);
+    IReadOnlyList<TileSourceState>? Sources,
+    string? IndexLeaf = null,
+    bool HighlightBooleans = false);
 
 public sealed record TileSourceState(string? Kind, string? Path, string? SigmaFigureKey);
 
@@ -113,7 +115,8 @@ public sealed record NetworkNodeState(
     string? Stage,
     string? Estimator,
     bool IsOpaque,
-    string? OpaqueTitle);
+    string? OpaqueTitle,
+    string? Operator = null);
 
 public sealed record NetworkEdgeState(string? FromId, string? ToId, string? Port);
 

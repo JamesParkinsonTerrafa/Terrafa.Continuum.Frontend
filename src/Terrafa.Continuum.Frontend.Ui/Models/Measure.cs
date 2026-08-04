@@ -13,6 +13,14 @@ public sealed class Measure
     public bool IsVector { get; init; }
 
     /// <summary>
+    /// True for a determination rather than a quantity — an Athena <c>boolean</c> column.
+    /// <see cref="Display"/> keeps the cell text ("true"), <see cref="Value"/> is 1 or 0 and
+    /// <see cref="History"/> a 0/1 series. It carries no σ of its own: a determination read off
+    /// a table is a statement, not a measurement with a band around it.
+    /// </summary>
+    public bool IsBoolean { get; init; }
+
+    /// <summary>
     /// The reading as a number, NaN when the leaf is categorical, withheld, or otherwise not
     /// plottable. <see cref="Display"/> stays the thing a tree row shows; this is what a chart
     /// consumes.
@@ -36,6 +44,16 @@ public sealed class Measure
     /// rather than a flat figure. Empty means <see cref="Sigma"/> applies at every step.
     /// </summary>
     public IReadOnlyList<double> SigmaHistory { get; init; } = [];
+
+    /// <summary>
+    /// The column's cells across the fetched rows, oldest first, nulls preserved — one entry per
+    /// row. <see cref="History"/> drops nulls and non-numeric cells, so its indices stop
+    /// corresponding across columns the moment any column has a hole; anything that pairs columns
+    /// row-by-row — a join — reads this instead. Text columns, which carry no series at all, keep
+    /// their cells here too: a join key is text. Empty for demo leaves and for tables that failed
+    /// the rows-per-point contract.
+    /// </summary>
+    public IReadOnlyList<string?> Cells { get; init; } = [];
 
     /// <summary>
     /// True for a leaf that exists to carry another leaf's σ — the "sigma" child under a measure.
