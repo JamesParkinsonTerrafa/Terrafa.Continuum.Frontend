@@ -4,20 +4,45 @@ using Terrafa.Continuum.Frontend.Models;
 
 namespace Terrafa.Continuum.Frontend.Services;
 
-public sealed class StaticDataFeed : IDataFeed
-{
-    public DataSnapshot Current { get; } = DemoData.CreateSnapshot();
+public sealed record PositionRow(string Commodity, string Quantity, string Sigma, string Delta, bool DeltaUp, double[] Trend);
 
-    public event EventHandler<DataSnapshot>? SnapshotChanged
-    {
-        add { }
-        remove { }
-    }
-}
+public sealed record LeaderboardRow(string Rank, string Model, string Score, string Delta, int Direction, bool Dimmed);
 
-public static class DemoData
+public sealed record CalibrationPoint(double Predicted, double Observed, bool OverConfident);
+
+public sealed record EventLogEntry(string Time, string Id, string Kind, string Detail, string Accent);
+
+public sealed record NamedSeries(string Label, double[] Xs, double[] Ys);
+
+/// <summary>
+/// The worked example the screens are furnished with: an operator's site, a book of positions, a
+/// model leaderboard, a calibration curve and an event log. None of it comes from anywhere — it is
+/// written down here so a screen has something to draw before anyone signs in, and so a snapshot
+/// run renders the same pixels every time.
+///
+/// <para>
+/// This was called <c>DataSnapshot</c>, behind an <c>IDataFeed</c> whose one implementation was
+/// static and whose change event nobody ever raised. The names were wanted for the actual data
+/// feed — the thing that is the source of truth on data — and having both meanings in play was a
+/// standing invitation to wire a screen to the wrong one.
+/// </para>
+/// </summary>
+public sealed record DemoContent(
+    DateTimeOffset AsOf,
+    SiteAlpha Site,
+    DataTreeNode Tree,
+    IReadOnlyList<PositionRow> Positions,
+    IReadOnlyList<LeaderboardRow> Leaderboard,
+    IReadOnlyList<CalibrationPoint> Calibration,
+    IReadOnlyList<NamedSeries> WealthSeries,
+    double WealthThreshold,
+    IReadOnlyList<NamedSeries> SurvivalSeries,
+    double[] IntensityBars,
+    double[] IntensityLine,
+    IReadOnlyList<EventLogEntry> Events,
+    long EventCount)
 {
-    public static DataSnapshot CreateSnapshot()
+    public static DemoContent Create()
     {
         var site = new SiteAlpha();
         var tree = DataTreeBuilder.Build(site, "SITE_ALPHA");
@@ -80,7 +105,7 @@ public static class DemoData
             new("14:25:47", "e-1284096", "external.grade", "→ intake.{grade} · bound via contract", "cyan")
         };
 
-        return new DataSnapshot(
+        return new DemoContent(
             new DateTimeOffset(2026, 7, 8, 14, 32, 7, TimeSpan.Zero),
             site,
             tree,

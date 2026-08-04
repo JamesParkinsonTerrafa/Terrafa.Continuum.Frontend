@@ -161,6 +161,62 @@ public class DurableSessionTests
         Assert.Equal(new StoredCredential("someone@terrafa.com", "refresh-2"), store.Credential);
     }
 
+    /// <summary>
+    /// Changed announces a change of identity and nothing else. It used to fire for a renewal too,
+    /// and the screen that listened for it could not tell the two apart: a routine token refresh
+    /// reset the workspace to the demo seed and then saved the seed over the operator's real work.
+    /// </summary>
+    [Fact]
+    public async Task Renewal_AnnouncesNothing()
+    {
+        var (session, authenticator, _) = NewSession();
+        // ExpiresIn of zero puts the session past its renewal point immediately.
+        authenticator.NextTokens = new AuthTokens("access", "id", "refresh-1", 0);
+        await session.SignInAsync("someone@terrafa.com", "pw");
+
+        var changes = 0;
+        session.Changed += () => changes++;
+        authenticator.NextTokens = new AuthTokens("access-2", "id", "refresh-2", 3600);
+
+        Assert.Equal("access-2", await session.GetAccessTokenAsync());
+        Assert.Equal(0, changes);
+        Assert.True(session.IsSignedIn);
+    }
+
+    /// <summary>
+    /// Signing in as whoever is already signed in changes nothing, so it announces nothing. A
+    /// subscriber that resets shared state on the event would otherwise throw that account's work
+    /// away for re-entering their own password.
+    /// </summary>
+    [Fact]
+    public async Task SigningInAsTheSamePerson_AnnouncesNothing()
+    {
+        var (session, authenticator, _) = NewSession();
+        authenticator.NextTokens = new AuthTokens("access", "id", "refresh-1", 3600);
+        await session.SignInAsync("someone@terrafa.com", "pw");
+
+        var changes = 0;
+        session.Changed += () => changes++;
+        await session.SignInAsync("someone@terrafa.com", "pw");
+
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    public async Task SigningInAsSomeoneElse_IsAnIdentityChange()
+    {
+        var (session, authenticator, _) = NewSession();
+        authenticator.NextTokens = new AuthTokens("access", "id", "refresh-1", 3600);
+        await session.SignInAsync("someone@terrafa.com", "pw");
+
+        var changes = 0;
+        session.Changed += () => changes++;
+        await session.SignInAsync("nobody@terrafa.com", "pw");
+
+        Assert.Equal(1, changes);
+        Assert.Equal("nobody@terrafa.com", session.Identity);
+    }
+
     [Fact]
     public void AStorageValue_RoundTrips_AndGarbageReadsAsAbsent()
     {

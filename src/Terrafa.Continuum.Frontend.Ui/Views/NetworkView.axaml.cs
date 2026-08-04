@@ -39,11 +39,11 @@ public partial class NetworkView : UserControl
     private RailDrag? railDrag;
     private Border? railGhost;
 
-    public NetworkView() : this(DemoData.CreateSnapshot(), _ => { })
+    public NetworkView() : this(DemoContent.Create(), _ => { })
     {
     }
 
-    public NetworkView(DataSnapshot snapshot, Action<int> navigate)
+    public NetworkView(DemoContent snapshot, Action<int> navigate)
     {
         this.navigate = navigate;
         InitializeComponent();

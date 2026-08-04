@@ -53,9 +53,9 @@ public class SeriesTests
                 ["200", "20.5"],
                 ["100", "10.5"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
         var leaf = Leaf(schema, "cell_concentration_umol_l");
 
         Assert.Equal([10.5, 20.5, 30.5, 40.5], leaf.History);
@@ -77,9 +77,9 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: [["200", "2"], ["100", "1"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        await catalog.GetSeriesAsync(Dataset, "timestamp");
+        await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
         Assert.Contains("orderBy=timestamp%20desc", request);
@@ -87,6 +87,10 @@ public class SeriesTests
         // The axis leads the projection so the column cap can never cut the one column the
         // request cannot do without.
         Assert.Contains("?columns=timestamp&", request);
+
+        // And the window is asked for rather than applied on arrival, so the service can cut the
+        // rows in the engine instead of sending rows the client will discard.
+        Assert.Contains($"maxRows={DataFeedOptions.SeriesRows}", request);
     }
 
     /// <summary>
@@ -105,9 +109,9 @@ public class SeriesTests
                 ["200", "EN590", null],
                 ["100", "EN590", "1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         var grade = Leaf(schema, "grade");
         Assert.Empty(grade.History);
@@ -129,13 +133,13 @@ public class SeriesTests
         using var withTimestamp = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: []);
-        using var catalogA = new HttpDatasetCatalog(withTimestamp.Client);
+        var catalogA = new HttpDatasetCatalog(withTimestamp.Client);
         Assert.Equal("timestamp", SeriesAxis.Preferred(await catalogA.GetSchemaAsync(Dataset)));
 
         using var without = new FakeDataFeed(
             columns: [("captured_at", "bigint"), ("level", "double")],
             rows: []);
-        using var catalogB = new HttpDatasetCatalog(without.Client);
+        var catalogB = new HttpDatasetCatalog(without.Client);
         var schema = await catalogB.GetSchemaAsync(Dataset);
 
         Assert.Null(SeriesAxis.Preferred(schema));
@@ -154,9 +158,80 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("spectrum", "array<double>")],
             rows: []);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
         Assert.Equal(["timestamp"], SeriesAxis.Candidates(await catalog.GetSchemaAsync(Dataset)));
+    }
+
+    /// <summary>
+    /// The window is per-query, and the read says whether it saw the whole table. A chart, a grid
+    /// and a join all work from the cells and cannot tell a window from a complete read — so the
+    /// read has to say, and it used to say nothing at all.
+    /// </summary>
+    [Fact]
+    public async Task AWindowedReadSaysSo_AndAFullOneSaysThatToo()
+    {
+        var rows = new List<IReadOnlyList<string?>>();
+        for (var i = 10; i > 0; i--) rows.Add([i.ToString(), i.ToString()]);
+
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("level", "double")],
+            rows: rows);
+        var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var windowed = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", MaxRows: 4));
+        Assert.True(windowed.Truncated);
+        Assert.Equal(4, windowed.WindowRows);
+        Assert.Equal([7, 8, 9, 10], Leaf(windowed, "level").History);
+
+        var whole = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", MaxRows: 50));
+        Assert.False(whole.Truncated);
+        Assert.Equal(10, whole.WindowRows);
+        Assert.Equal(10, Leaf(whole, "level").History.Count);
+    }
+
+    /// <summary>
+    /// The row cap is part of what makes a read a different read. Keyed without it, the cache hands
+    /// a caller that asked for the whole table the window a previous caller settled for — and
+    /// reports it as a complete answer, which is the one failure this whole signal exists to stop.
+    /// </summary>
+    [Fact]
+    public async Task AskingForMoreRows_IsADifferentReadRatherThanACacheHit()
+    {
+        var rows = new List<IReadOnlyList<string?>>();
+        for (var i = 10; i > 0; i--) rows.Add([i.ToString(), i.ToString()]);
+
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("level", "double")],
+            rows: rows);
+        var catalog = new HttpDatasetCatalog(transport.Client);
+
+        await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", MaxRows: 4));
+        var wider = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", MaxRows: 50));
+
+        Assert.Equal(10, Leaf(wider, "level").History.Count);
+        Assert.False(wider.Truncated);
+        Assert.Equal(2, transport.Requests.Count(url => url.Contains("/data?")));
+    }
+
+    /// <summary>
+    /// The service reporting its own cap counts as truncation even when everything it sent fits
+    /// inside the window. It says so on every response and nothing read it, so a read cut upstream
+    /// was indistinguishable from a complete one.
+    /// </summary>
+    [Fact]
+    public async Task TheServicesOwnTruncationIsCarriedThrough()
+    {
+        using var transport = new FakeDataFeed(
+            columns: [("timestamp", "bigint"), ("level", "double")],
+            rows: [["200", "2"], ["100", "1"]],
+            truncated: true);
+        var catalog = new HttpDatasetCatalog(transport.Client);
+
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
+
+        Assert.True(schema.Truncated);
+        Assert.Equal(2, schema.WindowRows);
     }
 
     /// <summary>
@@ -173,9 +248,9 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: rows);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var leaf = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "level");
+        var leaf = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "level");
 
         Assert.Equal(DataFeedOptions.SeriesRows, leaf.History.Count);
 
@@ -194,9 +269,9 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: [["300", "3"], ["200", "2"], ["100", "1"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
         var workspace = Workspace.Instance;
         workspace.Mount(schema, schema.Root);
 
@@ -239,9 +314,9 @@ public class SeriesTests
                 ["200", "20", "2"],
                 ["100", "10", "1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
         var level = Leaf(schema, "level");
 
         Assert.True(level.HasVariance);
@@ -267,9 +342,9 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double"), ("level__sigma", "double")],
             rows: [["200", "20", "2"], ["100", "10", "1"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
         Assert.True(Leaf(schema, "level__sigma").IsSigmaCarrier);
 
         var workspace = Workspace.Instance;
@@ -311,9 +386,9 @@ public class SeriesTests
                 ["200", "20", "7"],
                 ["100", "10", "7"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var level = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "level");
+        var level = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "level");
 
         // A flat σ that was genuinely flat stays flat. Regeneration would wobble it by ±18%, so
         // three identical readings is the sharpest available assertion that none happened.
@@ -335,9 +410,9 @@ public class SeriesTests
                 ["200", "20", null],
                 ["100", "10", "1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var level = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "level");
+        var level = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "level");
 
         Assert.Empty(level.SigmaHistory);
 
@@ -365,9 +440,9 @@ public class SeriesTests
                 ["200", "20"],
                 ["100", "10"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var level = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "level");
+        var level = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "level");
 
         Assert.Equal([10, 20, 30], level.History);
         Assert.Equal(30, level.Value);
@@ -401,9 +476,9 @@ public class SeriesTests
                 ["100", "methanol", "0.11"],
                 ["100", "acid_number", "0.30"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         // Still detected, and still said out loud on the leaf — that is what a screen reads to
         // warn that no column here is a series.
@@ -439,9 +514,9 @@ public class SeriesTests
                 ["200", "20", "0.2"],
                 ["100", "10", "0.1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var level = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "level");
+        var level = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "level");
 
         Assert.Equal([10, 20], level.History);
         Assert.Equal([0.1, 0.2], level.SigmaHistory);
@@ -466,9 +541,9 @@ public class SeriesTests
                 ["100", "LIG-02", "12", "1.2"],
                 ["100", "LIG-01", "11", "1.1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         // Two rows per timestamp, yet no ties: the member split resolves them into two series.
         Assert.Equal(1, schema.RowsPerPoint);
@@ -508,9 +583,9 @@ public class SeriesTests
                 ("grade", "varchar")
             ],
             rows: [["200", "2", "0.2", "20", "EN590"], ["100", "1", "0.1", "10", "EN590"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.level"]);
+        await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", [$"{Dataset}.level"]));
 
         var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
         Assert.Contains("columns=timestamp", request);
@@ -539,9 +614,9 @@ public class SeriesTests
                 ["100", "LIG-02", "12", "12"],
                 ["100", "LIG-01", "11", "11"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.LIG-01.level"]);
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", [$"{Dataset}.LIG-01.level"]));
 
         var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
         Assert.Contains("columns=sensor_id", request);
@@ -561,9 +636,9 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: [["200", "2"], ["100", "1"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        await catalog.GetSeriesAsync(Dataset, "timestamp", [$"{Dataset}.column_that_left"]);
+        await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp", [$"{Dataset}.column_that_left"]));
 
         var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
         Assert.Contains("columns=level", request);
@@ -582,7 +657,7 @@ public class SeriesTests
         using var transport = new FakeDataFeed(
             columns: [("timestamp", "bigint"), ("level", "double")],
             rows: [["200", "2"], ["100", "1"]]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
         // The structure-only pass is what the operator sees first, and what they can mount from.
         var structure = await catalog.GetSchemaAsync(Dataset);
@@ -596,7 +671,7 @@ public class SeriesTests
             Assert.Empty(mounted.Reading!.History);
 
             // The series lands. One write, and the already-mounted node reads through to it.
-            var series = await catalog.GetSeriesAsync(Dataset, "timestamp");
+            var series = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
             ReadingStore.Instance.Write(series);
             workspace.SetAxis(Dataset, series.XAxis);
 
@@ -637,9 +712,9 @@ public class SeriesTests
                 ["200", "false"],
                 ["100", "true"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var leaf = Leaf(await catalog.GetSeriesAsync(Dataset, "timestamp"), "on_spec");
+        var leaf = Leaf(await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp")), "on_spec");
 
         Assert.True(leaf.IsBoolean);
         Assert.Equal([1, 0, 1], leaf.History);
@@ -667,9 +742,9 @@ public class SeriesTests
                 ["200", "EN590", null],
                 ["100", "EN590", "1"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         Assert.Equal(["EN590", "EN590", "JETA1"], Leaf(schema, "grade").Cells);
         Assert.Equal(["1", null, "3"], Leaf(schema, "level").Cells);
@@ -696,9 +771,9 @@ public class SeriesTests
                 ["TK-02", "EN590", "17.8"],
                 ["TK-01", "EN590", "24.6"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "parcel");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "parcel"));
 
         Assert.Equal(1, schema.RowsPerPoint);
         Assert.Equal(["TK-01", "TK-02", "TK-03"], Leaf(schema, "parcel").Cells);
@@ -729,9 +804,9 @@ public class SeriesTests
                 ["200", "30", "3", "25", "4"],
                 ["100", "10", "3", "25", "4"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
         ReadingStore.Instance.Write(schema);
         var graph = NetworkGraph.Instance;
         graph.Reset(seedDemo: false);
@@ -787,9 +862,9 @@ public class SeriesTests
                 ["PRD-UCOME", "CON-1", "40.0"],
                 ["PRD-RME", "CON-3", "38.0"]
             ]);
-        using var catalog = new HttpDatasetCatalog(transport.Client);
+        var catalog = new HttpDatasetCatalog(transport.Client);
 
-        var schema = await catalog.GetSeriesAsync(Dataset, "timestamp");
+        var schema = await catalog.GetSeriesAsync(new DatasetQuery(Dataset, "timestamp"));
 
         var request = Assert.Single(transport.Requests, url => url.Contains("/data?"));
         Assert.DoesNotContain("orderBy", request);
@@ -819,13 +894,16 @@ public class SeriesTests
     {
         private readonly IReadOnlyList<(string Name, string Type)> columns;
         private readonly IReadOnlyList<IReadOnlyList<string?>> rows;
+        private readonly bool truncated;
 
         public FakeDataFeed(
             IReadOnlyList<(string Name, string Type)> columns,
-            IReadOnlyList<IReadOnlyList<string?>> rows)
+            IReadOnlyList<IReadOnlyList<string?>> rows,
+            bool truncated = false)
         {
             this.columns = columns;
             this.rows = rows;
+            this.truncated = truncated;
             Client = new HttpClient(this);
         }
 
@@ -879,7 +957,7 @@ public class SeriesTests
             return $$"""
                      {"catalogName":"awsdatacatalog","database":"{{Database}}","table":"{{Table}}",
                      "columns":[{{string.Join(",", names)}}],"rows":[{{string.Join(",", values)}}],
-                     "truncated":false,"queryExecutionId":"test","dataScannedBytes":0}
+                     "truncated":{{(truncated ? "true" : "false")}},"queryExecutionId":"test","dataScannedBytes":0}
                      """;
         }
 

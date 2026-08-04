@@ -258,7 +258,8 @@ public static class UserStateMapper
     /// <see cref="ReadingLoader"/>, against the selection this rebuilt.
     /// </para>
     /// </summary>
-    public static async Task ApplyWorkspaceAsync(WorkspaceState state, IDatasetCatalog catalog)
+    public static async Task ApplyWorkspaceAsync(
+        WorkspaceState state, IDatasetCatalog catalog, CancellationToken cancellationToken = default)
     {
         var rebuilt = new List<MountedSubtree>();
 
@@ -278,7 +279,11 @@ public static class UserStateMapper
             DatasetSchema schema;
             try
             {
-                schema = await catalog.GetSchemaAsync(dataset);
+                schema = await catalog.GetSchemaAsync(dataset, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception)
             {

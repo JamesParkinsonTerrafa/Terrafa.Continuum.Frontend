@@ -42,6 +42,11 @@ public static class MeasureNumerics
     /// Run once over a finished tree: a leaf cannot inspect its own children while being built.
     /// A σ child wins over an inline <see cref="Measure.SigmaDisplay"/>, since it is structured
     /// data with a series behind it rather than a string that had to be parsed.
+    ///
+    /// <para>
+    /// This is the <i>nested</i> spelling only. A flat Athena table cannot nest, so it spells the
+    /// pairing in the column name instead — see <see cref="Services.DatasetSchemaBuilder"/>.
+    /// </para>
     /// </summary>
     public static void BindSigmaLeaves(DataTreeNode root)
     {
@@ -60,47 +65,17 @@ public static class MeasureNumerics
             // the whole reason to carry it as a leaf, and the flat default would draw a band
             // indistinguishable from an inline scalar.
             var carrierHistory = History(carrier.Path, carrierReading.Value, Math.Abs(carrierReading.Value) * 0.18);
-            carrier.Reading = With(carrierReading, carrierHistory, isSigmaCarrier: true);
-            node.Reading = new Measure
+            carrier.Reading = carrierReading with { History = carrierHistory, IsSigmaCarrier = true };
+            node.Reading = reading with
             {
-                Display = reading.Display,
                 SigmaDisplay = reading.SigmaDisplay.Length > 0
                     ? reading.SigmaDisplay
                     : $"± {carrierReading.Display}",
-                SigmaKind = reading.SigmaKind,
-                Detail = reading.Detail,
-                Selected = reading.Selected,
-                IsNew = reading.IsNew,
-                IsVector = reading.IsVector,
-                IsBoolean = reading.IsBoolean,
-                Value = reading.Value,
                 Sigma = carrierReading.Value,
-                Unit = reading.Unit,
-                History = reading.History,
-                SigmaHistory = carrierHistory,
-                Cells = reading.Cells
+                SigmaHistory = carrierHistory
             };
         }
     }
-
-    private static Measure With(Measure source, IReadOnlyList<double> history, bool isSigmaCarrier) => new()
-    {
-        Display = source.Display,
-        SigmaDisplay = source.SigmaDisplay,
-        SigmaKind = source.SigmaKind,
-        Detail = source.Detail,
-        Selected = source.Selected,
-        IsNew = source.IsNew,
-        IsVector = source.IsVector,
-        IsBoolean = source.IsBoolean,
-        Value = source.Value,
-        Sigma = source.Sigma,
-        Unit = source.Unit,
-        History = history,
-        SigmaHistory = source.SigmaHistory,
-        Cells = source.Cells,
-        IsSigmaCarrier = isSigmaCarrier
-    };
 
     /// <summary>
     /// Returns <paramref name="reading"/> with numerics derived from its display strings.
@@ -119,21 +94,12 @@ public static class MeasureNumerics
         var sigma = ParseSigma(reading.SigmaDisplay);
         if (double.IsNaN(value)) return reading;
 
-        return new Measure
+        return reading with
         {
-            Display = reading.Display,
-            SigmaDisplay = reading.SigmaDisplay,
-            SigmaKind = reading.SigmaKind,
-            Detail = reading.Detail,
-            Selected = reading.Selected,
-            IsNew = reading.IsNew,
-            IsVector = reading.IsVector,
-            IsBoolean = reading.IsBoolean,
             Value = value,
             Sigma = sigma,
             Unit = unit,
-            History = withHistory ? History(path, value, sigma) : [],
-            Cells = reading.Cells
+            History = withHistory ? History(path, value, sigma) : []
         };
     }
 

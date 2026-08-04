@@ -63,14 +63,26 @@ public static class DataFeedOptions
     public static int MaxSampleColumns { get; } = 64;
 
     /// <summary>
-    /// Most points a leaf's series keeps, taken from the recent end.
+    /// The default window: most rows a read keeps per column, taken from the recent end. A
+    /// <see cref="DatasetQuery"/> may ask for a different one; this is what it asks for unless
+    /// somebody says otherwise, and it is deliberately small so browsing the catalogue in
+    /// development cannot pull a large table into a browser heap.
     ///
     /// <para>
-    /// The service caps a read at its own MaxRows and applies that cap <i>after</i> ordering, so
-    /// asking for ascending order on a long table would hand back its oldest rows and the chart
-    /// would draw that dataset's distant past. The query therefore sorts descending and the rows
-    /// are reversed here, which makes both cuts — the service's and this one — keep the present.
+    /// The service applies its own cap (<c>AthenaQueryOptions.MaxRows</c>, 1000 at the time of
+    /// writing) <i>after</i> ordering, so asking for ascending order on a long table would hand
+    /// back its oldest rows and the chart would draw that dataset's distant past. The query
+    /// therefore sorts descending and the rows are reversed on arrival, which makes both cuts —
+    /// the service's and this one — keep the present.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>This is not a cost control.</b> The service's SQL is <c>ORDER BY … LIMIT n</c>, and
+    /// Athena bills on bytes scanned: a LIMIT behind an ORDER BY still reads every row to work out
+    /// which ones are the top n. Narrowing the columns does reduce the scan, because the tables are
+    /// Parquet; narrowing the rows only reduces what is transferred and held. The lever for scan is
+    /// a partition filter, which the query has no way to express yet.
     /// </para>
     /// </summary>
-    public static int SeriesRows { get; } = 240;
+    public const int SeriesRows = 240;
 }

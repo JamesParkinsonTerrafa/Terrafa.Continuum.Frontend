@@ -45,22 +45,27 @@ public partial class DataSourcesView : UserControl
     private string? selectedNode;
 
     /// <summary>
-    /// The column the open dataset's readings are ordered by. Null while nobody has settled on one,
-    /// which is a state the screen shows rather than guesses its way out of — see
-    /// <see cref="SeriesAxis"/> for why an unordered read is not worth drawing.
+    /// The column the open dataset is being read along — the pick, not the outcome. Null while
+    /// nobody has settled on one, which is a state the screen shows rather than guesses its way out
+    /// of; see <see cref="SeriesAxis"/> for why an unordered read is not worth drawing. What the
+    /// read actually managed is <see cref="DatasetSchema.XAxis"/> on the schema that comes back —
+    /// a table with no such column is read unordered and says so.
     /// </summary>
     private string? xAxis;
 
-    public DataSourcesView() : this(DemoData.CreateSnapshot(), _ => { })
+    /// <summary>The read in flight, cancelled when a newer one supersedes it.</summary>
+    private CancellationTokenSource? reading;
+
+    public DataSourcesView() : this(_ => { })
     {
     }
 
-    public DataSourcesView(DataSnapshot snapshot, Action<int> navigate)
-        : this(snapshot, navigate, StubDatasetCatalog.Instance)
+    public DataSourcesView(Action<int> navigate)
+        : this(navigate, StubDatasetCatalog.Instance)
     {
     }
 
-    public DataSourcesView(DataSnapshot snapshot, Action<int> navigate, IDatasetCatalog catalog)
+    public DataSourcesView(Action<int> navigate, IDatasetCatalog catalog)
     {
         this.catalog = catalog;
         InitializeComponent();
@@ -83,21 +88,16 @@ public partial class DataSourcesView : UserControl
         NoiseOverlay.Attach(this);
     }
 
-    /// <summary>True when the rows came from the real service rather than the built-in demo data.</summary>
-    private bool IsLive => catalog switch
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        SessionDatasetCatalog session => session.IsLive,
-        HttpDatasetCatalog => true,
-        _ => false
-    };
+        // Whatever is in flight is for a screen that is going away.
+        reading?.Cancel();
+        reading = null;
+        base.OnDetachedFromVisualTree(e);
+    }
 
-    /// <summary>Databases the catalogue could not read, whichever catalogue is in force.</summary>
-    private IReadOnlyList<string> Warnings => catalog switch
-    {
-        SessionDatasetCatalog session => session.Warnings,
-        HttpDatasetCatalog http => http.Warnings,
-        _ => []
-    };
+    /// <summary>True when the rows came from the real service rather than the built-in demo data.</summary>
+    private bool IsLive => catalog.IsLive;
 
     /// <summary>Which service the screen is reading from, for the status line.</summary>
     private string Source => IsLive ? DataFeedOptions.DisplayHost.ToUpperInvariant() : "DEMO DATA";
@@ -134,7 +134,9 @@ public partial class DataSourcesView : UserControl
         button.PointerPressed += (_, e) =>
         {
             e.Handled = true;
-            ConnectDataFlow.Show(Dialog, session, OnSignedIn);
+            // Nothing to run afterwards: signing in is an identity change, and the session rebuilds
+            // every screen against the catalogue that replaces this one.
+            ConnectDataFlow.Show(Dialog, session, () => { });
         };
         return button;
     }
@@ -170,8 +172,9 @@ public partial class DataSourcesView : UserControl
         signOut.PointerPressed += (_, e) =>
         {
             e.Handled = true;
+            // Nothing else to do here. Signing out is an identity change, and the session rebuilds
+            // every screen — including this one — against the catalogue that replaces this one.
             session.SignOut();
-            OnSessionSwitched();
         };
 
         var left = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -193,52 +196,44 @@ public partial class DataSourcesView : UserControl
         };
     }
 
-    private void OnSignedIn() => OnSessionSwitched();
-
-    /// <summary>
-    /// Signing in or out replaces the entire catalogue, so nothing selected against the old one
-    /// survives — the open preview least of all, since its paths belong to datasets that are no
-    /// longer listed.
-    /// </summary>
-    private void OnSessionSwitched()
-    {
-        catalogue = new Dictionary<string, IReadOnlyList<string>>();
-        catalogueMessage = null;
-        previewMessage = null;
-        preview = null;
-        openDataset = null;
-        selectedDataset = null;
-        selectedNode = null;
-
-        SyncText.Text = $"CATALOGUE READING {Source}";
-        RebuildConnect();
-        RenderPreview();
-        RebuildMounted();
-        RebuildCatalogue();
-        LoadCatalogue();
-    }
-
     /// <summary>Fired at construction — the catalogue call is the screen's only startup dependency.</summary>
     private async void LoadCatalogue()
     {
+        var request = Restart();
         try
         {
-            catalogue = await catalog.GetAvailableDatasetsAsync();
+            catalogue = await catalog.GetAvailableDatasetsAsync(request.Token);
 
             // A listing can succeed and still be short: the service answers 502 only when every
             // database failed, so a partial failure arrives as a 200 and has to be said out loud.
-            var warnings = Warnings;
+            var warnings = catalog.Warnings;
             catalogueMessage = warnings.Count == 0
                 ? null
                 : $"{warnings.Count} database(s) could not be read — {string.Join("; ", warnings)}";
         }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
         catch (Exception ex)
         {
             catalogue = new Dictionary<string, IReadOnlyList<string>>();
-            catalogueMessage = Describe(ex);
+            catalogueMessage = ReadingLoader.Describe(ex);
             SyncText.Text = $"CATALOGUE UNREACHABLE · {Source}";
         }
         RebuildCatalogue();
+    }
+
+    /// <summary>
+    /// Cancels whatever this screen last asked for and hands back the token for the new request.
+    /// Opening a dataset, changing its axis and reloading the catalogue all supersede each other:
+    /// only the most recent one is still wanted, and it used to be guarded by comparing strings on
+    /// arrival — which stopped a stale answer being drawn but let it finish being fetched.
+    /// </summary>
+    private CancellationTokenSource Restart()
+    {
+        reading?.Cancel();
+        return reading = new CancellationTokenSource();
     }
 
     /// <summary>
@@ -255,6 +250,7 @@ public partial class DataSourcesView : UserControl
     /// </summary>
     private async void OpenSchema(string dataset)
     {
+        var request = Restart();
         openDataset = dataset;
         previewMessage = null;
         xAxis = null;
@@ -263,9 +259,7 @@ public partial class DataSourcesView : UserControl
 
         try
         {
-            var schema = await catalog.GetSchemaAsync(dataset);
-            if (openDataset != dataset) return;
-            preview = schema;
+            preview = await catalog.GetSchemaAsync(dataset, request.Token);
 
             // Demo trees are written with their series already in them and there is nothing to
             // order — the axis exists because Athena has no inherent row order, not because a
@@ -276,43 +270,43 @@ public partial class DataSourcesView : UserControl
                 return;
             }
 
-            xAxis = SeriesAxis.Preferred(schema);
+            xAxis = SeriesAxis.Preferred(preview);
             RenderPreview();
-            if (xAxis is { } axis) await LoadSeries(dataset, axis);
+            if (xAxis is { } axis) await LoadSeries(dataset, axis, request.Token);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
-            if (openDataset != dataset) return;
             // The structure may already be on screen from the first pass; keep it and report that
             // the values are what failed, rather than throwing the schema away too.
-            previewMessage = Describe(ex);
+            previewMessage = ReadingLoader.Describe(ex);
             RenderPreview();
         }
     }
 
     /// <summary>
-    /// Reads the dataset ordered by <paramref name="axis"/>. Guarded on the axis as well as the
-    /// dataset: changing the axis starts a second read of the same dataset, and the slower of the
-    /// two must not land on top of the newer one.
+    /// Reads the dataset ordered by <paramref name="axis"/> and publishes it. The read itself is
+    /// <see cref="ReadingLoader.ReadAsync"/> — the same one the restore uses — so the store write
+    /// and the recorded axis cannot come apart from the fetch. What is left here is the screen's
+    /// own business: which preview to draw.
     /// </summary>
-    private async Task LoadSeries(string dataset, string axis)
+    private async Task LoadSeries(string dataset, string axis, CancellationToken cancellationToken)
     {
         try
         {
-            var series = await catalog.GetSeriesAsync(dataset, axis);
-            if (openDataset != dataset || xAxis != axis) return;
-            preview = series;
+            preview = await ReadingLoader.ReadAsync(
+                catalog, new DatasetQuery(dataset, axis), cancellationToken);
             previewMessage = null;
-
-            // Values are found by path, so one write reaches the preview, any mount of this
-            // dataset, and every tile wired to it. Nothing walks a tree to hand them out.
-            ReadingStore.Instance.Write(series);
-            workspace.SetAxis(dataset, series.XAxis);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch (Exception ex)
         {
-            if (openDataset != dataset || xAxis != axis) return;
-            previewMessage = Describe(ex);
+            previewMessage = ReadingLoader.Describe(ex);
         }
         RenderPreview();
     }
@@ -324,18 +318,12 @@ public partial class DataSourcesView : UserControl
     /// </summary>
     private async void ChooseAxis(string dataset, string axis)
     {
+        var request = Restart();
         xAxis = axis;
         previewMessage = null;
         RenderPreview();
-        await LoadSeries(dataset, axis);
+        await LoadSeries(dataset, axis, request.Token);
     }
-
-    /// <summary>
-    /// A DataFeedException already reads as a sentence — the service writes specific messages and
-    /// the client passes them through. Anything else is unexpected, so it is named as such.
-    /// </summary>
-    private static string Describe(Exception ex) =>
-        ex is DataFeedException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
 
     // ── catalogue rail ───────────────────────────────────────────────────────
 
@@ -716,13 +704,18 @@ public partial class DataSourcesView : UserControl
         };
         row.Children.Add(chip);
 
+        // Three states, and the middle one is the one that used to be invisible: read in full,
+        // read but windowed, or not yet ordered. A windowed read is amber, because everything
+        // downstream — a chart, a grid, a join — will otherwise present it as the whole table.
         row.Children.Add(new TextBlock
         {
             Text = xAxis is null
                 ? "rows arrive unordered — pick the column the readings run along"
-                : $"rows sorted by {xAxis}, newest {DataFeedOptions.SeriesRows} kept",
+                : schema.Truncated
+                    ? $"sorted by {xAxis} · newest {schema.WindowRows} rows read — the table holds more"
+                    : $"sorted by {xAxis} · all {schema.WindowRows} rows read",
             FontSize = TypographySettings.Size(10),
-            Foreground = xAxis is null ? Palette.Amber : Palette.TextFaint,
+            Foreground = xAxis is null || schema.Truncated ? Palette.Amber : Palette.TextFaint,
             VerticalAlignment = VerticalAlignment.Center
         });
 
@@ -1139,6 +1132,12 @@ public partial class DataSourcesView : UserControl
         MountedList.Children.Clear();
         foreach (var subtree in workspace.Subtrees)
             MountedList.Children.Add(MountedRow(subtree));
+
+        // What the session tried to read on the way in and could not. It is said here because a
+        // dataset that failed to read looks exactly like an empty one everywhere else — a blank
+        // tile, and no way to tell "nothing there" from "could not reach it".
+        foreach (var failure in Session.Instance.ReadFailures)
+            MountedList.Children.Add(Note($"{failure.Dataset} — {failure.Message}"));
 
         var leaves = workspace.Subtrees.Sum(subtree => subtree.LeafCount);
         MountedSummary.Text =

@@ -42,24 +42,23 @@ public partial class MainView : UserControl
     /// <summary>Floor on the drawn scale, so a tiny window clips the plate rather than pulping it.</summary>
     private const double MinDrawnScale = 0.45;
 
-    private readonly IDataFeed feed;
+    private readonly DemoContent content;
     private readonly IDatasetCatalog catalog;
     private readonly Dictionary<int, UserControl> screens = [];
     private readonly ScaleTransform plateScale = new();
     private int activeIndex;
-    private string? sessionIdentity;
 
-    public MainView() : this(new StaticDataFeed())
+    public MainView() : this(DemoContent.Create())
     {
     }
 
-    public MainView(IDataFeed feed) : this(feed, StubDatasetCatalog.Instance)
+    public MainView(DemoContent content) : this(content, StubDatasetCatalog.Instance)
     {
     }
 
-    public MainView(IDataFeed feed, IDatasetCatalog catalog)
+    public MainView(DemoContent content, IDatasetCatalog catalog)
     {
-        this.feed = feed;
+        this.content = content;
         this.catalog = catalog;
         InitializeComponent();
 
@@ -70,11 +69,6 @@ public partial class MainView : UserControl
         // figures, so whichever screen opens first must find them already derived rather than
         // showing the values they were declared with until someone visits NETW.
         _ = NetworkGraph.Instance;
-
-        // Warm the catalogue while the first screen builds — DATA SOURCES then opens populated.
-        // Signed out there is no live catalogue to warm, so the prefetch waits for sign-in;
-        // OnSessionChanged fires it once the session arrives.
-        if (AuthSession.Instance.IsSignedIn) _ = WarmCatalogue();
 
         SwitchTo(LandingScreen);
         AddHandler(
@@ -98,8 +92,7 @@ public partial class MainView : UserControl
         Workspace.Instance.Changed += InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed += InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed += InvalidateInactiveScreens;
-        sessionIdentity = CurrentSessionIdentity();
-        AuthSession.Instance.Changed += OnSessionChanged;
+        Session.Instance.Changed += RebuildScreens;
         SettingsFlyout.ToggleRequested += ToggleSettings;
         SettingsFlyout.SignInRequested += ShowConnect;
         ContactDialog.ShowRequested += ShowContact;
@@ -113,60 +106,11 @@ public partial class MainView : UserControl
         Workspace.Instance.Changed -= InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed -= InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed -= InvalidateInactiveScreens;
-        AuthSession.Instance.Changed -= OnSessionChanged;
+        Session.Instance.Changed -= RebuildScreens;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
         SettingsFlyout.SignInRequested -= ShowConnect;
         ContactDialog.ShowRequested -= ShowContact;
         base.OnDetachedFromVisualTree(e);
-    }
-
-    /// <summary>
-    /// Signing in or out swaps the whole catalogue underneath the app, so one account's mounts,
-    /// figures and readings must not survive into the next session — the workspace, network and
-    /// board all reset. Everything resets to the demo seed in both directions, so a signed-in restore
-    /// applies over the same state it would find at startup — ApplyWorkspaceAsync's KeepExisting
-    /// fallback needs the demo mount still present to keep saved tiles wired to it alive, and an
-    /// account with nothing saved lands on the seeded demo rather than a blank board. Every screen
-    /// is rebuilt, the one on show included — the session can change from the settings flyout over
-    /// any screen, not just DATA SOURCES.
-    ///
-    /// <para>
-    /// Only a change of identity resets. The session raises Changed for a token restore and a
-    /// renewal too, and those arrive after the restored documents have been applied — resetting on
-    /// one wipes the operator's work back to the seed and saves the seed over it.
-    /// </para>
-    /// </summary>
-    private void OnSessionChanged()
-    {
-        var identity = CurrentSessionIdentity();
-        if (identity == sessionIdentity) return;
-        sessionIdentity = identity;
-
-        Workspace.Instance.Reset(seedDemo: true);
-        NetworkGraph.Instance.Reset(seedDemo: true);
-        Dashboard.Instance.Reset(seedDemo: true);
-        RebuildScreens();
-        if (AuthSession.Instance.IsSignedIn) _ = WarmCatalogue();
-    }
-
-    private static string? CurrentSessionIdentity() =>
-        AuthSession.Instance.IsSignedIn ? AuthSession.Instance.Username ?? "" : null;
-
-    /// <summary>
-    /// Prefetch only. A failure is deliberately dropped here: DataSourcesView makes the same call
-    /// and reports it on screen, and leaving it unobserved on a discarded task would instead
-    /// surface as an UnobservedTaskException from the finaliser thread.
-    /// </summary>
-    private async Task WarmCatalogue()
-    {
-        try
-        {
-            await catalog.GetAvailableDatasetsAsync();
-        }
-        catch (Exception)
-        {
-            // Reported by the screen that needs it.
-        }
     }
 
     /// <summary>
@@ -203,21 +147,22 @@ public partial class MainView : UserControl
         Contact.Show();
     }
 
-    private UserControl CreateScreen(int index)
+    private UserControl CreateScreen(int index) => index switch
     {
-        var snapshot = feed.Current;
-        return index switch
-        {
-            0 => new NetworkView(snapshot, SwitchTo),
-            1 => new TransferFunctionView(snapshot, SwitchTo),
-            2 => new DashboardView(snapshot, SwitchTo),
-            3 => new DbTreeView(snapshot, SwitchTo),
-            4 => new SiteMapView(snapshot, SwitchTo),
-            5 => new DataSourcesView(snapshot, SwitchTo, catalog),
-            _ => new CsvExportView(snapshot, SwitchTo)
-        };
-    }
+        0 => new NetworkView(content, SwitchTo),
+        1 => new TransferFunctionView(SwitchTo),
+        2 => new DashboardView(SwitchTo),
+        3 => new DbTreeView(content, SwitchTo),
+        4 => new SiteMapView(content, SwitchTo),
+        5 => new DataSourcesView(SwitchTo, catalog),
+        _ => new CsvExportView(SwitchTo)
+    };
 
+    /// <summary>
+    /// Throws every screen away and rebuilds the one on show. Called for a theme or type change,
+    /// and for a session change — the session can turn over from the settings flyout on any screen,
+    /// not just DATA SOURCES, and it replaces the catalogue every screen reads from.
+    /// </summary>
     private void RebuildScreens()
     {
         screens.Clear();

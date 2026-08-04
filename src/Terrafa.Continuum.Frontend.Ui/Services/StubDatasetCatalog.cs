@@ -29,10 +29,16 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
         "SITE_ALPHA", "own telemetry", "v1.4", "1 s", "2019-04 → live", "internal",
         DataTreeBuilder.Build(new SiteAlpha(), "SITE_ALPHA"));
 
-    public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync() =>
+    public bool IsLive => false;
+
+    /// <summary>Demo data cannot fail to be read, so there is never anything to warn about.</summary>
+    public IReadOnlyList<string> Warnings => [];
+
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync(
+        CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>(Catalogue);
 
-    public Task<DatasetSchema> GetSchemaAsync(string dataset)
+    public Task<DatasetSchema> GetSchemaAsync(string dataset, CancellationToken cancellationToken = default)
     {
         if (!schemaCache.TryGetValue(dataset, out var schema))
         {
@@ -44,13 +50,12 @@ public sealed class StubDatasetCatalog : IDatasetCatalog
 
     /// <summary>
     /// Stub readings are baked into the schema, series and all, so there is nothing extra to fetch
-    /// and no ordering to impose — the demo trees are written in order. The axis is accepted and
-    /// ignored rather than rejected, so a caller does not have to know which catalogue it holds.
+    /// and no ordering to impose — the demo trees are written in order, and there is no projection
+    /// to narrow. The query is accepted and its axis and paths ignored, so a caller does not have
+    /// to know which catalogue it is holding.
     /// </summary>
-    // The demo tree declares its own values, so there is no projection to narrow and nothing to
-    // read: the wanted list is accepted and ignored.
-    public Task<DatasetSchema> GetSeriesAsync(
-        string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null) => GetSchemaAsync(dataset);
+    public Task<DatasetSchema> GetSeriesAsync(DatasetQuery query, CancellationToken cancellationToken = default) =>
+        GetSchemaAsync(query.Dataset, cancellationToken);
 
     private static DatasetSchema BuildSchema(string dataset) => dataset switch
     {

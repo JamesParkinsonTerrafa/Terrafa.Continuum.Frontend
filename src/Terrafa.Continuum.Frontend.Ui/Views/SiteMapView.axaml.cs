@@ -46,11 +46,11 @@ public partial class SiteMapView : UserControl
     private MapPin? selectedPin;
     private TextBlock? anchorValue;
 
-    public SiteMapView() : this(DemoData.CreateSnapshot(), _ => { })
+    public SiteMapView() : this(DemoContent.Create(), _ => { })
     {
     }
 
-    public SiteMapView(DataSnapshot snapshot, Action<int> navigate)
+    public SiteMapView(DemoContent snapshot, Action<int> navigate)
     {
         this.navigate = navigate;
         InitializeComponent();
@@ -248,7 +248,7 @@ public partial class SiteMapView : UserControl
 
     // ── catalogue of pinnable values ──────────────────────────────────────────────────
 
-    private void BuildCatalogue(DataSnapshot snapshot)
+    private void BuildCatalogue(DemoContent snapshot)
     {
         foreach (var group in BuildSources(snapshot).GroupBy(source => source.Group))
         {
@@ -263,7 +263,7 @@ public partial class SiteMapView : UserControl
         }
     }
 
-    private static IEnumerable<PinSource> BuildSources(DataSnapshot snapshot)
+    private static IEnumerable<PinSource> BuildSources(DemoContent snapshot)
     {
         var tree = snapshot.Tree;
         foreach (var objectNode in tree.Descendants().Where(node =>

@@ -14,20 +14,20 @@ public partial class MainWindow : Window
 {
     private readonly MainView root;
 
-    public MainWindow() : this(new StaticDataFeed())
+    public MainWindow() : this(DemoContent.Create())
     {
     }
 
     // Leaves the catalogue on the stub — the constructor SnapshotRunner uses, where a render must
     // not depend on a service being reachable.
-    public MainWindow(IDataFeed feed) : this(feed, StubDatasetCatalog.Instance)
+    public MainWindow(DemoContent content) : this(content, StubDatasetCatalog.Instance)
     {
     }
 
-    public MainWindow(IDataFeed feed, IDatasetCatalog catalog)
+    public MainWindow(DemoContent content, IDatasetCatalog catalog)
     {
         InitializeComponent();
-        root = new MainView(feed, catalog);
+        root = new MainView(content, catalog);
         Content = root;
     }
 
