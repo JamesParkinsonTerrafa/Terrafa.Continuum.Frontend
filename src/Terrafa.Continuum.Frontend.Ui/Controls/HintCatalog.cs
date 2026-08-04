@@ -54,73 +54,95 @@ public static class HintCatalog
             "Every input to every step is picked by hand and stays on show. Change what feeds a "
             + "number and you can see exactly what moved, and why.",
             new Point(0, 170)),
-
-            //TO POINT TO CORRECT PAGE/ LOCATION
         new HintPointer(
-            "DataSources",
-            HintSide.Right,
-            "CENTRALISE EVERYTHING",
-            "The catalogue of everything the operation could know: " 
-            + "its own sites, market prices, weather, freight, policy, contracts. "
-            + "This is how the picture grows. A bigger tree, and every mount makes the figures downstream sharper.",
-            new Point(0, 170)),
-
-        new HintPointer(
-            "DataTree",
-            HintSide.Right,
-            "THE SHAPE OF THE OPERATION",
-            "Beside it the event log. Every reading, every change, every new tank is a line in a list that only grows. "
-            + "Value: nothing is ever overwritten, so you can wind back to any moment and see exactly what was known then. That is what makes it possible to test honestly whether we would have been right.",
-            new Point(0, 170)),
-
-        new HintPointer(
-            "TransferFunction",
-            HintSide.Right,
+            "ResultFooter",
+            HintSide.Left,
             "BUILD CONFIDENCE",
             "You focus on the analysis, the platform tells you whether it is safe. "
             + "It shows the domain, flags the pole, and draws the band with the line. "
             + "Value: this is exactly where a spreadsheet lies to you. Divide by something near zero and Excel hands you a number.",
-            new Point(0, 170)),
+            new Point(0, -60)),
+    ];
 
+    private static readonly IReadOnlyList<HintPointer> NetworkHints =
+    [
         new HintPointer(
-            "Network",
-            HintSide.Right,
+            "Diagram",
+            HintSide.Left,
             "PROPAGATE CONFIDENCE",
             "Wire numbers together and the band is carried for you. Two tank levels into a total, 24,085 barrels plus or minus 152.  "
             + "On the hazard branch it says linearisation refused and switches itself to Monte Carlo, then draws the expiry risk dashed "
             + "because the frailty term is not identifiable from those leaves."
             + "Value: the whole product in one screen. It computes, it says how sure it is, and it declines when it cannot support the answer.",
-            new Point(0, 170)),
+            new Point(660, 240)),
+    ];
 
+    private static readonly IReadOnlyList<HintPointer> DashboardHints =
+    [
         new HintPointer(
-            "DashBoard",
-            HintSide.Right,
+            "VarianceToggle",
+            HintSide.Left,
             "EVERYDAY SCREEN",
             "the change here is the most important one in the build. Variance is on by default. Every chart form carries its bounds "
             + "and a tile wired to a source with no sigma is left blank rather than drawn as if it were certain. "
             + "Value:  A number that cannot show how sure it is does not get drawn.",
-            new Point(0, 170)),
+            new Point(-200, 620)),
+    ];
 
+    private static readonly IReadOnlyList<HintPointer> DataTreeHints =
+    [
         new HintPointer(
-            "Map",
-            HintSide.Right,
+            "EventRows",
+            HintSide.Left,
+            "THE SHAPE OF THE OPERATION",
+            "Beside it the event log. Every reading, every change, every new tank is a line in a list that only grows. "
+            + "Value: nothing is ever overwritten, so you can wind back to any moment and see exactly what was known then. That is what makes it possible to test honestly whether we would have been right.",
+            new Point(0, 180)),
+    ];
+
+    private static readonly IReadOnlyList<HintPointer> MapHints =
+    [
+        new HintPointer(
+            "Plan",
+            HintSide.Left,
             "CONTEXTUALISING YOUR DATA",
             "The number standing where the thing is. The meter's flow is drawn as an error ellipse whose long axis is the direction you are least sure about. "
             + "Value: it makes the model legible to someone who will never open the network canvas. The ellipse says the thing a single number cannot.",
-            new Point(0, 170)),
+            new Point(520, -280)),
+    ];
 
+    private static readonly IReadOnlyList<HintPointer> DataSourcesHints =
+    [
         new HintPointer(
-            "CSVExport",
+            "CatalogueList",
             HintSide.Right,
+            "CENTRALISE EVERYTHING",
+            "The catalogue of everything the operation could know: "
+            + "its own sites, market prices, weather, freight, policy, contracts. "
+            + "This is how the picture grows. A bigger tree, and every mount makes the figures downstream sharper.",
+            new Point(0, 0)),
+    ];
+
+    private static readonly IReadOnlyList<HintPointer> CsvExportHints =
+    [
+        new HintPointer(
+            "PipelineBody",
+            HintSide.Left,
             "NOTHING IS ASSUMED",
             "Every input to every step is picked by hand and stays on show. Change what feeds a "
             + "number and you can see exactly what moved, and why.",
-            new Point(0, 170)),
+            new Point(0, -180)),
     ];
 
     public static IReadOnlyList<HintPointer> For(int screenIndex) => screenIndex switch
     {
+        NetworkScreen => NetworkHints,
         TransferFunctionScreen => TransferFunctionHints,
+        DashboardScreen => DashboardHints,
+        DataTreeScreen => DataTreeHints,
+        MapScreen => MapHints,
+        DataSourcesScreen => DataSourcesHints,
+        CsvExportScreen => CsvExportHints,
         _ => []
     };
 }

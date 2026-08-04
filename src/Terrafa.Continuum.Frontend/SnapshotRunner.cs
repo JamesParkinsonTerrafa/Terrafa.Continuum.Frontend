@@ -59,6 +59,12 @@ public static class SnapshotRunner
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
         HintSettings.SetEnabled(true);
+
+        // Every screen carries pointer tips now, so the whole set is captured together — a bubble
+        // that lands over a panel it is not pointing at only shows up in the frame.
+        PointerHintSettings.SetEnabled(true);
+        CaptureAllViews(outputDir, snapshot, "-pointers");
+        PointerHintSettings.SetEnabled(false);
         BuilderModeSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-readonly");
         BuilderModeSettings.SetEnabled(true);
@@ -1022,12 +1028,12 @@ public static class SnapshotRunner
 
         PointerHintSettings.SetEnabled(true);
         Pump();
-        Console.WriteLine($"pointer probe: builder mode shows {BubbleCount()} bubbles at once (expected 3)");
+        Console.WriteLine($"pointer probe: builder mode shows {BubbleCount()} bubbles at once (expected 4)");
         Capture(window, outputDir, "2-tfn-pointers");
 
         BuilderModeSettings.SetEnabled(false);
         Pump();
-        Console.WriteLine($"pointer probe: plain mode shows {BubbleCount()} bubbles (expected 1)");
+        Console.WriteLine($"pointer probe: plain mode shows {BubbleCount()} bubbles (expected 2)");
         Capture(window, outputDir, "2-tfn-pointers-plain");
         BuilderModeSettings.SetEnabled(true);
         Pump();
@@ -1041,7 +1047,7 @@ public static class SnapshotRunner
         ClickText(window, layer, "✕");
         Pump();
         Console.WriteLine(
-            $"pointer probe: one close left {BubbleCount()} bubbles (expected 2) · key down = {KeyIsDown()}");
+            $"pointer probe: one close left {BubbleCount()} bubbles (expected 3) · key down = {KeyIsDown()}");
         Capture(window, outputDir, "2-tfn-pointers-one-closed");
 
         ClickKey(window, key);
@@ -1053,7 +1059,7 @@ public static class SnapshotRunner
         ClickKey(window, key);
         SettleKey(key, wantDown: true);
         Console.WriteLine(
-            $"pointer probe: key press again restored {BubbleCount()} bubbles (expected 3) · " +
+            $"pointer probe: key press again restored {BubbleCount()} bubbles (expected 4) · " +
             $"key down = {KeyIsDown()}");
 
         window.Close();
