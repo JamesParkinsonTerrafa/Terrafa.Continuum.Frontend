@@ -7,9 +7,17 @@ using Terrafa.Continuum.Frontend.Themes;
 namespace Terrafa.Continuum.Frontend.Services;
 
 /// <summary>
-/// Keeps a signed-in user's state durable: loads every saved document after sign-in and applies
-/// it to the singletons, then listens to their change events and writes dirty kinds back through
-/// <see cref="Store"/>, debounced so a drag saves once rather than sixty times a second.
+/// The durable half of a session: applies a signed-in user's saved documents on the way in, then
+/// listens to the singletons' change events and writes dirty kinds back through <see cref="Store"/>,
+/// debounced so a drag saves once rather than sixty times a second.
+///
+/// <para>
+/// It does not decide <i>when</i> to load. <see cref="Session"/> owns that, and calls
+/// <see cref="LoadAllAsync"/> as one step of a transition it also resets and reads inside. This
+/// class used to subscribe to <see cref="AuthSession.Changed"/> itself and start loading the moment
+/// a token arrived, which put it in a race with the screen that reset the same singletons on the
+/// same event.
+/// </para>
 ///
 /// <para>
 /// Never started on a snapshot run, for the same reason auth restore is skipped there: the
@@ -29,16 +37,14 @@ public static class UserStateSync
     /// are echoes of the store, not edits, and must not be written straight back.</summary>
     private static bool applying;
 
-    /// <summary>True once this sign-in's documents have been applied. Nothing is marked dirty
-    /// before that: the events fired while screens reset around sign-in describe seed state,
-    /// and saving them would overwrite the documents about to be loaded.</summary>
-    private static bool loaded;
+    /// <summary>
+    /// Whether an edit is worth saving. False from the moment a session begins until its documents
+    /// are in place: everything raised in that window describes seed state or the load itself, and
+    /// writing any of it back is how an account's work came to be overwritten with the demo seed.
+    /// </summary>
+    private static bool saving;
 
     public static IUserStateStore Store { get; set; } = new NullUserStateStore();
-
-    /// <summary>The catalogue workspace restore re-mounts from. Set where the app builds its
-    /// session catalogue; null skips workspace restore rather than failing the rest.</summary>
-    public static IDatasetCatalog? Catalog { get; set; }
 
     /// <summary>How long after the last edit the write goes out.</summary>
     public static TimeSpan DebounceDelay { get; set; } = TimeSpan.FromSeconds(2);
@@ -47,12 +53,24 @@ public static class UserStateSync
     /// a Cognito pool; the app never touches it.</summary>
     public static Func<bool> SignedInProbe { get; set; } = () => AuthSession.Instance.IsSignedIn;
 
+    /// <summary>
+    /// Stops saving and discards pending edits. Called as a session begins; a successful
+    /// <see cref="LoadAllAsync"/> is the only thing that turns saving back on.
+    /// </summary>
+    public static void SuspendSaving()
+    {
+        lock (Gate)
+        {
+            Dirty.Clear();
+            saving = false;
+        }
+    }
+
+    /// <summary>Wires the save side. The load side is <see cref="Session"/>'s to call.</summary>
     public static void Start()
     {
         if (started) return;
         started = true;
-
-        AuthSession.Instance.Changed += OnSessionChanged;
 
         SnapSettings.Changed += MarkSettingsDirty;
         UiScaleSettings.Changed += MarkSettingsDirty;
@@ -76,83 +94,63 @@ public static class UserStateSync
         Workspace.Instance.Changed += MarkWorkspaceDirty;
         NetworkGraph.Instance.Changed += MarkNetworkDirty;
         NetworkGraph.Instance.Edited += MarkNetworkDirty;
-
-        // The session may already have been restored from the stored refresh token before this
-        // ran — Program starts the restore before Avalonia builds the first frame.
-        if (AuthSession.Instance.IsSignedIn) _ = LoadAllAsync();
-    }
-
-    private static void OnSessionChanged()
-    {
-        if (AuthSession.Instance.IsSignedIn)
-        {
-            _ = LoadAllAsync();
-            return;
-        }
-        lock (Gate)
-        {
-            Dirty.Clear();
-            loaded = false;
-        }
     }
 
     /// <summary>
-    /// Reads every kind and applies what exists. A kind that is missing, unreadable or fails to
-    /// apply leaves the seeded state for that kind and takes nothing else down with it.
+    /// Reads every kind and applies what exists, in the one order that works: the network's stages
+    /// name saved functions and its measures name mounted leaves, so both have to be in place
+    /// before it loads. The dashboard resolves late, by string, and would survive any order.
+    ///
+    /// <para>
+    /// A kind that is missing, unreadable or fails to apply leaves the seeded state for that kind
+    /// and takes nothing else down with it. This restores structure only — the values behind it are
+    /// read afterwards, by <see cref="ReadingLoader"/>, against the selections this rebuilt.
+    /// </para>
     /// </summary>
-    public static async Task LoadAllAsync()
+    public static async Task LoadAllAsync(
+        IDatasetCatalog catalog, CancellationToken cancellationToken = default)
     {
-        lock (Gate)
-        {
-            if (loaded) return;
-            Dirty.Clear();
-        }
         applying = true;
         try
         {
-            var settings = ReadAsync(UserStateKinds.Settings, UserStateJson.Default.SettingsState);
-            var functions = ReadAsync(UserStateKinds.Functions, UserStateJson.Default.FunctionsState);
-            var workspace = ReadAsync(UserStateKinds.Workspace, UserStateJson.Default.WorkspaceState);
-            var network = ReadAsync(UserStateKinds.Network, UserStateJson.Default.NetworkState);
-            var dashboard = ReadAsync(UserStateKinds.Dashboard, UserStateJson.Default.DashboardState);
+            var settings = ReadAsync(UserStateKinds.Settings, UserStateJson.Default.SettingsState, cancellationToken);
+            var functions = ReadAsync(UserStateKinds.Functions, UserStateJson.Default.FunctionsState, cancellationToken);
+            var workspace = ReadAsync(UserStateKinds.Workspace, UserStateJson.Default.WorkspaceState, cancellationToken);
+            var network = ReadAsync(UserStateKinds.Network, UserStateJson.Default.NetworkState, cancellationToken);
+            var dashboard = ReadAsync(UserStateKinds.Dashboard, UserStateJson.Default.DashboardState, cancellationToken);
             await Task.WhenAll(settings, functions, workspace, network, dashboard);
 
-            if (await settings is { } settingsState) Apply(() => UserStateMapper.ApplySettings(settingsState));
+            cancellationToken.ThrowIfCancellationRequested();
 
-            // Order matters from here: the network's stages name saved functions, its measures
-            // name mounted leaves, and the dashboard resolves against both — but late, by string,
-            // so the dashboard would survive any order. The network would not.
+            if (await settings is { } settingsState) Apply(() => UserStateMapper.ApplySettings(settingsState));
             if (await functions is { } functionsState) Apply(() => UserStateMapper.ApplyFunctions(functionsState));
-            if (await workspace is { } workspaceState && Catalog is { } catalog)
+
+            if (await workspace is { } workspaceState)
             {
                 try
                 {
-                    await UserStateMapper.ApplyWorkspaceAsync(workspaceState, catalog);
+                    await UserStateMapper.ApplyWorkspaceAsync(workspaceState, catalog, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception)
                 {
                     // Whatever mounted before the failure stands; the rest keeps loading.
                 }
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (await network is { } networkState) Apply(() => UserStateMapper.ApplyNetwork(networkState));
             if (await dashboard is { } dashboardState) Apply(() => UserStateMapper.ApplyDashboard(dashboardState));
 
-            // Structure is restored, so the selections are known and the values can be read. This
-            // is the only place values are read on the way in — there is no clock behind it and no
-            // second pass. A screen showing a stale number is not a case that exists any more.
-            if (Catalog is { } readCatalog)
-            {
-                try
-                {
-                    await ReadingLoader.LoadAsync(readCatalog);
-                }
-                catch (Exception)
-                {
-                    // Per-dataset failures are handled inside. This guards the loader itself.
-                }
-            }
-
-            lock (Gate) loaded = true;
+            // The documents are in place, so an edit from here on is the operator's own and worth
+            // keeping. Reached only on success: a load that was cancelled or that threw leaves
+            // saving off, because what is on screen then is seed state and saving it would publish
+            // the seed over the account's real work.
+            lock (Gate) saving = true;
         }
         finally
         {
@@ -202,16 +200,23 @@ public static class UserStateSync
     };
 
     private static async Task<T?> ReadAsync<T>(
-        string kind, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo) where T : class
+        string kind,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
+        CancellationToken cancellationToken) where T : class
     {
         try
         {
-            if (await Store.GetAsync(kind) is not { Length: > 0 } json) return null;
+            if (await Store.GetAsync(kind, cancellationToken) is not { Length: > 0 } json) return null;
             return JsonSerializer.Deserialize(json, typeInfo);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
-            // Unreachable store or an unreadable document — the seed state stands.
+            // Unreachable store or an unreadable document — the seed state stands. A store that
+            // simply has nothing for this kind returns null and never reaches here.
             return null;
         }
     }
@@ -240,7 +245,7 @@ public static class UserStateSync
         if (!SignedInProbe()) return;
         lock (Gate)
         {
-            if (!loaded) return;
+            if (!saving) return;
             Dirty.Add(kind);
         }
         ScheduleFlush(DebounceDelay);
@@ -275,7 +280,7 @@ public static class UserStateSync
         lock (Gate)
         {
             Dirty.Clear();
-            loaded = false;
+            saving = false;
             flushScheduled = false;
         }
         applying = false;

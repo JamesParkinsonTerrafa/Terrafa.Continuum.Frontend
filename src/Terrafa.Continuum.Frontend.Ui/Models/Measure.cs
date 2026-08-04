@@ -2,7 +2,17 @@
 
 namespace Terrafa.Continuum.Frontend.Models;
 
-public sealed class Measure
+/// <summary>
+/// One reading: what it is worth, how sure of it we are, and how it should read on screen.
+///
+/// <para>
+/// A record rather than a class so a derived reading is written as
+/// <c>reading with { Sigma = … }</c>. Every variant of this type — a σ carrier, a measure that has
+/// just been paired with its σ, a demo leaf that has learnt its numerics — used to be a hand-written
+/// copy of all fourteen members, and adding a field meant finding all five of them.
+/// </para>
+/// </summary>
+public sealed record Measure
 {
     public string Display { get; init; } = "";
     public string SigmaDisplay { get; init; } = "";

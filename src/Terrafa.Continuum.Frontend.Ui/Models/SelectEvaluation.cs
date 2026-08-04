@@ -95,6 +95,13 @@ public static class SelectEvaluation
             ? $"{join.Rows.Count} row(s) · {columns.Count} column(s) · from {join.BaseDataset}"
             : $"{join.Rows.Count} row(s) · inner join on {join.KeyCount} key(s) · " +
               $"{join.MatchedBaseRows}/{join.BaseRows} base rows matched";
+
+        // Said whenever any table behind this went in windowed. Every count above is over what was
+        // read, so without this a join across the newest 240 rows of a long table reads as a
+        // complete answer — the row counts all agree, and they are all agreeing about a window.
+        if (Windowed(datasets) is { Count: > 0 } windowed)
+            note += $" · windowed: {string.Join(", ", windowed)} — more rows exist than were read";
+
         if (starved.Count > 0) note += $" · no cells behind {string.Join(", ", starved)}";
 
         return new DerivedTable
@@ -110,6 +117,18 @@ public static class SelectEvaluation
             Inputs = inputs
         };
     }
+
+    /// <summary>
+    /// The selected datasets whose last read did not see the whole table, named with the row count
+    /// it did see. Empty when everything behind the select was read in full.
+    /// </summary>
+    private static List<string> Windowed(IReadOnlyList<string> datasets) =>
+    [
+        .. datasets
+            .Select(dataset => (Dataset: dataset, Window: ReadingStore.Instance.WindowOf(dataset)))
+            .Where(entry => entry.Window is { Truncated: true })
+            .Select(entry => $"{entry.Dataset} ({entry.Window!.Rows} rows)")
+    ];
 
     // ── the join ─────────────────────────────────────────────────────────────
 

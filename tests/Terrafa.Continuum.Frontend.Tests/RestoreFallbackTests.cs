@@ -17,21 +17,25 @@ public class RestoreFallbackTests
     /// <summary>A catalogue behaving like the live service: no demo datasets, one live dataset.</summary>
     private sealed class LiveLikeCatalog : IDatasetCatalog
     {
-        public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync() =>
+        public bool IsLive => true;
+
+        public IReadOnlyList<string> Warnings => [];
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync(
+            CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<string>>>(
                 new Dictionary<string, IReadOnlyList<string>>
                 {
                     ["synthetic"] = ["synthetic_dev.parcels"]
                 });
 
-        public Task<DatasetSchema> GetSchemaAsync(string dataset) =>
+        public Task<DatasetSchema> GetSchemaAsync(string dataset, CancellationToken cancellationToken = default) =>
             dataset == "synthetic_dev.parcels"
                 ? Task.FromResult(Schema(dataset))
                 : throw new InvalidOperationException($"{dataset} is not served");
 
-        public Task<DatasetSchema> GetSeriesAsync(
-            string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null) =>
-            GetSchemaAsync(dataset);
+        public Task<DatasetSchema> GetSeriesAsync(DatasetQuery query, CancellationToken cancellationToken = default) =>
+            GetSchemaAsync(query.Dataset, cancellationToken);
 
         private static DatasetSchema Schema(string dataset)
         {

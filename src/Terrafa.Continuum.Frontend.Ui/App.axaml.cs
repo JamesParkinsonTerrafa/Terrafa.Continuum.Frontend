@@ -23,24 +23,21 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        IDataFeed feed = new StaticDataFeed();
+        var content = DemoContent.Create();
 
-        // Demo data until someone signs in on the DATA SOURCES screen, the real service after.
-        // The object is the same either way, so nothing downstream has to know which is in force.
-        IDatasetCatalog catalog = new SessionDatasetCatalog();
-
-        // Workspace restore re-mounts saved datasets through the same catalogue the screens read,
-        // so its caches are shared and the demo/live swap applies to the restore too.
-        UserStateSync.Catalog = catalog;
+        // Demo data until someone signs in, the real service after. The session owns it, so the
+        // screens, the restore and the probe all read through the one object rather than each
+        // reaching for their own and disagreeing about which is in force.
+        var catalog = Session.Instance.Catalog;
 
         switch (ApplicationLifetime)
         {
             case IClassicDesktopStyleApplicationLifetime desktop:
-                desktop.MainWindow = new MainWindow(feed, catalog);
+                desktop.MainWindow = new MainWindow(content, catalog);
                 break;
             // The browser has no windows, only a root control on the page.
             case ISingleViewApplicationLifetime singleView:
-                singleView.MainView = new MainView(feed, catalog);
+                singleView.MainView = new MainView(content, catalog);
                 break;
         }
         base.OnFrameworkInitializationCompleted();

@@ -130,6 +130,39 @@ public sealed class NetworkGraph
         ReadingStore.Instance.Changed += Recompute;
     }
 
+    /// <summary>
+    /// Holds the graph still while something rearranges the world underneath it — a session
+    /// transition resetting the singletons, applying documents and reading values. Nothing prunes,
+    /// recomputes or announces until the last scope closes, and then it does so once.
+    ///
+    /// <para>
+    /// Pruning is the reason this must span the whole transition rather than each step of it.
+    /// <see cref="PruneUnmounted"/> drops measure cards no value answers for, and a load fills the
+    /// store one dataset at a time — so a workspace change part way through would delete the cards
+    /// belonging to every dataset not yet read. Scopes nest by count, so an inner batch inside an
+    /// outer one stays silent, and a superseded transition unwinding early cannot publish over a
+    /// newer one still working.
+    /// </para>
+    /// </summary>
+    public IDisposable Suspend()
+    {
+        suspended++;
+        return new Batch(this);
+    }
+
+    private sealed class Batch(NetworkGraph graph) : IDisposable
+    {
+        private bool closed;
+
+        public void Dispose()
+        {
+            if (closed) return;
+            closed = true;
+            graph.suspended--;
+            graph.Publish();
+        }
+    }
+
     public static string FigureId(string key) => $"figure:{key}";
 
     public static string TableId(string key) => $"table:{key}";
@@ -548,9 +581,17 @@ public sealed class NetworkGraph
     /// Recomputes every committed output on the canvas — figures and tables — and hands them to
     /// their catalogues. Called after anything structural, and after the workspace changes — a
     /// leaf that has just been unmounted must stop contributing to what the dashboard is drawing.
+    ///
+    /// <para>
+    /// Silent inside a <see cref="Suspend"/> scope. Recomputing against a store being filled a
+    /// dataset at a time is work whose answer is thrown away by the next write; the scope closing
+    /// recomputes once, against everything.
+    /// </para>
     /// </summary>
     public void Recompute()
     {
+        if (suspended > 0) return;
+
         foreach (var node in nodes.Where(node => node.Kind == NetworkNodeKind.Figure).ToList())
             FigureCatalog.Instance.Register(BuildFigure(node));
         foreach (var node in nodes.Where(node => node.Kind == NetworkNodeKind.Table).ToList())
@@ -731,9 +772,20 @@ public sealed class NetworkGraph
     /// network restored beside a workspace that does not name its datasets — the same account on a
     /// second machine — would otherwise have its cards deleted rather than drawn.
     /// </para>
+    ///
+    /// <para>
+    /// Never inside a <see cref="Suspend"/> scope. A session transition fills the store one dataset
+    /// at a time and records each one's axis as it lands, and each of those axis writes is a
+    /// workspace change: pruning on one of them deleted the cards of every dataset whose read had
+    /// not happened yet, so a restored network spanning two datasets silently lost the second.
+    /// "No value at this path" only means anything once everything that is going to be read has
+    /// been.
+    /// </para>
     /// </summary>
     private void PruneUnmounted()
     {
+        if (suspended > 0) return;
+
         var orphans = nodes
             .Where(node => node.Kind == NetworkNodeKind.Measure && Workspace.ReadingAt(node.Key) is null)
             .Select(node => node.Id)

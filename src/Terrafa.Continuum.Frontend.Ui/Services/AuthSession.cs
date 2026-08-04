@@ -25,9 +25,24 @@ public sealed class AuthSession(IAuthenticator authenticator)
     private DateTimeOffset renewAfter;
     private Task<string?>? renewing;
 
+    /// <summary>The identity the last <see cref="Changed"/> announced. See <see cref="RaiseChanged"/>.</summary>
+    private string? announced;
+
     public ISecretStore Store { get; set; } = new NullSecretStore();
 
-    /// <summary>Raised on sign-in and sign-out. Screens rebuild against the catalogue this selects.</summary>
+    /// <summary>
+    /// Raised when, and only when, <b>the signed-in identity changes</b> — signed out to someone,
+    /// someone to signed out, or one account to another. A token restore counts, because from the
+    /// app's point of view a restored session is a sign-in.
+    ///
+    /// <para>
+    /// A renewal deliberately does not raise it, and neither does re-signing in as whoever is
+    /// already signed in. This event used to fire for all of those, and every subscriber had to
+    /// work out which one it had been: one of them got it wrong and reset the workspace to the demo
+    /// seed on a routine token renewal, then saved the seed over the operator's real work. The
+    /// event now carries one meaning so nothing has to infer it.
+    /// </para>
+    /// </summary>
     public event Action? Changed;
 
     public string? Username { get; private set; }
@@ -35,6 +50,12 @@ public sealed class AuthSession(IAuthenticator authenticator)
     public bool IsSignedIn
     {
         get { lock (gate) return tokens is not null; }
+    }
+
+    /// <summary>Who is signed in, or null. This is what <see cref="Changed"/> announces a change in.</summary>
+    public string? Identity
+    {
+        get { lock (gate) return tokens is null ? null : Username ?? ""; }
     }
 
     /// <exception cref="AuthException">The credentials were rejected, or the pool could not be reached.</exception>
@@ -197,8 +218,19 @@ public sealed class AuthSession(IAuthenticator authenticator)
             await authenticator.RevokeAsync(refreshToken);
     }
 
+    /// <summary>
+    /// Announces an identity change, once. The suppression here is what makes the event mean one
+    /// thing: every path that alters the session calls this, and only a genuine change gets out.
+    /// </summary>
     private void RaiseChanged()
     {
+        lock (gate)
+        {
+            var identity = tokens is null ? null : Username ?? "";
+            if (identity == announced) return;
+            announced = identity;
+        }
+
         var handlers = Changed;
         if (handlers is null) return;
         if (Dispatcher.UIThread.CheckAccess()) handlers();

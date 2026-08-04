@@ -26,12 +26,12 @@ internal static class DataProbe
         Console.WriteLine($"signed in: {AuthSession.Instance.IsSignedIn} ({AuthSession.Instance.Username ?? "—"})");
         if (!AuthSession.Instance.IsSignedIn) return;
 
-        using var catalog = new SessionDatasetCatalog();
+        var catalog = Session.Instance.Catalog;
         Console.WriteLine($"live: {catalog.IsLive}");
 
         try
         {
-            var schema = await catalog.GetSeriesAsync(dataset, SeriesAxis.Default);
+            var schema = await catalog.GetSeriesAsync(new DatasetQuery(dataset, SeriesAxis.Default));
             Console.WriteLine($"axis: '{schema.XAxis}' · rows/point: {schema.RowsPerPoint}");
             foreach (var leaf in schema.Root.Descendants().Where(node => node.Kind == DataNodeKind.Measure))
             {
@@ -47,10 +47,14 @@ internal static class DataProbe
         }
 
         // The saved session, restored the way the app restores it, then every derived table
-        // recomputed from it — which is precisely what a grid tile draws.
+        // recomputed from it — which is precisely what a grid tile draws. Driven through Session so
+        // the probe exercises the same reset/load/read sequence the app runs, rather than a second
+        // arrangement of the same pieces that could agree with the app right up until it mattered.
         UserStateSync.Store = new HttpUserStateStore();
-        UserStateSync.Catalog = catalog;
-        await UserStateSync.LoadAllAsync();
+        await Session.Instance.TransitionAsync();
+        Console.WriteLine($"session: {Session.Instance.Phase} {Session.Instance.FailureNote}".TrimEnd());
+        foreach (var failure in Session.Instance.ReadFailures)
+            Console.WriteLine($"  unread {failure.Dataset}: {failure.Message}");
 
         Console.WriteLine();
         foreach (var subtree in Workspace.Instance.Subtrees)

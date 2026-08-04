@@ -4,79 +4,142 @@ using Terrafa.Continuum.Frontend.Models;
 
 namespace Terrafa.Continuum.Frontend.Services;
 
+/// <summary>A dataset the app meant to read and could not, with the reason already fit to show.</summary>
+public sealed record ReadFailure(string Dataset, string Message);
+
 /// <summary>
-/// Reads the values behind a restored session, once, at startup.
+/// The read path: selections in, values in <see cref="ReadingStore"/> out.
 ///
 /// <para>
-/// The session persists selections: which datasets are mounted, which leaves were picked, which
-/// tiles and network nodes point where. It does not persist numbers. This turns those selections
-/// into reads and writes the answers into <see cref="ReadingStore"/>, so the dashboard draws on
-/// arrival with nothing for the operator to do.
+/// <see cref="ReadAsync"/> is the only place a value enters the app. Everything that wants one — a
+/// screen opening a dataset, a restore filling in what a saved session refers to, a dataset just
+/// mounted — goes through it, so the three steps that must happen together (fetch, write to the
+/// store, record the axis the read actually used) cannot come apart. They were written out
+/// separately in three places before this, which is two more than the rule allows.
 /// </para>
 ///
 /// <para>
-/// Two sets are read, not one. The first is what the tree has mounted. The second is what the
-/// tiles and the network point at, which can name a dataset this machine never mounted — a
-/// dashboard saved elsewhere, or the same account on another machine. Reading both is what lets a
-/// dashboard draw for whoever opens it.
+/// The session persists selections: which datasets are mounted, which leaves were picked, which
+/// tiles and network nodes point where. It does not persist numbers. <see cref="LoadAsync"/> turns
+/// those selections into reads, so a restored dashboard draws on arrival with nothing for the
+/// operator to do. Two sets are read, not one: what the tree has mounted, and what the tiles and
+/// the network point at — which can name a dataset this machine never mounted, a dashboard saved
+/// elsewhere or the same account on another machine. Reading both is what lets a dashboard draw
+/// for whoever opens it.
+/// </para>
+///
+/// <para>
+/// Failures are returned rather than swallowed. A dataset that cannot be read is a fact the
+/// operator can act on — the catalogue moved, the service is down, the sign-in lapsed — and it used
+/// to vanish into an empty catch, leaving a blank tile and no way to tell an empty dataset from an
+/// unreachable one. Cancellation is not a failure and propagates: it means a newer session
+/// superseded this one, and the answer is no longer wanted.
 /// </para>
 /// </summary>
 public static class ReadingLoader
 {
     /// <summary>
-    /// Reads every dataset the restored session refers to. One dataset failing does not stop the
-    /// rest: a tile pointing at something the catalogue no longer serves says so on its own.
+    /// Reads one dataset and publishes it. Values are found by path, so this one write reaches the
+    /// preview, every mount of the dataset and every tile wired to it — nothing walks a tree to
+    /// hand them out.
     /// </summary>
-    public static async Task LoadAsync(IDatasetCatalog catalog)
+    /// <exception cref="DataFeedException">The service could not answer.</exception>
+    /// <exception cref="OperationCanceledException">A newer read superseded this one.</exception>
+    public static async Task<DatasetSchema> ReadAsync(
+        IDatasetCatalog catalog, DatasetQuery query, CancellationToken cancellationToken = default)
     {
-        foreach (var request in await RequestsAsync(catalog))
+        var series = await catalog.GetSeriesAsync(query, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ReadingStore.Instance.Write(series);
+
+        // The axis the read used, not the one it was asked for: a table with no such column is read
+        // unordered and says so. The subtree keeps it so a screen downstream can state what a
+        // chart's x axis is rather than implying the points are evenly spaced in time.
+        Workspace.Instance.SetAxis(query.Dataset, series.XAxis);
+        return series;
+    }
+
+    /// <summary>
+    /// Reads every dataset the restored session refers to. One dataset failing does not stop the
+    /// rest — each is reported on its own, and a tile pointing at something the catalogue no longer
+    /// serves says so where it is drawn.
+    /// </summary>
+    public static async Task<IReadOnlyList<ReadFailure>> LoadAsync(
+        IDatasetCatalog catalog, CancellationToken cancellationToken = default)
+    {
+        var failures = new List<ReadFailure>();
+        foreach (var query in await PlanAsync(catalog, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var series = await catalog.GetSeriesAsync(request.Dataset, request.XAxis, request.Paths);
-                ReadingStore.Instance.Write(series);
-                Workspace.Instance.SetAxis(request.Dataset, series.XAxis);
+                await ReadAsync(catalog, query, cancellationToken);
             }
-            catch (Exception)
+            catch (OperationCanceledException)
             {
-                // Reported where it shows: a leaf with no value, or a tile that cannot resolve.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add(new ReadFailure(query.Dataset, Describe(ex)));
             }
         }
+        return failures;
     }
 
-    public static async Task LoadDatasetAsync(IDatasetCatalog catalog, string dataset)
+    /// <summary>
+    /// Reads one dataset that has just been mounted, against the leaves the mount holds. Null when
+    /// it read, or when there was nothing to read.
+    /// </summary>
+    public static async Task<ReadFailure?> LoadDatasetAsync(
+        IDatasetCatalog catalog, string dataset, CancellationToken cancellationToken = default)
     {
-        if (Workspace.Instance.Find(dataset) is not { } subtree) return;
+        if (Workspace.Instance.Find(dataset) is not { } subtree) return null;
+
         var paths = subtree.Leaves.Select(leaf => leaf.Path).ToHashSet(StringComparer.Ordinal);
-        if (paths.Count == 0) return;
+        if (paths.Count == 0) return null;
+
+        var axis = subtree.XAxis.Length > 0 ? subtree.XAxis : SeriesAxis.Default;
         try
         {
-            var axis = subtree.XAxis.Length > 0 ? subtree.XAxis : SeriesAxis.Default;
-            var series = await catalog.GetSeriesAsync(dataset, axis, paths);
-            ReadingStore.Instance.Write(series);
-            Workspace.Instance.SetAxis(dataset, series.XAxis);
+            await ReadAsync(catalog, new DatasetQuery(dataset, axis, paths), cancellationToken);
+            return null;
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new ReadFailure(dataset, Describe(ex));
         }
     }
 
-    private sealed record Request(string Dataset, string XAxis, IReadOnlyCollection<string> Paths);
+    /// <summary>
+    /// A DataFeedException already reads as a sentence — the service writes specific messages and
+    /// the client passes them through. Anything else is unexpected, so it is named as such.
+    /// </summary>
+    public static string Describe(Exception ex) =>
+        ex is DataFeedException ? ex.Message : $"{ex.GetType().Name}: {ex.Message}";
 
-    private static async Task<IReadOnlyList<Request>> RequestsAsync(IDatasetCatalog catalog)
+    // ── working out what to read ─────────────────────────────────────────────
+
+    private static async Task<IReadOnlyList<DatasetQuery>> PlanAsync(
+        IDatasetCatalog catalog, CancellationToken cancellationToken)
     {
-        var wanted = new Dictionary<string, (string XAxis, HashSet<string> Paths)>(StringComparer.Ordinal);
+        var wanted = new Dictionary<string, (string Axis, HashSet<string> Paths)>(StringComparer.Ordinal);
 
-        void Want(string dataset, string xAxis, string path)
+        void Want(string dataset, string axis, string path)
         {
             if (!wanted.TryGetValue(dataset, out var entry))
             {
-                entry = (xAxis, new HashSet<string>(StringComparer.Ordinal));
+                entry = (axis, new HashSet<string>(StringComparer.Ordinal));
                 wanted[dataset] = entry;
             }
-            else if (entry.XAxis.Length == 0 && xAxis.Length > 0)
+            else if (entry.Axis.Length == 0 && axis.Length > 0)
             {
-                entry = (xAxis, entry.Paths);
+                entry = (axis, entry.Paths);
                 wanted[dataset] = entry;
             }
             entry.Paths.Add(path);
@@ -91,7 +154,7 @@ public static class ReadingLoader
         var referenced = Referenced().ToList();
         if (referenced.Count > 0)
         {
-            foreach (var (dataset, path) in await ResolveAsync(catalog, referenced))
+            foreach (var (dataset, path) in await ResolveAsync(catalog, referenced, cancellationToken))
                 Want(dataset, Workspace.Instance.Find(dataset)?.XAxis ?? "", path);
         }
 
@@ -99,9 +162,9 @@ public static class ReadingLoader
         [
             .. wanted
                 .Where(entry => entry.Value.Paths.Count > 0)
-                .Select(entry => new Request(
+                .Select(entry => new DatasetQuery(
                     entry.Key,
-                    entry.Value.XAxis.Length > 0 ? entry.Value.XAxis : SeriesAxis.Default,
+                    entry.Value.Axis.Length > 0 ? entry.Value.Axis : SeriesAxis.Default,
                     entry.Value.Paths))
         ];
     }
@@ -129,20 +192,29 @@ public static class ReadingLoader
     /// Splits each path into the dataset that owns it and the path itself. A dataset name contains
     /// dots of its own — "synthetic_dev.calibrated__fame_content__idc" — so the split cannot be
     /// done on the string. The longest catalogued name the path starts with is the owner.
+    ///
+    /// <para>
+    /// An unreachable catalogue yields nothing rather than throwing: the mounted datasets above are
+    /// still worth reading, and each of those reports its own failure if it has one.
+    /// </para>
     /// </summary>
     private static async Task<IReadOnlyList<(string Dataset, string Path)>> ResolveAsync(
-        IDatasetCatalog catalog, IReadOnlyList<string> paths)
+        IDatasetCatalog catalog, IReadOnlyList<string> paths, CancellationToken cancellationToken)
     {
         IReadOnlyList<string> names;
         try
         {
             names =
             [
-                .. (await catalog.GetAvailableDatasetsAsync())
+                .. (await catalog.GetAvailableDatasetsAsync(cancellationToken))
                     .SelectMany(topic => topic.Value)
                     .Distinct(StringComparer.Ordinal)
                     .OrderByDescending(name => name.Length)
             ];
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {

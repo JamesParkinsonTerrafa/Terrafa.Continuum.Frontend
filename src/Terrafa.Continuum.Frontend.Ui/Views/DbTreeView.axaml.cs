@@ -46,11 +46,11 @@ public partial class DbTreeView : UserControl
     private readonly List<(string From, string To)> containmentEdges = [];
     private readonly HashSet<SubtreeLinkKind> hiddenLinkKinds = [];
 
-    public DbTreeView() : this(DemoData.CreateSnapshot(), _ => { })
+    public DbTreeView() : this(DemoContent.Create(), _ => { })
     {
     }
 
-    public DbTreeView(DataSnapshot snapshot, Action<int> navigate)
+    public DbTreeView(DemoContent snapshot, Action<int> navigate)
     {
         InitializeComponent();
         Tabs.TabSelected += navigate;
@@ -710,7 +710,7 @@ public partial class DbTreeView : UserControl
 
     // ── event log & legend ───────────────────────────────────────────────────
 
-    private void BuildEventLog(DataSnapshot snapshot)
+    private void BuildEventLog(DemoContent snapshot)
     {
         foreach (var entry in snapshot.Events)
         {

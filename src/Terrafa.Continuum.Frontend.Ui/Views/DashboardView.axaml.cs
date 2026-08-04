@@ -44,11 +44,11 @@ public partial class DashboardView : UserControl
     private bool elementDragActive;
     private Border? dragGhost;
 
-    public DashboardView() : this(DemoData.CreateSnapshot(), _ => { })
+    public DashboardView() : this(_ => { })
     {
     }
 
-    public DashboardView(DataSnapshot snapshot, Action<int> navigate)
+    public DashboardView(Action<int> navigate)
     {
         InitializeComponent();
         Tabs.TabSelected += navigate;

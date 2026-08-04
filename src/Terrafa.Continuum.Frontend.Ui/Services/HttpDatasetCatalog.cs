@@ -6,7 +6,6 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Terrafa.Continuum.Frontend.Models;
 
 namespace Terrafa.Continuum.Frontend.Services;
 
@@ -14,40 +13,58 @@ namespace Terrafa.Continuum.Frontend.Services;
 /// The catalogue, read from the Terrafa Continuum DataFeed service over HTTP.
 ///
 /// <para>
-/// The service speaks in Athena terms — databases holding tables of typed columns — and this
-/// screen speaks in topics holding datasets of measures, so the mapping is the substance of this
-/// class: a database becomes a topic, a table becomes a dataset, and a column becomes either a
-/// leaf or, when its type is a struct, an object whose fields are leaves. That last case is why
-/// the tree is worth building at all — the service resolves dotted <c>parent.child</c> paths
-/// against struct fields, so a path in this tree is a path the data endpoint accepts verbatim.
+/// This class does three things and no more: it speaks HTTP, it maps a published dataset name to
+/// the database/table pair that addresses it, and it caches each answer so two screens asking the
+/// same question share one call. Turning a response into a tree is
+/// <see cref="DatasetSchemaBuilder"/>'s job — that logic has nothing to do with transport and used
+/// to be the larger half of this file.
+/// </para>
+///
+/// <para>
+/// Cached tasks are started without a cancellation token and awaited per-caller through
+/// <see cref="Task{T}.WaitAsync(CancellationToken)"/>. One caller giving up therefore cannot
+/// cancel a fetch another caller is still waiting on, which is what cancelling the shared task
+/// itself would do.
 /// </para>
 /// </summary>
-public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
+public sealed class HttpDatasetCatalog : IDatasetCatalog
 {
+    /// <summary>
+    /// One client for the life of the process. Deliberately not disposed with the catalogue: a
+    /// sign-out drops this object, and disposing the client under a read still in flight is how a
+    /// perfectly good response used to come back as <see cref="ObjectDisposedException"/> and get
+    /// swallowed as "could not read". A client per sign-in is a socket-exhaustion smell besides.
+    /// </summary>
+    private static readonly HttpClient Shared = new() { Timeout = DataFeedOptions.Timeout };
+
     private readonly HttpClient client;
     private readonly Lock gate = new();
 
     /// <summary>Dataset name as published to the UI → the pair it addresses on the service.</summary>
-    private readonly Dictionary<string, (string Database, string Table)> routes = new(StringComparer.Ordinal);
+    private Dictionary<string, (string Database, string Table)> routes = new(StringComparer.Ordinal);
 
     private readonly Dictionary<string, Task<DatasetSchema>> schemas = new(StringComparer.Ordinal);
 
-    /// <summary>Keyed by dataset <i>and</i> axis: re-ordering a read is a different read.</summary>
-    private readonly Dictionary<(string Dataset, string XAxis, string Projection), Task<DatasetSchema>> series = [];
+    /// <summary>Keyed by everything that makes a read a different read — see
+    /// <see cref="DatasetQuery.CacheKey"/>.</summary>
+    private readonly Dictionary<
+        (string Dataset, string Axis, string Projection, int MaxRows), Task<DatasetSchema>> series = [];
 
     private readonly Dictionary<string, DatasetSchemaResponse> rawSchemas = new(StringComparer.Ordinal);
 
     private Task<IReadOnlyDictionary<string, IReadOnlyList<string>>>? listing;
 
+    private IReadOnlyList<string> warnings = [];
+
     private readonly Func<Task<string?>> accessToken;
 
     public HttpDatasetCatalog()
-        : this(new HttpClient { Timeout = DataFeedOptions.Timeout }, AuthSession.Instance.GetAccessTokenAsync)
+        : this(Shared, AuthSession.Instance.GetAccessTokenAsync)
     {
     }
 
     /// <param name="client">
-    /// Handed in by tests. Ownership transfers — <see cref="Dispose"/> disposes it.
+    /// Handed in by tests. Ownership does <b>not</b> transfer — whoever created it disposes it.
     /// </param>
     /// <param name="accessToken">
     /// Asked once per request rather than captured at construction, so a token renewed mid-session
@@ -60,55 +77,55 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         this.accessToken = accessToken ?? (() => Task.FromResult<string?>(null));
     }
 
-    /// <summary>
-    /// Databases the service could not read, from the most recent listing. The service answers
-    /// 502 only when *every* database failed, so a partial failure arrives as a normal 200 with
-    /// this filled in — silently dropping it would show a short catalogue as if it were complete.
-    /// </summary>
-    public IReadOnlyList<string> Warnings { get; private set; } = [];
+    public bool IsLive => true;
 
-    public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync()
+    public IReadOnlyList<string> Warnings
     {
-        // MainView warms this while the first screen builds and DataSourcesView asks for it again
-        // on entry. Sharing the task means the second caller waits on the first call rather than
-        // starting a second one.
-        lock (gate)
-        {
-            if (listing is null || listing.IsFaulted)
-                listing = LoadCatalogueAsync();
-            return listing;
-        }
+        get { lock (gate) return warnings; }
     }
 
-    public Task<DatasetSchema> GetSchemaAsync(string dataset)
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetAvailableDatasetsAsync(
+        CancellationToken cancellationToken = default)
     {
+        // The session warms this while the first screen builds and DataSourcesView asks for it
+        // again on entry. Sharing the task means the second caller waits on the first call rather
+        // than starting a second one.
+        Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> pending;
         lock (gate)
         {
-            if (schemas.TryGetValue(dataset, out var cached) && !cached.IsFaulted) return cached;
-            var loading = LoadSchemaAsync(dataset);
-            schemas[dataset] = loading;
-            return loading;
+            if (listing is null || listing.IsFaulted) listing = LoadCatalogueAsync();
+            pending = listing;
         }
+        return pending.WaitAsync(cancellationToken);
     }
 
-    public Task<DatasetSchema> GetSeriesAsync(
-        string dataset, string xAxis, IReadOnlyCollection<string>? wanted = null)
+    public Task<DatasetSchema> GetSchemaAsync(string dataset, CancellationToken cancellationToken = default)
     {
-        if (!DataFeedOptions.SampleValues) return GetSchemaAsync(dataset);
+        Task<DatasetSchema> pending;
+        lock (gate)
+        {
+            if (schemas.TryGetValue(dataset, out var cached) && !cached.IsFaulted) pending = cached;
+            else schemas[dataset] = pending = LoadSchemaAsync(dataset);
+        }
+        return pending.WaitAsync(cancellationToken);
+    }
+
+    public Task<DatasetSchema> GetSeriesAsync(DatasetQuery query, CancellationToken cancellationToken = default)
+    {
+        if (!DataFeedOptions.SampleValues) return GetSchemaAsync(query.Dataset, cancellationToken);
 
         // Keyed on the parts rather than one joined string: each can contain a dot, so there is no
-        // separator guaranteed not to appear in any of them. The projection is part of the key —
-        // a narrow read and a full read of the same dataset are different answers.
-        var projection = wanted is { Count: > 0 } ? string.Join('\n', wanted.Order(StringComparer.Ordinal)) : "";
-        var key = (dataset, xAxis, projection);
+        // separator guaranteed not to appear in any of them. The row cap is part of it — see
+        // DatasetQuery.CacheKey for what leaving it out would cost.
+        var key = query.CacheKey;
 
+        Task<DatasetSchema> pending;
         lock (gate)
         {
-            if (series.TryGetValue(key, out var cached) && !cached.IsFaulted) return cached;
-            var loading = LoadSeriesAsync(dataset, xAxis, wanted);
-            series[key] = loading;
-            return loading;
+            if (series.TryGetValue(key, out var cached) && !cached.IsFaulted) pending = cached;
+            else series[key] = pending = LoadSeriesAsync(query);
         }
+        return pending.WaitAsync(cancellationToken);
     }
 
     // ── catalogue ────────────────────────────────────────────────────────────
@@ -120,12 +137,10 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
             DataFeedJson.Default.AvailableDatasetsResponse,
             "list the datasets");
 
-        var databases = response.Databases ?? [];
-
         var catalogue = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         var routing = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
 
-        foreach (var database in databases)
+        foreach (var database in response.Databases ?? [])
         {
             if (string.IsNullOrWhiteSpace(database.Database)) continue;
 
@@ -151,42 +166,20 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
             catalogue[database.Database.ToUpperInvariant()] = names;
         }
 
+        var reported = (response.Errors ?? [])
+            .Select(error => $"{error.Database ?? "unknown database"}: {error.Message ?? "could not be read"}")
+            .ToList();
+
         lock (gate)
         {
-            routes.Clear();
-            foreach (var (name, route) in routing) routes[name] = route;
+            // Swapped whole rather than cleared and refilled. A concurrent RouteAsync landing
+            // between a Clear and its repopulation saw an empty map and reported a perfectly good
+            // dataset as "not in the catalogue".
+            routes = routing;
+            warnings = reported;
         }
-
-        Warnings =
-        [
-            .. (response.Errors ?? [])
-                .Select(error => $"{error.Database ?? "unknown database"}: {error.Message ?? "could not be read"}")
-        ];
 
         return catalogue;
-    }
-
-    // ── schema ───────────────────────────────────────────────────────────────
-
-    private async Task<DatasetSchema> LoadSchemaAsync(string dataset) =>
-        BuildSchema(dataset, await GetRawSchemaAsync(dataset), readings: null, xAxis: "");
-
-    private async Task<DatasetSchemaResponse> GetRawSchemaAsync(string dataset)
-    {
-        lock (gate)
-        {
-            if (rawSchemas.TryGetValue(dataset, out var cached)) return cached;
-        }
-
-        var (database, table) = await RouteAsync(dataset);
-
-        var response = await GetAsync(
-            $"/api/datasets/{Segment(database)}/{Segment(table)}/schema",
-            DataFeedJson.Default.DatasetSchemaResponse,
-            $"read the schema of {dataset}");
-
-        lock (gate) rawSchemas[dataset] = response;
-        return response;
     }
 
     /// <summary>
@@ -211,552 +204,106 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         throw new DataFeedException($"'{dataset}' is not in the catalogue.");
     }
 
-    /// <param name="readings">
-    /// Column path → that column's values across the ordered rows, oldest first. Null before any
-    /// query has run, which is the structure-only tree.
-    /// </param>
-    private static DatasetSchema BuildSchema(
-        string dataset,
-        DatasetSchemaResponse response,
-        IReadOnlyDictionary<string, IReadOnlyList<string?>>? readings,
-        string xAxis)
+    // ── schema ───────────────────────────────────────────────────────────────
+
+    private async Task<DatasetSchema> LoadSchemaAsync(string dataset) =>
+        DatasetSchemaBuilder.Build(dataset, await GetRawSchemaAsync(dataset), readings: null, xAxis: "");
+
+    private async Task<DatasetSchemaResponse> GetRawSchemaAsync(string dataset)
     {
-        var root = new DataTreeNode
+        lock (gate)
         {
-            Name = dataset,
-            Path = dataset,
-            Kind = DataNodeKind.Object,
-            Tag = "SUBTREE ROOT"
-        };
-
-        // A sensor_id column declares replicate members: twelve sensors reading the same
-        // quantity are twelve series, and each gets its own subtree of leaves built from its own
-        // rows of the one fetch.
-        //
-        // Repeated axis values are counted and reported — one row per axis value is what a chart
-        // needs, and RowsPerPoint is how a screen says the table does not give it. Nothing is
-        // dropped on account of it. The read path reports what the table holds and does not decide
-        // what is fit to keep: a lookup table repeats its keys by design, and discarding its cells
-        // to protect a chart nobody asked for cost the joins their data.
-        var members = readings is not null ? MemberPartition(readings) : null;
-        var rowsPerPoint = 1;
-
-        if (members is not null)
-        {
-            // The σ pass after this loop resolves leaves by their member-prefixed paths, so it
-            // needs every member's cells in one dictionary. The keys are disjoint by
-            // construction — each carries its member's name.
-            var merged = new Dictionary<string, IReadOnlyList<string?>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (_, memberReadings) in members)
-            foreach (var (path, cells) in memberReadings)
-                merged[path] = cells;
-            readings = merged;
-
-            foreach (var (member, memberReadings) in members)
-            {
-                var node = new DataTreeNode
-                {
-                    Name = member,
-                    Path = $"{dataset}.{member}",
-                    Kind = DataNodeKind.Object,
-                    Tag = "SENSOR"
-                };
-
-                var memberRows = RowsPerPoint(memberReadings, $"{member}.{xAxis}");
-                rowsPerPoint = Math.Max(rowsPerPoint, memberRows);
-                var memberNote = memberRows > 1 ? $"{memberRows} rows/point — expected one" : "";
-
-                foreach (var column in response.Columns ?? [])
-                {
-                    if (SeriesAxis.Member.Equals(column.Name, StringComparison.OrdinalIgnoreCase)) continue;
-                    Append(node, column, dataset, memberReadings, memberNote, isPartitionKey: false, depth: 0);
-                }
-                foreach (var column in response.PartitionKeys ?? [])
-                    Append(node, column, dataset, memberReadings, memberNote, isPartitionKey: true, depth: 0);
-
-                root.Children.Add(node);
-            }
-        }
-        else
-        {
-            readings = readings is not null ? Tail(readings) : null;
-            rowsPerPoint = readings is not null ? RowsPerPoint(readings, xAxis) : 1;
-            var tieNote = rowsPerPoint > 1 ? $"{rowsPerPoint} rows/point — expected one" : "";
-
-            // Partition keys are selectable and filterable exactly like ordinary columns — Athena
-            // just reports them separately — so they belong in the tree, tagged for what they are.
-            foreach (var column in response.Columns ?? [])
-                Append(root, column, dataset, readings, tieNote, isPartitionKey: false, depth: 0);
-            foreach (var column in response.PartitionKeys ?? [])
-                Append(root, column, dataset, readings, tieNote, isPartitionKey: true, depth: 0);
+            if (rawSchemas.TryGetValue(dataset, out var cached)) return cached;
         }
 
-        // Folds a "<name>__sigma" column into the measure beside it. Athena carries no uncertainty
-        // of its own, so a σ column beside a reading is the only way this feed can state one. Done
-        // here rather than in MeasureNumerics.BindSigmaLeaves because the pairing is row-by-row,
-        // and the rows are only in hand on this side of the tree.
-        BindSiblingSigma(root, dataset, readings);
+        var (database, table) = await RouteAsync(dataset);
 
-        var created = response.CreatedAt;
-        var accessed = response.LastAccessedAt;
+        var response = await GetAsync(
+            $"/api/datasets/{Segment(database)}/{Segment(table)}/schema",
+            DataFeedJson.Default.DatasetSchemaResponse,
+            $"read the schema of {dataset}");
 
-        return new DatasetSchema(
-            Dataset: dataset,
-            Provider: response.Database ?? response.CatalogName ?? "athena",
-            Contract: Humanise(response.TableType) is { Length: > 0 } type ? type : "table",
-            // The service publishes no cadence or licence: neither is in an Athena catalog, so
-            // there is nothing honest to put here until something upstream records them.
-            Cadence: "—",
-            Coverage: Coverage(created, accessed),
-            Licence: "—",
-            Root: root)
-        {
-            XAxis = xAxis,
-            RowsPerPoint = rowsPerPoint
-        };
+        lock (gate) rawSchemas[dataset] = response;
+        return response;
     }
-
-    private static void Append(
-        DataTreeNode parent,
-        DatasetColumn column,
-        string dataset,
-        IReadOnlyDictionary<string, IReadOnlyList<string?>>? readings,
-        string tieNote,
-        bool isPartitionKey,
-        int depth)
-    {
-        if (string.IsNullOrWhiteSpace(column.Name)) return;
-
-        var path = $"{parent.Path}.{column.Name}";
-        var type = column.Type ?? "";
-
-        // A struct becomes an object whose fields are addressable; every other type — including
-        // arrays and maps, which a dotted path cannot enter — stays a leaf.
-        if (HiveType.IsStruct(type) && depth < HiveType.MaxDepth)
-        {
-            var node = new DataTreeNode
-            {
-                Name = column.Name,
-                Path = path,
-                Kind = DataNodeKind.Object,
-                Tag = isPartitionKey ? "PARTITION" : ""
-            };
-            foreach (var (fieldName, fieldType) in HiveType.StructFields(type))
-                Append(node, new DatasetColumn(fieldName, fieldType, null), dataset, readings, tieNote, isPartitionKey, depth + 1);
-
-            parent.Children.Add(node);
-            return;
-        }
-
-        var isVector = HiveType.IsArray(type);
-        var isBoolean = HiveType.IsBoolean(type);
-        var columnPath = SeriesAxis.Relative(dataset, path);
-        var cells = readings is not null && readings.TryGetValue(columnPath, out var found) ? found : [];
-
-        // The whole transformation a value undergoes on its way to a chart: the column's non-null
-        // cells, parsed, in row order. The chart plots readings by index, so a skipped null is a
-        // missing measurement, not a closed gap. A boolean column reads as determinations — 1 and
-        // 0 — by its declared type, not by sniffing cells. A column that reads as neither keeps
-        // its text and carries no series, and the newest non-null cell is the leaf's reading
-        // either way — a feed whose latest rows have not caught up still reads as its last
-        // measurement. The raw cells are kept whole on the leaf regardless: History drops nulls
-        // per column, so only Cells can answer for a row.
-        var measured = new List<double>(cells.Count);
-        string? latest = null;
-        var numeric = true;
-        foreach (var cell in cells)
-        {
-            if (cell is null) continue;
-            latest = cell;
-            if (!numeric) continue;
-            var parsed = isBoolean
-                ? MeasureNumerics.ParseBoolean(cell)
-                : MeasureNumerics.ParseValue(cell).Value;
-            if (double.IsNaN(parsed)) numeric = false;
-            else measured.Add(parsed);
-        }
-
-        IReadOnlyList<double> history = numeric && measured.Count >= 2 ? measured : [];
-        var (value, unit) = isBoolean
-            ? (latest is null ? double.NaN : MeasureNumerics.ParseBoolean(latest), "")
-            : MeasureNumerics.ParseValue(latest ?? "");
-
-        parent.Children.Add(new DataTreeNode
-        {
-            Name = column.Name,
-            Path = path,
-            Kind = DataNodeKind.Measure,
-            Tag = isPartitionKey ? "PARTITION" : isVector ? "VECTOR" : "",
-            Reading = new Measure
-            {
-                Display = cells.Count > 0 ? Format(latest) : "—",
-                // Athena carries no uncertainty of its own; a __sigma sibling adds one after the
-                // tree is built. Leaving these blank until then is the honest reading.
-                SigmaDisplay = "",
-                SigmaKind = "",
-                Detail = Detail(
-                    type, column.Comment, isPartitionKey,
-                    attempted: readings is not null,
-                    sampled: cells.Count > 0,
-                    points: history.Count,
-                    tieNote),
-                IsVector = isVector,
-                IsBoolean = isBoolean,
-                Value = value,
-                Unit = unit,
-                History = history,
-                Cells = cells
-            }
-        });
-
-        static string Detail(
-            string type, string? comment, bool isPartitionKey,
-            bool attempted, bool sampled, int points, string tieNote)
-        {
-            var parts = new List<string>(4);
-            if (type.Length > 0) parts.Add(type);
-            if (isPartitionKey) parts.Add("partition key");
-            // Whether a chart will draw at all, said where the operator is already looking. A
-            // column that read fine but has no series is the case that would otherwise only show
-            // up as an empty tile two screens later.
-            if (points > 1) parts.Add($"{points} points");
-            if (tieNote.Length > 0) parts.Add(tieNote);
-            if (!string.IsNullOrWhiteSpace(comment)) parts.Add(comment.Trim());
-            // Only after a query actually ran does a missing value mean anything — before that it
-            // just means the values have not been asked for yet. This is also what marks the
-            // leaves past MaxSampleColumns, which the query deliberately left out.
-            else if (attempted && !sampled) parts.Add("no sample");
-            return parts.Count == 0 ? "column" : string.Join(" · ", parts);
-        }
-    }
-
-    /// <summary>
-    /// Splits the fetched rows by <see cref="SeriesAxis.Member"/>, each member's cells keyed the
-    /// way its subtree's leaves will look them up — "LIG-01.level". Null when the table has no
-    /// member column, or only one member: a table already per-sensor stays flat, its sensor_id a
-    /// constant leaf. One fetch, split locally: no extra queries.
-    /// </summary>
-    private static List<(string Member, Dictionary<string, IReadOnlyList<string?>> Readings)>? MemberPartition(
-        IReadOnlyDictionary<string, IReadOnlyList<string?>> readings)
-    {
-        if (!readings.TryGetValue(SeriesAxis.Member, out var sensors)) return null;
-
-        var indices = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        for (var i = 0; i < sensors.Count; i++)
-        {
-            if (sensors[i] is not { Length: > 0 } sensor) continue;
-            if (!indices.TryGetValue(sensor, out var rows))
-            {
-                rows = [];
-                indices[sensor] = rows;
-            }
-            rows.Add(i);
-        }
-        if (indices.Count < 2) return null;
-
-        var members = new List<(string, Dictionary<string, IReadOnlyList<string?>>)>(indices.Count);
-        foreach (var (member, rows) in indices.OrderBy(entry => entry.Key, StringComparer.Ordinal))
-        {
-            var kept = rows.Count > DataFeedOptions.SeriesRows
-                ? rows.Skip(rows.Count - DataFeedOptions.SeriesRows).ToList()
-                : rows;
-
-            var slice = new Dictionary<string, IReadOnlyList<string?>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var (path, cells) in readings)
-            {
-                if (path.Equals(SeriesAxis.Member, StringComparison.OrdinalIgnoreCase)) continue;
-                slice[$"{member}.{path}"] = [.. kept.Select(row => row < cells.Count ? cells[row] : null)];
-            }
-            members.Add((member, slice));
-        }
-        return members;
-    }
-
-    /// <summary>The newest <see cref="DataFeedOptions.SeriesRows"/> rows of each column.</summary>
-    private static IReadOnlyDictionary<string, IReadOnlyList<string?>> Tail(
-        IReadOnlyDictionary<string, IReadOnlyList<string?>> readings)
-    {
-        var capped = new Dictionary<string, IReadOnlyList<string?>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, cells) in readings)
-        {
-            capped[path] = cells.Count > DataFeedOptions.SeriesRows
-                ? [.. cells.Skip(cells.Count - DataFeedOptions.SeriesRows)]
-                : cells;
-        }
-        return capped;
-    }
-
-    /// <summary>Longest run of one axis value in the ordered rows — rows per point.</summary>
-    private static int RowsPerPoint(
-        IReadOnlyDictionary<string, IReadOnlyList<string?>> readings, string xAxis)
-    {
-        if (!readings.TryGetValue(xAxis, out var axis) || axis.Count == 0) return 1;
-
-        var widest = 1;
-        var run = 1;
-        for (var i = 1; i < axis.Count; i++)
-        {
-            run = axis[i] is not null && axis[i] == axis[i - 1] ? run + 1 : 1;
-            if (run > widest) widest = run;
-        }
-        return widest;
-    }
-
-    /// <summary>
-    /// Marks every "&lt;name&gt;__sigma" leaf as its neighbour's σ carrier and folds its numbers
-    /// into that neighbour — the flat-table spelling of what
-    /// <see cref="MeasureNumerics.BindSigmaLeaves"/> does for a "sigma" child in a nested tree.
-    /// σ(x) pairs row-by-row: the carrier's cell on each row the measure read from. Where the
-    /// carrier is missing or unreadable on any of those rows, the flat newest σ stands alone,
-    /// which <see cref="Measure.SigmaHistory"/> being empty already means.
-    /// </summary>
-    private static void BindSiblingSigma(
-        DataTreeNode parent,
-        string dataset,
-        IReadOnlyDictionary<string, IReadOnlyList<string?>>? readings)
-    {
-        foreach (var node in parent.Children)
-        {
-            BindSiblingSigma(node, dataset, readings);
-
-            // DeclaredReading, not Reading: this binds the tree in hand. Reading would consult the
-            // store, and a second read of the same dataset would then pair a fresh measure with a
-            // σ left over from the first.
-            if (node.Kind != DataNodeKind.Measure || node.DeclaredReading is not { } reading) continue;
-            if (reading.IsSigmaCarrier) continue;
-
-            var carrier = parent.Children.FirstOrDefault(candidate =>
-                candidate.Kind == DataNodeKind.Measure &&
-                candidate.Name.Equals(node.Name + MeasureNumerics.SigmaSuffix, StringComparison.OrdinalIgnoreCase));
-            if (carrier?.DeclaredReading is not { } carrierReading) continue;
-
-            // Marked even before any values exist, so a picker never offers a standard deviation
-            // as though it were a quantity — the tree keeps the leaf, sources skip it.
-            carrier.Reading = AsCarrier(carrierReading);
-
-            if (!carrierReading.HasValue) continue;
-
-            var sigmaHistory = PairedSigma(dataset, node, carrier, readings, reading.History.Count);
-            var sigma = Math.Abs(sigmaHistory.Count > 0 ? sigmaHistory[^1] : carrierReading.Value);
-
-            node.Reading = new Measure
-            {
-                Display = reading.Display,
-                SigmaDisplay = sigma > 0 ? $"± {MeasureNumerics.FormatSigma(sigma)}" : "",
-                SigmaKind = reading.SigmaKind,
-                Detail = reading.Detail,
-                Selected = reading.Selected,
-                IsNew = reading.IsNew,
-                IsVector = reading.IsVector,
-                IsBoolean = reading.IsBoolean,
-                Value = reading.Value,
-                Sigma = sigma,
-                Unit = reading.Unit,
-                History = reading.History,
-                SigmaHistory = sigmaHistory,
-                Cells = reading.Cells
-            };
-        }
-    }
-
-    /// <summary>The carrier's value on each row the measure read from — or nothing.</summary>
-    private static IReadOnlyList<double> PairedSigma(
-        string dataset,
-        DataTreeNode node,
-        DataTreeNode carrier,
-        IReadOnlyDictionary<string, IReadOnlyList<string?>>? readings,
-        int points)
-    {
-        if (points == 0 || readings is null) return [];
-        if (!readings.TryGetValue(SeriesAxis.Relative(dataset, node.Path), out var values)) return [];
-        if (!readings.TryGetValue(SeriesAxis.Relative(dataset, carrier.Path), out var sigmas)) return [];
-
-        var paired = new List<double>(points);
-        for (var i = 0; i < values.Count; i++)
-        {
-            if (values[i] is null) continue;
-            if (i >= sigmas.Count || sigmas[i] is not { } cell) return [];
-            var (sigma, _) = MeasureNumerics.ParseValue(cell);
-            if (double.IsNaN(sigma)) return [];
-            paired.Add(Math.Abs(sigma));
-        }
-        return paired.Count == points ? paired : [];
-    }
-
-    private static Measure AsCarrier(Measure source) => new()
-    {
-        Display = source.Display,
-        SigmaDisplay = source.SigmaDisplay,
-        SigmaKind = source.SigmaKind,
-        Detail = source.Detail,
-        Selected = source.Selected,
-        IsNew = source.IsNew,
-        IsVector = source.IsVector,
-        IsBoolean = source.IsBoolean,
-        Value = source.Value,
-        Sigma = source.Sigma,
-        Unit = source.Unit,
-        History = source.History,
-        SigmaHistory = source.SigmaHistory,
-        Cells = source.Cells,
-        IsSigmaCarrier = true
-    };
 
     // ── series ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Re-reads the schema with live readings folded in, ordered by <paramref name="xAxis"/>. It is
-    /// a second tree rather than a mutation of the first because a node's reading is fixed at
+    /// Re-reads the schema with live readings folded in, ordered by the query's axis. It is a
+    /// second tree rather than a mutation of the first because a node's reading is fixed at
     /// construction — and that is worth keeping, since a mounted subtree holds those same nodes.
     /// </summary>
-    private async Task<DatasetSchema> LoadSeriesAsync(
-        string dataset, string xAxis, IReadOnlyCollection<string>? wanted)
+    private async Task<DatasetSchema> LoadSeriesAsync(DatasetQuery query)
     {
+        var dataset = query.Dataset;
         var response = await GetRawSchemaAsync(dataset);
-        var structure = BuildSchema(dataset, response, readings: null, xAxis);
 
-        var leaves = structure.Root
-            .Descendants()
-            .Where(node => node.Kind == DataNodeKind.Measure)
-            .Select(node => SeriesAxis.Relative(dataset, node.Path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // Built without an axis first, because whether the asked-for axis exists is a question
+        // about this tree. A structure-only tree has the same shape either way — only the axis it
+        // reports differs — so the answer is stamped on rather than built twice.
+        var structure = DatasetSchemaBuilder.Build(dataset, response, readings: null, xAxis: "", query.MaxRows);
+        var leaves = DatasetSchemaBuilder.Leaves(structure);
 
         // A table with no column by this name has no axis, rather than some other column pressed
         // into the role. Naming one anyway ordered a lookup table by whichever column happened to
         // come first and filtered out every row that column was null on — a reordering and a
         // silent cut, neither of them asked for. Rows come back in table order instead, and a grid
         // orders them by its own index column, which is where the operator picks it.
-        if (!leaves.Contains(xAxis, StringComparer.OrdinalIgnoreCase)) xAxis = "";
+        var axis = leaves.Contains(query.Axis, StringComparer.OrdinalIgnoreCase) ? query.Axis : "";
+        if (axis.Length > 0) structure = structure with { XAxis = axis };
 
-        if (Narrow(dataset, leaves, wanted) is { Count: > 0 } narrowed) leaves = narrowed;
+        if (DatasetSchemaBuilder.Narrow(dataset, leaves, query.Paths) is { Count: > 0 } narrowed)
+            leaves = narrowed;
 
         // The axis leads the projection so it always survives the column cap: it is the one column
         // the request cannot do without, and on a wide table it would otherwise be cut.
         var columns = new List<string>();
-        if (xAxis.Length > 0) columns.Add(xAxis);
-        columns.AddRange(leaves.Where(path => !path.Equals(xAxis, StringComparison.OrdinalIgnoreCase)));
+        if (axis.Length > 0) columns.Add(axis);
+        columns.AddRange(leaves.Where(path => !path.Equals(axis, StringComparison.OrdinalIgnoreCase)));
         if (columns.Count > DataFeedOptions.MaxSampleColumns)
             columns.RemoveRange(DataFeedOptions.MaxSampleColumns, columns.Count - DataFeedOptions.MaxSampleColumns);
         if (columns.Count == 0) return structure;
 
         var (database, table) = await RouteAsync(dataset);
 
-        var query = new StringBuilder($"/api/datasets/{Segment(database)}/{Segment(table)}/data");
+        var url = new StringBuilder($"/api/datasets/{Segment(database)}/{Segment(table)}/data");
         for (var i = 0; i < columns.Count; i++)
-            query.Append(i == 0 ? '?' : '&').Append("columns=").Append(Uri.EscapeDataString(columns[i]));
+            url.Append(i == 0 ? '?' : '&').Append("columns=").Append(Uri.EscapeDataString(columns[i]));
 
-        if (xAxis.Length > 0)
+        if (axis.Length > 0)
         {
             // A row without an axis value cannot be placed on the axis, and with the sort descending
             // it would come back ahead of every row that can. The service filters them out itself.
-            query.Append("&filter=").Append(Uri.EscapeDataString($"{xAxis} IS NOT NULL"));
+            url.Append("&filter=").Append(Uri.EscapeDataString($"{axis} IS NOT NULL"));
 
-            // Descending, and reversed below. The service caps the read after ordering, so ascending
-            // would return the oldest rows of a long table and the chart would draw its distant past.
-            query.Append("&orderBy=").Append(Uri.EscapeDataString($"{xAxis} desc"));
+            // Descending, and reversed when the rows are read. The service caps the read after
+            // ordering, so ascending would return the oldest rows of a long table and the chart
+            // would draw its distant past.
+            url.Append("&orderBy=").Append(Uri.EscapeDataString($"{axis} desc"));
         }
+
+        // The window, asked for rather than applied on arrival. The service clamps it to its own
+        // configured ceiling and reports the cut as `truncated`, so this narrows a read and can
+        // never widen one. A deployment that predates the parameter ignores it and sends its own
+        // cap instead, which the client then windows locally exactly as it did before — so this is
+        // safe to ship in either order.
+        url.Append("&maxRows=").Append(query.MaxRows);
 
         var data = await GetAsync(
-            query.ToString(),
+            url.ToString(),
             DataFeedJson.Default.DatasetDataResponse,
-            xAxis.Length > 0 ? $"read {dataset} ordered by {xAxis}" : $"read {dataset}");
+            axis.Length > 0 ? $"read {dataset} ordered by {axis}" : $"read {dataset}");
 
-        var rows = data.Rows ?? [];
-        if (rows.Count == 0) return structure;
+        if (data.Rows is not { Count: > 0 }) return structure;
 
-        // Newest first on the wire, oldest first here: a chart reads left to right, and the last
-        // point is the one the tree shows as the reading. The whole response is kept at this
-        // stage — a member table spreads its rows across sensors, so the per-series cap is
-        // applied after the split, not before it. Nothing was sorted without an axis, so there is
-        // nothing to undo — those rows stay in the order the table gave them.
-        var ordered = xAxis.Length > 0 ? rows.Reverse().ToList() : [.. rows];
+        var readings = DatasetSchemaBuilder.ReadingsOf(data, ordered: axis.Length > 0);
 
-        // Keyed off the response's own column list, which reports the resolved path in the
-        // catalog's spelling — that, not the order we asked in, is what the values line up with.
-        var names = data.Columns ?? [];
-        var readings = new Dictionary<string, IReadOnlyList<string?>>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < names.Count; i++)
-        {
-            if (names[i].Name is not { Length: > 0 } name) continue;
-            var column = i;
-            readings[name] = [.. ordered.Select(row => column < row.Count ? row[column] : null)];
-        }
-
-        return BuildSchema(dataset, response, readings, xAxis);
+        // data.Truncated is the service saying it hit its own cap. It has come back on every
+        // response since the service was written and was read by nobody, so a windowed read looked
+        // exactly like a complete one everywhere downstream.
+        return DatasetSchemaBuilder.Build(dataset, response, readings, axis, query.MaxRows, data.Truncated);
     }
-
-    /// <summary>
-    /// The projection cut down to the leaves someone selected, or null to read the whole table.
-    ///
-    /// <para>
-    /// Null is also the answer when the selection matches no column. A selection that matches
-    /// nothing is stale, not an instruction to read no columns, and a read of the axis alone would
-    /// blank every leaf on the screen.
-    /// </para>
-    /// </summary>
-    private static List<string>? Narrow(
-        string dataset, IReadOnlyList<string> leaves, IReadOnlyCollection<string>? wanted)
-    {
-        if (wanted is not { Count: > 0 }) return null;
-
-        var relative = wanted
-            .Select(path => SeriesAxis.Relative(dataset, path))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // A member table addresses its leaves per sensor — "LIG-01.level" — while its columns stay
-        // bare. The suffix match is what carries a selection across that split.
-        bool Selected(string leaf) =>
-            relative.Contains(leaf) ||
-            relative.Any(path => path.EndsWith("." + leaf, StringComparison.OrdinalIgnoreCase));
-
-        var kept = new List<string>();
-        var matched = false;
-        foreach (var leaf in leaves)
-        {
-            if (Selected(leaf))
-            {
-                kept.Add(leaf);
-                matched = true;
-                continue;
-            }
-
-            // Two columns nobody selects and every read needs: the one the sensors split on, and
-            // the σ beside a leaf that was selected. Dropping either changes the tree's shape.
-            if (leaf.Equals(SeriesAxis.Member, StringComparison.OrdinalIgnoreCase))
-            {
-                kept.Add(leaf);
-                continue;
-            }
-
-            if (!leaf.EndsWith(MeasureNumerics.SigmaSuffix, StringComparison.OrdinalIgnoreCase)) continue;
-            if (Selected(leaf[..^MeasureNumerics.SigmaSuffix.Length])) kept.Add(leaf);
-        }
-
-        return matched ? kept : null;
-    }
-
-    private static string Format(string? value)
-    {
-        if (value is null) return "null";
-
-        var trimmed = value.Trim();
-        if (trimmed.Length == 0) return "—";
-        // The reading column is a fixed-width cell that ellipsises anyway; cutting a long struct
-        // or JSON rendering here keeps one wide value from dominating the row.
-        return trimmed.Length <= 40 ? trimmed : trimmed[..39] + "…";
-    }
-
-    private static string Humanise(string? tableType) =>
-        (tableType ?? "").Replace('_', ' ').ToLowerInvariant();
-
-    private static string Coverage(DateTime? created, DateTime? lastAccessed) => (created, lastAccessed) switch
-    {
-        ({ } from, { } to) => $"{from:yyyy-MM} → {to:yyyy-MM}",
-        ({ } from, null) => $"{from:yyyy-MM} → live",
-        (null, { } to) => $"… → {to:yyyy-MM}",
-        _ => "—"
-    };
 
     // ── transport ────────────────────────────────────────────────────────────
 
@@ -837,6 +384,4 @@ public sealed class HttpDatasetCatalog : IDatasetCatalog, IDisposable
         }
         return status;
     }
-
-    public void Dispose() => client.Dispose();
 }

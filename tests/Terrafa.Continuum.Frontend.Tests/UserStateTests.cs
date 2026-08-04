@@ -299,7 +299,7 @@ public class UserStateTests
         UserStateSync.Start();
         try
         {
-            await UserStateSync.LoadAllAsync();
+            await UserStateSync.LoadAllAsync(StubDatasetCatalog.Instance);
             await UserStateSync.FlushAsync();
 
             Assert.Equal(1.15, UiScaleSettings.Scale);
@@ -325,7 +325,7 @@ public class UserStateTests
         UserStateSync.Start();
         try
         {
-            await UserStateSync.LoadAllAsync();
+            await UserStateSync.LoadAllAsync(StubDatasetCatalog.Instance);
             VarianceSettings.Toggle();
             await UserStateSync.FlushAsync();
 
@@ -353,7 +353,7 @@ public class UserStateTests
         UserStateSync.Start();
         try
         {
-            await UserStateSync.LoadAllAsync();
+            await UserStateSync.LoadAllAsync(StubDatasetCatalog.Instance);
             HintSettings.Toggle();
             await UserStateSync.FlushAsync();
             Assert.Empty(store.Puts);

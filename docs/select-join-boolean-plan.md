@@ -169,15 +169,27 @@ targets a "DataSources" control no view defines yet.
 
 - **`Reading` vs `DeclaredReading`**: tree-building/binding code must use `DeclaredReading`
   (the store would leak stale values in); everything else reads via `Workspace.ReadingAt`.
-- **Measure copy sites** — any new Measure field must be threaded through ALL of:
+- ~~**Measure copy sites** — any new Measure field must be threaded through ALL of:
   MeasureNumerics.With, MeasureNumerics.BindSigmaLeaves, MeasureNumerics.Hydrate,
-  HttpDatasetCatalog.BindSiblingSigma, HttpDatasetCatalog.AsCarrier.
+  HttpDatasetCatalog.BindSiblingSigma, HttpDatasetCatalog.AsCarrier.~~
+  **Obsolete (2026-08-04 refactor).** `Measure` is a `record`; every one of those sites is now a
+  `with` expression and two of them were deleted outright. A new field needs nothing threaded.
 - **DTOs**: append-with-defaults only (`string? X = null`) — SchemaVersion is never checked;
   nullable-with-defaults IS the compatibility strategy. New serializable *types* must be added
   to the `[JsonSerializable]` list in UserStateJson (browser head is AOT+trimmed).
 - **Persistence chain**: model → UserStateMapper.Capture*/Apply* → UserStateDtos → UserStateSync
   (dirty-mark via Changed/Edited events, 2s debounce). Load order: settings → functions →
-  workspace → network → dashboard → ReadingLoader.
+  workspace → network → dashboard → ReadingLoader — unchanged, but since the 2026-08-04 refactor it
+  is `Session.TransitionAsync` that runs it, together with the reset before it and the value reads
+  after it. Nothing else may reset or load those singletons: that split across three subscribers to
+  `AuthSession.Changed` was the race. `AuthSession.Changed` now fires **only on identity change**,
+  so trap #3 in the debugging skill no longer applies.
+- **One read path**: `ReadingLoader.ReadAsync` is the only place a value enters the app
+  (fetch → `ReadingStore.Write` → `Workspace.SetAxis`). Do not write to `ReadingStore` from anywhere
+  else — a push feed will call the same sink.
+- **Suspend before rearranging the world**: anything that resets the singletons and then refills
+  them must hold `NetworkGraph.Instance.Suspend()` for the whole operation, or `PruneUnmounted`
+  deletes cards belonging to whatever has not been read yet.
 - **Node id prefixes** are parsed on Load to resume counters (`transfer:t{n}`); new kinds need
   their own prefix + counter or ids collide.
 - **NetworkGraph.CanConnect** hardcodes kind rules; `Reading(...)`'s switch silently yields

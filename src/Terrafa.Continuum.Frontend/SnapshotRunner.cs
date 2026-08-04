@@ -29,7 +29,7 @@ public static class SnapshotRunner
             .SetupWithoutStarting();
 
         Directory.CreateDirectory(outputDir);
-        var snapshot = new StaticDataFeed().Current;
+        var snapshot = DemoContent.Create();
 
         // The probes drive the side panels, which only exist in builder mode.
         BuilderModeSettings.SetEnabled(true);
@@ -79,7 +79,7 @@ public static class SnapshotRunner
     /// on DATA SOURCES has to turn up as something the network can place and the dashboard can plot.
     /// Runs after the data-sources probe, which is what mounts the second dataset.
     /// </summary>
-    private static void ProbeMountedLeavesReachBothScreens(string outputDir, DataSnapshot snapshot)
+    private static void ProbeMountedLeavesReachBothScreens(string outputDir, DemoContent snapshot)
     {
         var network = new NetworkView(snapshot, _ => { });
         var networkWindow = new Window
@@ -97,7 +97,7 @@ public static class SnapshotRunner
         Console.WriteLine($"mount probe: ice_brent offered on the network rail = {railed}");
         networkWindow.Close();
 
-        var dashboard = new DashboardView(snapshot, _ => { });
+        var dashboard = new DashboardView(_ => { });
         var dashboardWindow = new Window
         {
             Width = 1560,
@@ -162,7 +162,7 @@ public static class SnapshotRunner
             new DatasetSchema("PROBE_UNSAMPLED", "athena", "table", "—", "—", "—", root),
             root);
 
-        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var view = new DashboardView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -204,9 +204,9 @@ public static class SnapshotRunner
         Dashboard.Instance.Reset(seedDemo: true);
     }
 
-    private static void CaptureDataSourcesProbe(string outputDir, DataSnapshot snapshot)
+    private static void CaptureDataSourcesProbe(string outputDir, DemoContent snapshot)
     {
-        var view = new DataSourcesView(snapshot, _ => { });
+        var view = new DataSourcesView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -311,7 +311,7 @@ public static class SnapshotRunner
         window.Close();
     }
 
-    private static void CaptureTreeLinkProbe(string outputDir, DataSnapshot snapshot)
+    private static void CaptureTreeLinkProbe(string outputDir, DemoContent snapshot)
     {
         var view = new DbTreeView(snapshot, _ => { });
         var window = new Window
@@ -375,7 +375,7 @@ public static class SnapshotRunner
 
     private static void CaptureContactProbe(string outputDir)
     {
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -406,7 +406,7 @@ public static class SnapshotRunner
 
     private static void CaptureSettingsProbe(string outputDir)
     {
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -461,7 +461,7 @@ public static class SnapshotRunner
 
     private static void CaptureInteractionProbe(string outputDir)
     {
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -534,7 +534,7 @@ public static class SnapshotRunner
     private static void CaptureBubbleProbe(string outputDir)
     {
         var selected = new List<int>();
-        var view = new NetworkView(new StaticDataFeed().Current, selected.Add);
+        var view = new NetworkView(DemoContent.Create(), selected.Add);
         var window = new Window
         {
             Width = 1560,
@@ -619,7 +619,7 @@ public static class SnapshotRunner
 
     private static void CaptureBubbleHandoffProbe(string outputDir)
     {
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -681,7 +681,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CaptureNavReorderProbe(string outputDir)
     {
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -738,7 +738,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CaptureFigureProbe(string outputDir)
     {
-        var network = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var network = new NetworkView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -803,7 +803,7 @@ public static class SnapshotRunner
     /// <summary>The other half: the figure just committed, picked up as a tile source.</summary>
     private static void CaptureFigureOnDashboard(string outputDir)
     {
-        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var view = new DashboardView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -853,7 +853,7 @@ public static class SnapshotRunner
     private static void CaptureScaleProbe(string outputDir)
     {
         TypographySettings.SetScale(1.2);
-        var window = new MainWindow(new StaticDataFeed())
+        var window = new MainWindow(DemoContent.Create())
         {
             Width = 1280,
             Height = 840,
@@ -878,7 +878,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CaptureSnapProbe(string outputDir)
     {
-        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var view = new DashboardView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -940,7 +940,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CaptureZoomAndHighlightProbe(string outputDir)
     {
-        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var view = new NetworkView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1006,7 +1006,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CapturePointerHintProbe(string outputDir)
     {
-        var view = new TransferFunctionView(new StaticDataFeed().Current, _ => { });
+        var view = new TransferFunctionView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1081,7 +1081,7 @@ public static class SnapshotRunner
 
     private static void CaptureTransferFunctionProbe(string outputDir)
     {
-        var view = new TransferFunctionView(new StaticDataFeed().Current, _ => { });
+        var view = new TransferFunctionView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1264,7 +1264,7 @@ public static class SnapshotRunner
         Console.WriteLine(
             $"regressor probe: fig.predicted_temp = {committed?.Display ?? "—"} · {committed?.Note ?? ""}");
 
-        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var view = new NetworkView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1310,7 +1310,7 @@ public static class SnapshotRunner
             $"comparator probe: fig.tank_01_ahead = {committed?.Display ?? "—"} · " +
             $"{committed?.SigmaDisplay ?? ""} · {committed?.Note ?? ""}");
 
-        var view = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var view = new NetworkView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1410,7 +1410,7 @@ public static class SnapshotRunner
         var sink = graph.AddTableSink("parcel_conditions", 940, 235);
         graph.Connect(select.Id, sink.Id);
 
-        var netView = new NetworkView(new StaticDataFeed().Current, _ => { });
+        var netView = new NetworkView(DemoContent.Create(), _ => { });
         var netWindow = new Window
         {
             Width = 1560,
@@ -1435,7 +1435,7 @@ public static class SnapshotRunner
         tile.Sources.Add(new TileSource(TileSourceKind.Table, "parcel_conditions"));
         board.Add(tile, SnapSettings.GridSize, SnapSettings.GridSize, 720, 420);
 
-        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var view = new DashboardView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1463,7 +1463,7 @@ public static class SnapshotRunner
     /// </summary>
     private static void CaptureDashboardProbe(string outputDir)
     {
-        var view = new DashboardView(new StaticDataFeed().Current, _ => { });
+        var view = new DashboardView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1573,7 +1573,7 @@ public static class SnapshotRunner
     /// pin menu — the whole point of the map screen, so it gets a frame of its own.</summary>
     private static void CaptureMapProbe(string outputDir)
     {
-        var view = new SiteMapView(new StaticDataFeed().Current, _ => { });
+        var view = new SiteMapView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1638,7 +1638,7 @@ public static class SnapshotRunner
     /// shape — portrait here, against the landscape placeholder.</summary>
     private static void CaptureMapUploadProbe(string outputDir)
     {
-        var view = new SiteMapView(new StaticDataFeed().Current, _ => { });
+        var view = new SiteMapView(DemoContent.Create(), _ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1694,12 +1694,12 @@ public static class SnapshotRunner
     /// position and residency so a broken eviction shows up in the console, not just the frame.
     /// 200k keeps the suite fast; the 5M case is the manual perf check.
     /// </summary>
-    private static void CaptureCsvGridProbe(string outputDir, DataSnapshot snapshot)
+    private static void CaptureCsvGridProbe(string outputDir, DemoContent snapshot)
     {
         Await(ExportTable.Instance.BuildAsync(
             new TableExportRequest(ExportTable.SyntheticDataset, 200_000)));
 
-        var view = new CsvExportView(snapshot, _ => { });
+        var view = new CsvExportView(_ => { });
         var window = new Window
         {
             Width = 1560,
@@ -1811,17 +1811,17 @@ public static class SnapshotRunner
         Console.WriteLine($"snapshot {name}: saved");
     }
 
-    private static void CaptureAllViews(string outputDir, DataSnapshot snapshot, string suffix)
+    private static void CaptureAllViews(string outputDir, DemoContent snapshot, string suffix)
     {
         var views = new (string Name, UserControl View)[]
         {
             ("1-netw", new NetworkView(snapshot, _ => { })),
-            ("2-tfn", new TransferFunctionView(snapshot, _ => { })),
-            ("3-dash", new DashboardView(snapshot, _ => { })),
+            ("2-tfn", new TransferFunctionView(_ => { })),
+            ("3-dash", new DashboardView(_ => { })),
             ("4-tree", new DbTreeView(snapshot, _ => { })),
             ("5-map", new SiteMapView(snapshot, _ => { })),
-            ("6-data", new DataSourcesView(snapshot, _ => { })),
-            ("7-csv", new CsvExportView(snapshot, _ => { }))
+            ("6-data", new DataSourcesView(_ => { })),
+            ("7-csv", new CsvExportView(_ => { }))
         };
 
         foreach (var (name, view) in views)

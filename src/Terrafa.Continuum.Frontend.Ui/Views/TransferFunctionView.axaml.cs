@@ -54,11 +54,11 @@ public partial class TransferFunctionView : UserControl
 
     private FunctionDraft ActiveDraft => drafts[activeDraftIndex];
 
-    public TransferFunctionView() : this(DemoData.CreateSnapshot(), _ => { })
+    public TransferFunctionView() : this(_ => { })
     {
     }
 
-    public TransferFunctionView(DataSnapshot snapshot, Action<int> navigate)
+    public TransferFunctionView(Action<int> navigate)
     {
         InitializeComponent();
         this.navigate = navigate;

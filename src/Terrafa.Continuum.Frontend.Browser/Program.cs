@@ -16,6 +16,7 @@ internal static class Program
         AuthSession.Instance.Store = new LocalStorageSecretStore();
         UserStateSync.Store = new HttpUserStateStore();
         UserStateSync.Start();
+        Session.Instance.Start();
         _ = AuthSession.Instance.TryRestoreAsync();
         return BuildAvaloniaApp().StartBrowserAppAsync("out");
     }

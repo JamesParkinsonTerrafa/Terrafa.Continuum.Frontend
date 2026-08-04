@@ -31,11 +31,11 @@ public partial class CsvExportView : UserControl
     private TextBlock? exportStatusText;
     private TextBlock? retainedStatusText;
 
-    public CsvExportView() : this(DemoData.CreateSnapshot(), _ => { })
+    public CsvExportView() : this(_ => { })
     {
     }
 
-    public CsvExportView(DataSnapshot snapshot, Action<int> navigate)
+    public CsvExportView(Action<int> navigate)
     {
         InitializeComponent();
         Tabs.TabSelected += navigate;
