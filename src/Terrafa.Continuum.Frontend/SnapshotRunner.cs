@@ -1187,15 +1187,59 @@ public static class SnapshotRunner
             $"(expected 1) · dropped in with {settled.Hops} bounces, rest at {settled.End:F0}px");
         Capture(window, outputDir, "3-dash-tour");
 
+        // On down the stack to the fork, then take the second road: the tour has to come back for
+        // the first one on its own, which is the whole point of the branch. Each card is let land
+        // before its key is pressed — a key aimed at a card still in the air is a key missed.
+        Settle(window);
+        ClickText(window, window, "GO ▸");
+        Console.WriteLine(
+            $"tour probe: reached the fork on step {TourGuide.StepIndex} (expected 2) with " +
+            $"{CardCount()} card (expected 1)");
+        Capture(window, outputDir, "0-network-tour");
+
+        Settle(window);
+        ClickText(window, window, "SEE THE WORKINGS ▸");
+        Console.WriteLine(
+            $"tour probe: chose the workings · step {TourGuide.StepIndex} (expected 3) · " +
+            $"card on the transfer function screen = {CardCount()} (expected 1)");
+        Capture(window, outputDir, "1-transfer-tour");
+
+        Settle(window);
+        ClickText(window, window, "CONTINUE TOUR ▸");
+        Console.WriteLine(
+            $"tour probe: continued to the road not taken · step {TourGuide.StepIndex} " +
+            $"(expected 4) · card on the data tree = {CardCount()} (expected 1)");
+        Capture(window, outputDir, "4-tree-tour");
+
+        Settle(window);
+        ClickText(window, window, "CONTINUE TOUR ▸");
+        Console.WriteLine(
+            $"tour probe: last stop · step {TourGuide.StepIndex} (expected 5 of " +
+            $"{TourCatalog.Length}) · card on the export screen = {CardCount()} (expected 1)");
+        Capture(window, outputDir, "6-csv-tour");
+
+        Settle(window);
         ClickText(window, window, "FINISH");
         Console.WriteLine(
             $"tour probe: FINISH left {CardCount()} cards (expected 0) · " +
-            $"running = {TourGuide.IsRunning} · dashboard tips now up = {TipCount()} (expected 1)");
-        Capture(window, outputDir, "3-dash-tour-handover");
+            $"running = {TourGuide.IsRunning} · export tips now up = {TipCount()} (expected 1)");
+        Capture(window, outputDir, "6-csv-tour-handover");
 
         window.Close();
         PointerHintSettings.SetEnabled(false);
         TourGuide.AutoStart = false;
+    }
+
+    /// <summary>
+    /// Waits for the tour card on screen to come to rest. A press aimed at a card still bouncing
+    /// lands where the card was rather than on the key, so every probe press waits for this first.
+    /// </summary>
+    private static void Settle(Window window)
+    {
+        var card = window.GetVisualDescendants().OfType<TourLayer>()
+            .SelectMany(layer => layer.Children.OfType<SquircleBorder>()).FirstOrDefault();
+        if (card is null) return;
+        SampleDrop(card, TimeSpan.FromSeconds(2.5));
     }
 
     /// <summary>

@@ -215,7 +215,7 @@ public class TourLayer : Canvas
     {
         var step = new TextBlock
         {
-            Text = $"STEP {TourGuide.StepIndex + 1} OF {TourCatalog.Route.Count}",
+            Text = $"STEP {TourGuide.StepIndex + 1} OF {TourCatalog.Length}",
             FontSize = TypographySettings.Size(10),
             LetterSpacing = 1,
             Foreground = Palette.TextFaint
@@ -264,27 +264,28 @@ public class TourLayer : Canvas
         return built;
     }
 
+    /// <summary>
+    /// The keys under the words. A stop with one way on keeps the key and the skip on one line; a
+    /// stop that forks needs the width for both of its keys, so the skip drops to a line of its own
+    /// underneath rather than being squeezed out to the edge.
+    /// </summary>
     private Control BuildActionRow(TourStop stop)
     {
-        var action = new SquircleBorder
+        var keys = new StackPanel
         {
-            Classes = { "emboss-key" },
-            Padding = new Thickness(20, 9),
-            Background = Palette.Amber,
-            Cursor = new Cursor(StandardCursorType.Hand),
-            Child = new TextBlock
-            {
-                Text = stop.ActionLabel,
-                FontSize = TypographySettings.Size(12),
-                FontWeight = FontWeight.Bold,
-                Foreground = Palette.TabActiveText
-            }
+            Orientation = Orientation.Horizontal,
+            Spacing = 12
         };
-        action.PointerPressed += (_, e) =>
+
+        if (stop.Choices is { Count: > 0 } choices)
         {
-            e.Handled = true;
-            TourGuide.Advance();
-        };
+            foreach (var choice in choices)
+                keys.Children.Add(BuildKey(choice.Label, () => TourGuide.Choose(choice.Screen)));
+        }
+        else
+        {
+            keys.Children.Add(BuildKey(stop.ActionLabel, TourGuide.Advance));
+        }
 
         var skip = new TextBlock
         {
@@ -300,12 +301,44 @@ public class TourLayer : Canvas
             TourGuide.Skip();
         };
 
-        return new StackPanel
+        if (stop.Choices is { Count: > 0 })
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 16,
-            Margin = new Thickness(0, 20, 0, 0),
-            Children = { action, skip }
+            skip.Margin = new Thickness(0, 14, 0, 0);
+            skip.HorizontalAlignment = HorizontalAlignment.Left;
+            return new StackPanel
+            {
+                Margin = new Thickness(0, 20, 0, 0),
+                Children = { keys, skip }
+            };
+        }
+
+        keys.Margin = new Thickness(0, 20, 0, 0);
+        keys.Children.Add(skip);
+        keys.Spacing = 16;
+        return keys;
+    }
+
+    private static SquircleBorder BuildKey(string label, Action press)
+    {
+        var key = new SquircleBorder
+        {
+            Classes = { "emboss-key" },
+            Padding = new Thickness(20, 9),
+            Background = Palette.Amber,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new TextBlock
+            {
+                Text = label,
+                FontSize = TypographySettings.Size(12),
+                FontWeight = FontWeight.Bold,
+                Foreground = Palette.TabActiveText
+            }
         };
+        key.PointerPressed += (_, e) =>
+        {
+            e.Handled = true;
+            press();
+        };
+        return key;
     }
 }
