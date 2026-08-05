@@ -120,6 +120,7 @@
     </DockPanel>
 
     <controls:HintPointerLayer ScreenIndex="5" />
+    <controls:TourLayer ScreenIndex="5" />
     <controls:ContextMenuLayer x:Name="MenuLayer" />
     <controls:OverlayDialog x:Name="Dialog" />
   </Panel>

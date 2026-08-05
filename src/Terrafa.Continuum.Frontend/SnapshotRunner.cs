@@ -38,6 +38,10 @@ public static class SnapshotRunner
         // the pointer bubbles would land on every frame the suite captures.
         PointerHintSettings.AutoShow = false;
 
+        // Same for the tour card, which would otherwise open over the first MAP frame captured and
+        // scrim the screen behind it. Its own probe turns it back on.
+        TourGuide.AutoStart = false;
+
         CaptureAllViews(outputDir, snapshot, "");
         CaptureInteractionProbe(outputDir);
         CaptureBubbleProbe(outputDir);
@@ -55,6 +59,8 @@ public static class SnapshotRunner
         CaptureSnapProbe(outputDir);
         CaptureZoomAndHighlightProbe(outputDir);
         CapturePointerHintProbe(outputDir);
+        CaptureTourProbe(outputDir);
+        CaptureBootProbe(outputDir);
         CaptureCsvGridProbe(outputDir, snapshot);
         HintSettings.SetEnabled(false);
         CaptureAllViews(outputDir, snapshot, "-nohints");
@@ -455,6 +461,9 @@ public static class SnapshotRunner
         flyout.PopForceSlider.Value = BubbleSettings.PopForce;
         flyout.WobbleSlider.Value = BubbleSettings.Wobble;
         flyout.HoldToPopSlider.Value = BubbleSettings.HoldSeconds;
+        flyout.DropHeightSlider.Value = TourSettings.DropHeight;
+        flyout.BounceSlider.Value = TourSettings.Bounce;
+        flyout.FallSpeedSlider.Value = TourSettings.FallSpeed;
         flyout.IntensitySlider.Value = 24;
         flyout.SlopeSlider.Value = 0.8;
         flyout.WarpSlider.Value = 34;
@@ -462,6 +471,18 @@ public static class SnapshotRunner
         Pump();
 
         Capture(window, outputDir, "0-settings");
+
+        // The list is longer than the panel, and a section can only be clicked open once it has
+        // been scrolled to — the row has to be under the pointer for the press to land on it.
+        flyout.PanelBorder.GetVisualDescendants().OfType<ScrollViewer>().First().ScrollToEnd();
+        Pump();
+        ExpandSection(flyout.TourToggleRow);
+        flyout.PanelBorder.GetVisualDescendants().OfType<ScrollViewer>().First().ScrollToEnd();
+        Pump();
+        Console.WriteLine(
+            $"tour probe: settings show drop {flyout.DropHeightSlider.Value:F0}px · " +
+            $"bounce {flyout.BounceSlider.Value:F2} · fall {flyout.FallSpeedSlider.Value:F2}");
+        Capture(window, outputDir, "0-settings-tour");
         window.Close();
     }
 
@@ -1064,6 +1085,149 @@ public static class SnapshotRunner
 
         window.Close();
         PointerHintSettings.SetEnabled(false);
+    }
+
+    /// <summary>
+    /// The tour end to end, through the real shell: it opens on MAP, its key walks to DASHBOARD,
+    /// and finishing there leaves that screen's own pointer tip up in its place.
+    /// </summary>
+    /// <summary>
+    /// The loading screen the shell holds up while the session starts. It is driven directly here:
+    /// a snapshot run never starts a session, which is the whole reason the captured screens sit on
+    /// seeded state, so there is no start for it to be captured during.
+    /// </summary>
+    private static void CaptureBootProbe(string outputDir)
+    {
+        var boot = new BootOverlay();
+        var window = new Window
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None,
+            Content = boot
+        };
+        window.Show();
+        boot.Follow(SessionPhase.Starting);
+        Pump();
+        Capture(window, outputDir, "0-boot");
+
+        ThemeManager.SetLight(false);
+        Pump();
+        Capture(window, outputDir, "0-boot-dark");
+        ThemeManager.SetLight(true);
+
+        // Ready is an answer, so the cover comes off. Captured after the fade has had its time,
+        // because the frame during it is the one that would hide a cover that never leaves.
+        boot.Follow(SessionPhase.Ready);
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromMilliseconds(600))
+        {
+            Pump();
+            Thread.Sleep(8);
+        }
+        Console.WriteLine($"boot probe: cover retired on ready = {!boot.IsVisible}");
+
+        window.Close();
+    }
+
+    private static void CaptureTourProbe(string outputDir)
+    {
+        TourGuide.AutoStart = true;
+        var window = new MainWindow(DemoContent.Create())
+        {
+            Width = 1560,
+            Height = 980,
+            SystemDecorations = SystemDecorations.None
+        };
+        window.Show();
+        Pump();
+
+        int CardCount() => window.GetVisualDescendants().OfType<TourLayer>()
+            .Sum(layer => layer.Children.OfType<SquircleBorder>().Count());
+
+        int TipCount() => window.GetVisualDescendants().OfType<HintPointerLayer>()
+            .Sum(layer => layer.Children.OfType<SquircleBorder>().Count());
+
+        Console.WriteLine(
+            $"tour probe: opens on MAP with {CardCount()} card (expected 1) · " +
+            $"step {TourGuide.StepIndex} (expected 0) · map tips held back = {TipCount() == 0}");
+
+        // The card is dropped in, so a still frame cannot show the landing — watch its offset over
+        // the fall instead and count the hops it took before it settled.
+        var card = window.GetVisualDescendants().OfType<TourLayer>()
+            .SelectMany(layer => layer.Children.OfType<SquircleBorder>()).First();
+        var landing = SampleDrop(card, TimeSpan.FromSeconds(2.5));
+        Console.WriteLine(
+            $"tour probe: dropped from {landing.Start:F0}px, bounced {landing.Hops} times, " +
+            $"rest at {landing.End:F0}px (expected -{TourSettings.DropHeight:F0}px, 2+ hops, 0px)");
+        Capture(window, outputDir, "5-map-tour");
+
+        // Carry the box across the plate and let go: it must stay in the column it was dropped
+        // over and bounce on the same floor it left.
+        var grabbed = card.TranslatePoint(new Point(280, 30), window)!.Value;
+        var lifted = new Point(900, 220);
+        window.MouseDown(grabbed, MouseButton.Left);
+        window.MouseMove(lifted);
+        Pump();
+        var carriedLeft = Canvas.GetLeft(card);
+        window.MouseUp(lifted, MouseButton.Left);
+        var thrown = SampleDrop(card, TimeSpan.FromSeconds(2.5));
+        Console.WriteLine(
+            $"tour probe: carried to x={carriedLeft:F0} and let go from {thrown.Start:F0}px · " +
+            $"{thrown.Hops} bounces · rest at {thrown.End:F0}px · " +
+            $"stayed in its column = {Math.Abs(Canvas.GetLeft(card) - carriedLeft) < 0.5}");
+        Capture(window, outputDir, "5-map-tour-carried");
+
+        ClickText(window, window, "GO ▸");
+        var arrival = window.GetVisualDescendants().OfType<TourLayer>()
+            .SelectMany(layer => layer.Children.OfType<SquircleBorder>()).First();
+        var settled = SampleDrop(arrival, TimeSpan.FromSeconds(2.5));
+        Console.WriteLine(
+            $"tour probe: GO shows {CardCount()} card (expected 1) · step {TourGuide.StepIndex} " +
+            $"(expected 1) · dropped in with {settled.Hops} bounces, rest at {settled.End:F0}px");
+        Capture(window, outputDir, "3-dash-tour");
+
+        ClickText(window, window, "FINISH");
+        Console.WriteLine(
+            $"tour probe: FINISH left {CardCount()} cards (expected 0) · " +
+            $"running = {TourGuide.IsRunning} · dashboard tips now up = {TipCount()} (expected 1)");
+        Capture(window, outputDir, "3-dash-tour-handover");
+
+        window.Close();
+        PointerHintSettings.SetEnabled(false);
+        TourGuide.AutoStart = false;
+    }
+
+    /// <summary>
+    /// Follows a dropped card's offset for a while. A hop is the offset turning back upwards after
+    /// a run downwards, which is what a bounce off the floor looks like from outside.
+    /// </summary>
+    private static (double Start, double End, int Hops) SampleDrop(Visual visual, TimeSpan window)
+    {
+        double Offset() => visual.RenderTransform is TranslateTransform move ? move.Y : 0;
+
+        var start = Offset();
+        var previous = start;
+        var hops = 0;
+        var descending = true;
+        var clock = Stopwatch.StartNew();
+        while (clock.Elapsed < window)
+        {
+            Pump();
+            Thread.Sleep(8);
+            var current = Offset();
+            if (descending && current < previous)
+            {
+                hops++;
+                descending = false;
+            }
+            else if (!descending && current > previous)
+            {
+                descending = true;
+            }
+            previous = current;
+        }
+        return (start, previous, hops);
     }
 
     private static void ClickKey(Window window, SquircleBorder key)

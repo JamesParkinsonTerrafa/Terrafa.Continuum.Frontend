@@ -39,6 +39,10 @@ public class SettingsFlyout : Panel
     internal Slider HighlightBrightnessSlider { get; }
     internal Slider TextSizeSlider { get; }
     internal Slider UiScaleSlider { get; }
+    internal Border TourToggleRow { get; }
+    internal Slider DropHeightSlider { get; }
+    internal Slider BounceSlider { get; }
+    internal Slider FallSpeedSlider { get; }
     internal Border CsvExportToggleRow { get; }
     internal Slider CacheRowsSlider { get; }
     internal Slider EvictionRowsSlider { get; }
@@ -46,11 +50,13 @@ public class SettingsFlyout : Panel
     private readonly StackPanel grainBody;
     private readonly StackPanel buttonBody;
     private readonly StackPanel bubbleBody;
+    private readonly StackPanel tourBody;
     private readonly StackPanel appearanceBody;
     private readonly StackPanel csvBody;
     private readonly TextBlock grainArrow;
     private readonly TextBlock buttonArrow;
     private readonly TextBlock bubbleArrow;
+    private readonly TextBlock tourArrow;
     private readonly TextBlock appearanceArrow;
     private readonly TextBlock csvArrow;
     private readonly TextBlock darkLabel;
@@ -92,6 +98,7 @@ public class SettingsFlyout : Panel
         grainArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         buttonArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         bubbleArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
+        tourArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         appearanceArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         csvArrow = new TextBlock { Text = "▸", FontSize = 10, Foreground = Palette.TextFaint };
         waveValue = new TextBlock { FontSize = 10, Foreground = Palette.Text };
@@ -111,6 +118,7 @@ public class SettingsFlyout : Panel
         grainBody = BuildSectionBody();
         buttonBody = BuildSectionBody();
         bubbleBody = BuildSectionBody();
+        tourBody = BuildSectionBody();
         appearanceBody = BuildSectionBody();
         csvBody = BuildSectionBody();
 
@@ -187,6 +195,23 @@ public class SettingsFlyout : Panel
             Margin = new Thickness(0, 2, 0, 0)
         });
 
+        DropHeightSlider = AddSliderRow(tourBody, "DROP HEIGHT", TourSettings.MinDropHeight,
+            TourSettings.MaxDropHeight, 10, TourSettings.DropHeight, "0", TourSettings.SetDropHeight);
+        BounceSlider = AddSliderRow(tourBody, "BOUNCE", 0, TourSettings.MaxBounce, 0.05,
+            TourSettings.Bounce, "0.00", TourSettings.SetBounce);
+        FallSpeedSlider = AddSliderRow(tourBody, "FALL SPEED", TourSettings.MinFallSpeed,
+            TourSettings.MaxFallSpeed, 0.05, TourSettings.FallSpeed, "0.00", TourSettings.SetFallSpeed);
+        tourBody.Children.Add(new TextBlock
+        {
+            Text = "The tour card drops into the corner like a bouncy ball. DROP HEIGHT is how far " +
+                   "above its place it is let go, BOUNCE how much speed it keeps off the floor, " +
+                   "FALL SPEED the pull. Moving any of them drops the card again.",
+            FontSize = 9,
+            Foreground = Palette.TextFaint,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0)
+        });
+
         IntensitySlider = AddSliderRow(grainBody, "INTENSITY", 0, GrainSettings.MaxIntensity, 1,
             GrainSettings.Intensity, "0", GrainSettings.SetIntensity);
         AddWavelengthRow();
@@ -224,6 +249,7 @@ public class SettingsFlyout : Panel
         AppearanceToggleRow = BuildSectionRow("APPEARANCE", appearanceArrow, appearanceBody);
         ButtonToggleRow = BuildSectionRow("BUTTON UI", buttonArrow, buttonBody);
         BubbleToggleRow = BuildSectionRow("BUBBLE POP", bubbleArrow, bubbleBody);
+        TourToggleRow = BuildSectionRow("TOUR CARD", tourArrow, tourBody);
         GrainToggleRow = BuildSectionRow("GRAIN EFFECTS", grainArrow, grainBody);
         CsvExportToggleRow = BuildSectionRow("CSV EXPORT", csvArrow, csvBody);
 
@@ -241,6 +267,8 @@ public class SettingsFlyout : Panel
         column.Children.Add(buttonBody);
         column.Children.Add(BubbleToggleRow);
         column.Children.Add(bubbleBody);
+        column.Children.Add(TourToggleRow);
+        column.Children.Add(tourBody);
         column.Children.Add(GrainToggleRow);
         column.Children.Add(grainBody);
         column.Children.Add(CsvExportToggleRow);

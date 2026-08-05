@@ -24,16 +24,13 @@ internal static class Program
             return;
         }
 
-        // The restore runs concurrently with startup, and deliberately does not have to win: if the
-        // stored token lands first, Session.Start finds an identity and establishes it; if it lands
-        // after, AuthSession.Changed brings it through the same transition. Both converge on the
-        // same state, which is the point of putting reset, load and read in one method.
-        // Snapshot runs are excluded above, so screenshots stay on seeded state.
+        // Session.Start owns the restore: it holds the session in Starting until the stored token
+        // has answered, so the shell shows one loading screen instead of painting the demo seed and
+        // then replacing it. Snapshot runs are excluded above, so screenshots stay on seeded state.
         AuthSession.Instance.Store = new KeychainSecretStore();
         UserStateSync.Store = new HttpUserStateStore();
         UserStateSync.Start();
         Session.Instance.Start();
-        _ = AuthSession.Instance.TryRestoreAsync();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

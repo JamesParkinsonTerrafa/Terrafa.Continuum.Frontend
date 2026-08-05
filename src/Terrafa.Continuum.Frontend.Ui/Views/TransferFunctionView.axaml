@@ -103,6 +103,7 @@
       </controls:PanelBox>
     </DockPanel>
     <controls:HintPointerLayer ScreenIndex="1" />
+    <controls:TourLayer ScreenIndex="1" />
     <Canvas x:Name="Overlay" Background="Transparent" IsVisible="False" />
     <Panel x:Name="DialogHost" Background="{StaticResource ScrimBrush}" IsVisible="False" />
   </Panel>

@@ -92,10 +92,15 @@ public partial class MainView : UserControl
         Workspace.Instance.Changed += InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed += InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed += InvalidateInactiveScreens;
-        Session.Instance.Changed += RebuildScreens;
+        Session.Instance.Changed += OnSessionChanged;
+        // The session is usually already starting by the time this view is attached, and it will
+        // not announce that again — so the cover is put up from the phase as it stands.
+        Boot.Follow(Session.Instance.Phase);
         SettingsFlyout.ToggleRequested += ToggleSettings;
         SettingsFlyout.SignInRequested += ShowConnect;
         ContactDialog.ShowRequested += ShowContact;
+        // The tour card sits on a screen but moves between them, so the shell is what walks it on.
+        TourGuide.NavigateRequested += SwitchTo;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -106,10 +111,11 @@ public partial class MainView : UserControl
         Workspace.Instance.Changed -= InvalidateInactiveScreens;
         FigureCatalog.Instance.Changed -= InvalidateInactiveScreens;
         NetworkGraph.Instance.Changed -= InvalidateInactiveScreens;
-        Session.Instance.Changed -= RebuildScreens;
+        Session.Instance.Changed -= OnSessionChanged;
         SettingsFlyout.ToggleRequested -= ToggleSettings;
         SettingsFlyout.SignInRequested -= ShowConnect;
         ContactDialog.ShowRequested -= ShowContact;
+        TourGuide.NavigateRequested -= SwitchTo;
         base.OnDetachedFromVisualTree(e);
     }
 
@@ -167,6 +173,18 @@ public partial class MainView : UserControl
     {
         screens.Clear();
         SwitchTo(activeIndex);
+    }
+
+    /// <summary>
+    /// The cover follows the session, and the screens under it are rebuilt against whatever it has
+    /// arrived at. Both in one handler because they are one event: the screens are only ever
+    /// rebuilt where the cover is up, so the swap happens behind it rather than in front of the
+    /// operator.
+    /// </summary>
+    private void OnSessionChanged()
+    {
+        Boot.Follow(Session.Instance.Phase);
+        RebuildScreens();
     }
 
     /// <summary>A mount or link changes what every other screen shows — drop them so they rebuild on entry.</summary>

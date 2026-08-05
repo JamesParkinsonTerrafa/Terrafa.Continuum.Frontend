@@ -56,5 +56,6 @@
       </Border>
     </DockPanel>
     <controls:HintPointerLayer ScreenIndex="6" />
+    <controls:TourLayer ScreenIndex="6" />
   </Panel>
 </UserControl>

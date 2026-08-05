@@ -185,6 +185,49 @@ public class SessionTests : IDisposable
         Assert.Equal([1, 2], Workspace.ReadingAt($"{Alpha}.level")?.History);
     }
 
+    // ── starting ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Starting is not signed-out. The restore used to run beside <see cref="Session.Start"/>
+    /// rather than inside it, so an app with a stored token settled into signed-out, painted the
+    /// demo seed, and replaced it with the operator's workspace once the token landed — the flash
+    /// the shell now covers. Start holds the session in Starting until the store has answered, and
+    /// signed-out is only reached when the answer is that there is nothing to restore.
+    /// </summary>
+    [Fact]
+    public async Task StartHoldsTheSessionStarting_UntilTheStoredTokenHasAnswered()
+    {
+        var gate = new TaskCompletionSource();
+        var (session, auth) = NewSession();
+        auth.Store = new GatedSecretStore(gate.Task, new StoredCredential("someone@terrafa.com", "refresh"));
+        Save(Mounts((Alpha, "timestamp", $"{Alpha}.level")));
+
+        var announced = new List<SessionPhase>();
+        session.Changed += () => announced.Add(session.Phase);
+
+        var start = session.StartAsync();
+        Assert.Equal(SessionPhase.Starting, session.Phase);
+
+        gate.SetResult();
+        await start;
+
+        // Restored, and never once signed out on the way — that middle announcement is what the
+        // shell used to redraw the whole app against, on demo data, before correcting itself.
+        Assert.Equal("someone@terrafa.com", auth.Identity);
+        Assert.Equal([SessionPhase.Starting, SessionPhase.Loading, SessionPhase.Ready], announced);
+    }
+
+    [Fact]
+    public async Task StartWithNothingStored_SettlesSignedOut()
+    {
+        var (session, _) = NewSession();
+
+        await session.StartAsync();
+
+        Assert.Equal(SessionPhase.SignedOut, session.Phase);
+        Assert.True(Workspace.Instance.IsMounted("SITE_ALPHA"));
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────
 
     /// <summary>Everything a transition is supposed to have established, as one comparable string.</summary>
@@ -258,6 +301,20 @@ public class SessionTests : IDisposable
 
         public Task PutAsync(string kind, string json, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    /// <summary>Holds the stored credential back until the gate opens, so a start can be caught mid-restore.</summary>
+    private sealed class GatedSecretStore(Task gate, StoredCredential credential) : ISecretStore
+    {
+        public async Task<StoredCredential?> LoadAsync()
+        {
+            await gate;
+            return credential;
+        }
+
+        public Task SaveAsync(StoredCredential value) => Task.CompletedTask;
+
+        public Task ClearAsync() => Task.CompletedTask;
     }
 
     private sealed class StubAuthenticator : IAuthenticator

@@ -16,8 +16,9 @@ internal static class Program
         AuthSession.Instance.Store = new LocalStorageSecretStore();
         UserStateSync.Store = new HttpUserStateStore();
         UserStateSync.Start();
+        // Start owns the restore, so the in-app loading screen covers it — the page's own boot
+        // splash hands straight over to it rather than uncovering a demo-seeded plate.
         Session.Instance.Start();
-        _ = AuthSession.Instance.TryRestoreAsync();
         return BuildAvaloniaApp().StartBrowserAppAsync("out");
     }
 

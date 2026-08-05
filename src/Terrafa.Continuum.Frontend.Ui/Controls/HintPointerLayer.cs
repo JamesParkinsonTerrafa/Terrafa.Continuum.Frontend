@@ -60,6 +60,9 @@ public class HintPointerLayer : Canvas
     private void ShowOnFirstVisit()
     {
         if (!PointerHintSettings.AutoShow) return;
+        // A screen the tour has still to reach says its piece through the tour card, and the tips
+        // go up when that card hands over — the two never come up on top of each other.
+        if (TourGuide.Owns(ScreenIndex)) return;
         if (HintCatalog.For(ScreenIndex).Count == 0) return;
         if (!PointerHintSettings.MarkVisited(ScreenIndex)) return;
         PointerHintSettings.SetEnabled(true);

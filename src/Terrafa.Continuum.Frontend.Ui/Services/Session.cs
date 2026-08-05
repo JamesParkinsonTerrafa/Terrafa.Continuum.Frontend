@@ -10,6 +10,13 @@ public enum SessionPhase
     /// <summary>Nobody is signed in. The screens read demo data.</summary>
     SignedOut,
 
+    /// <summary>
+    /// The app is starting and the stored token has not answered yet, so it is not known whether
+    /// there is an identity to be. Only <see cref="Session.Start"/> enters it, which is what keeps
+    /// a snapshot run — which never starts a session — out of it.
+    /// </summary>
+    Starting,
+
     /// <summary>An identity has arrived and its state is being established.</summary>
     Loading,
 
@@ -24,10 +31,14 @@ public enum SessionPhase
 /// What it means to be signed in as somebody, as one state machine with one owner.
 ///
 /// <code>
-///   SignedOut ──identity arrives──▶ Loading ──documents, then values──▶ Ready
-///       ▲                             │                                  │
-///       └────────identity goes────────┴──────────identity goes───────────┘
-///                                     └──▶ Failed
+///   Starting ──no stored token──▶ SignedOut
+///       │                             │
+///       └──restored──┐   ┌────identity arrives
+///                    ▼   ▼
+///                   Loading ──documents, then values──▶ Ready
+///                       │                                 │
+///                       ├──▶ Failed                        │
+///                       └───────identity goes──────────────┴──▶ SignedOut
 /// </code>
 ///
 /// <para>
@@ -45,7 +56,9 @@ public enum SessionPhase
 /// reset is <i>inside</i> the transition rather than racing beside it. That is also what makes
 /// startup order stop mattering: whether the stored token is restored before or after the app
 /// starts, the app converges on the same state — early, and <see cref="Start"/> reads the identity
-/// it finds; late, and <see cref="AuthSession.Changed"/> brings it through the same door.
+/// it finds; late, and <see cref="AuthSession.Changed"/> brings it through the same door. Start
+/// waits for the restore all the same, so the shell has one uninterrupted state to show a loading
+/// screen over rather than settling into signed-out and correcting itself a moment later.
 /// </para>
 ///
 /// <para>
@@ -97,12 +110,39 @@ public sealed class Session(AuthSession auth)
     /// app is assembled. A snapshot run deliberately never calls it, which is what keeps the
     /// captured screens on seeded state.
     /// </summary>
-    public void Start()
+    public void Start() => _ = StartAsync();
+
+    /// <summary>
+    /// <see cref="Start"/>, as the task it really is. Public so a test can await the start rather
+    /// than poll for it.
+    /// </summary>
+    public async Task StartAsync()
     {
         if (started) return;
         started = true;
+
+        // Entered here rather than left to the transition below, and entered synchronously: the
+        // shell reads this phase the moment it is built, and "starting" is the honest answer until
+        // the stored token has said whether there is an account to load.
+        Enter(SessionPhase.Starting, null);
         auth.Changed += OnIdentityChanged;
-        _ = TransitionAsync();
+
+        // Restoring the stored token is part of starting, not something that races beside it. Each
+        // head used to kick the restore off next to this call, so the app settled into signed-out,
+        // painted the demo seed, and then replaced it with the operator's own workspace a second
+        // later when the token landed. Waiting here is what lets one loading screen cover the lot.
+        try
+        {
+            await auth.TryRestoreAsync();
+        }
+        catch
+        {
+            // A restore that cannot be made is a signed-out app, and the transition below says so.
+        }
+
+        // A restored identity has already raised Changed, and the transition that event started
+        // owns the state now — running another here would reset what it is part way through loading.
+        if (auth.Identity is null) await TransitionAsync();
     }
 
     private void OnIdentityChanged() => _ = TransitionAsync();

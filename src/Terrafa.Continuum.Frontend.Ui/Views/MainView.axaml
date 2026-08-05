@@ -16,6 +16,9 @@
       <controls:SettingsFlyout x:Name="Settings" />
       <controls:ContactDialog x:Name="Contact" />
       <controls:OverlayDialog x:Name="ConnectDialog" />
+      <!-- Last, so it covers the dialogs too: nothing under it is worth showing until the
+           session has settled. -->
+      <controls:BootOverlay x:Name="Boot" />
     </Panel>
   </Panel>
 </UserControl>
