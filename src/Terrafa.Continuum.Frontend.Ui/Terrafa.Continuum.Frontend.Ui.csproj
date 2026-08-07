@@ -45,5 +45,6 @@
          desktop head, so it needs the internals it used to share an assembly with —
          granted here rather than widening a dozen members to public for one caller. -->
     <InternalsVisibleTo Include="Terrafa.Continuum.Frontend" />
+    <InternalsVisibleTo Include="Terrafa.Continuum.Frontend.Tests" />
   </ItemGroup>
 </Project>

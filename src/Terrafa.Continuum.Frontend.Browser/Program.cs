@@ -14,6 +14,7 @@ internal static class Program
     private static Task Main(string[] args)
     {
         AuthSession.Instance.Store = new LocalStorageSecretStore();
+        SandboxAgent.Instance.KeyStore = new LocalStorageSandboxKeyStore();
         UserStateSync.Store = new HttpUserStateStore();
         UserStateSync.Start();
         // Start owns the restore, so the in-app loading screen covers it — the page's own boot

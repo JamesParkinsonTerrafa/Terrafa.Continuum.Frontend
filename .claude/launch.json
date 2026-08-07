@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "browser-head",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Terrafa.Continuum.Frontend.Browser"],
+      "port": 8791
+    }
+  ]
+}

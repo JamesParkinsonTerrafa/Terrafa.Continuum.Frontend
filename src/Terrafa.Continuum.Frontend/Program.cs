@@ -28,6 +28,7 @@ internal static class Program
         // has answered, so the shell shows one loading screen instead of painting the demo seed and
         // then replacing it. Snapshot runs are excluded above, so screenshots stay on seeded state.
         AuthSession.Instance.Store = new KeychainSecretStore();
+        SandboxAgent.Instance.KeyStore = new KeychainSandboxKeyStore();
         UserStateSync.Store = new HttpUserStateStore();
         UserStateSync.Start();
         Session.Instance.Start();

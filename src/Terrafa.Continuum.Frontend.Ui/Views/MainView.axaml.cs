@@ -16,7 +16,7 @@ namespace Terrafa.Continuum.Frontend.Views;
 /// </summary>
 public partial class MainView : UserControl
 {
-    private const int ScreenCount = 7;
+    private const int ScreenCount = 8;
 
     /// <summary>
     /// The screen indices <see cref="CreateScreen"/> builds, named where anything outside this
@@ -161,7 +161,8 @@ public partial class MainView : UserControl
         3 => new DbTreeView(content, SwitchTo),
         4 => new SiteMapView(content, SwitchTo),
         5 => new DataSourcesView(SwitchTo, catalog),
-        _ => new CsvExportView(SwitchTo)
+        6 => new CsvExportView(SwitchTo),
+        _ => new SandboxView(SwitchTo)
     };
 
     /// <summary>

@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Terrafa.Continuum.Frontend.Controls"
+             x:Class="Terrafa.Continuum.Frontend.Views.SandboxView"
+             Width="1560" Height="980"
+             Background="{StaticResource BgDeepBrush}">
+  <Panel>
+    <DockPanel>
+      <controls:TerminalTopBar DockPanel.Dock="Top"
+                               CommandText="SBX"
+                               SubtitleText="AGENT SANDBOX" />
+
+      <controls:TerminalTabStrip x:Name="Tabs" DockPanel.Dock="Top" ActiveIndex="7"
+                                 HintText="an agent with a sandboxed container and read access to the data tree · build what the platform doesn't have · bring your own claude api key" />
+
+      <controls:TerminalStatusBar DockPanel.Dock="Bottom">
+        <controls:TerminalStatusBar.LeftContent>
+          <StackPanel Orientation="Horizontal" Spacing="18"
+                      IsVisible="{DynamicResource HintsVisible}">
+            <TextBlock Text="THE CONTAINER NEVER HOLDS A TERRAFA CREDENTIAL" FontSize="{DynamicResource FontSize10}"
+                       Foreground="{StaticResource TextFaintBrush}" />
+            <TextBlock Text="EVERY DATA READ COMES BACK THROUGH THIS APP" FontSize="{DynamicResource FontSize10}"
+                       Foreground="{StaticResource TextFaintBrush}" />
+          </StackPanel>
+        </controls:TerminalStatusBar.LeftContent>
+        <controls:TerminalStatusBar.RightContent>
+          <TextBlock x:Name="StatusRight" FontSize="{DynamicResource FontSize10}"
+                     Foreground="{StaticResource TextFaintBrush}" />
+        </controls:TerminalStatusBar.RightContent>
+      </controls:TerminalStatusBar>
+
+      <Border DockPanel.Dock="Right" Width="336"
+              Background="{StaticResource BgPanelBrush}"
+              BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+        <controls:PanelBox Title="AGENT" FooterHeight="54">
+          <controls:PanelBox.InnerContent>
+            <ScrollViewer>
+              <StackPanel x:Name="PanelBody" Margin="12,10" Spacing="10" />
+            </ScrollViewer>
+          </controls:PanelBox.InnerContent>
+          <controls:PanelBox.FooterContent>
+            <TextBlock Text="The agent runs in a sandboxed container on Anthropic's infrastructure. It reads the data tree by asking this app, which answers from your own session."
+                       FontSize="{DynamicResource FontSize10}" LineHeight="{DynamicResource LineHeight15}" TextWrapping="Wrap"
+                       MaxLines="3" TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource TextFaintBrush}"
+                       IsVisible="{DynamicResource HintsVisible}" />
+          </controls:PanelBox.FooterContent>
+        </controls:PanelBox>
+      </Border>
+
+      <Border Padding="14">
+        <DockPanel>
+          <controls:SquircleBorder DockPanel.Dock="Bottom" Classes="emboss-inner"
+                                   Padding="8" Margin="0,10,0,0">
+            <DockPanel>
+              <StackPanel x:Name="ComposerKeys" DockPanel.Dock="Right"
+                          Orientation="Horizontal" Spacing="8" Margin="8,0,0,0"
+                          VerticalAlignment="Center" />
+              <TextBox x:Name="Composer" Classes="field"
+                       Watermark="ask the agent to build something with the data tree…" />
+            </DockPanel>
+          </controls:SquircleBorder>
+          <controls:SquircleBorder Classes="emboss-inner" Padding="3">
+            <ScrollViewer x:Name="TranscriptScroll">
+              <StackPanel x:Name="TranscriptBody" Margin="14,12" Spacing="10" />
+            </ScrollViewer>
+          </controls:SquircleBorder>
+        </DockPanel>
+      </Border>
+    </DockPanel>
+  </Panel>
+</UserControl>

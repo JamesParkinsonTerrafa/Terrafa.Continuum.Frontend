@@ -12,10 +12,10 @@ public static class NavOrderSettings
 {
     /// <summary>
     /// Data flows left to right by default: DATA SOURCES, DATA TREE, TRANSFER FUNCTION, NETWORK,
-    /// DASHBOARD, MAP, CSV EXPORT — the values are screen indices in
+    /// DASHBOARD, MAP, CSV EXPORT, SANDBOX — the values are screen indices in
     /// TerminalTabStrip.NavigationLabels order.
     /// </summary>
-    public static readonly IReadOnlyList<int> Default = [5, 3, 1, 0, 2, 4, 6];
+    public static readonly IReadOnlyList<int> Default = [5, 3, 1, 0, 2, 4, 6, 7];
 
     private static int[] order = [.. Default];
 

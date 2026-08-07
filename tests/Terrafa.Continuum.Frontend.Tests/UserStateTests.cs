@@ -100,12 +100,12 @@ public class UserStateTests
     }
 
     [Fact]
-    public void Settings_SixEntryNavOrder_AppendsCsvExport()
+    public void Settings_SixEntryNavOrder_AppendsLaterScreens()
     {
         NavOrderSettings.Set([4, 2, 0, 1, 3, 5]);
 
         Assert.Equal(
-            new[] { 4, 2, 0, 1, 3, 5, 6 },
+            new[] { 4, 2, 0, 1, 3, 5, 6, 7 },
             NavOrderSettings.OrderFor(NavOrderSettings.Default.Count));
 
         NavOrderSettings.Set(NavOrderSettings.Default);
