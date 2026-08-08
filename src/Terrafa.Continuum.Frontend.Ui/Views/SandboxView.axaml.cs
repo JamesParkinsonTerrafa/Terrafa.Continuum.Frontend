@@ -146,6 +146,11 @@ public partial class SandboxView : UserControl
 
         PanelBody.Children.Add(SectionLabel("NO KEY?"));
         PanelBody.Children.Add(CommandKey("ASK TERRAFA FOR ONE", primary: false, ContactDialog.RequestShow));
+        PanelBody.Children.Add(NoteText(
+            "or skip the key entirely — a local claude desktop connector reads the same data tree " +
+            "read-only, no anthropic account needed beyond claude desktop itself. macos only for now; " +
+            "see docs/claude-desktop-mcp.md.",
+            Palette.TextFaint));
     }
 
     private void BuildConnected(SandboxAgent agent)

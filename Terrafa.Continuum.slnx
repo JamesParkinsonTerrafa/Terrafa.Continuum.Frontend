@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Terrafa.Continuum.Analytics/Terrafa.Continuum.Analytics.csproj" />
     <Project Path="src/Terrafa.Continuum.Frontend/Terrafa.Continuum.Frontend.csproj" />
+    <Project Path="src/Terrafa.Continuum.Frontend.McpServer/Terrafa.Continuum.Frontend.McpServer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Terrafa.Continuum.Analytics.Tests/Terrafa.Continuum.Analytics.Tests.csproj" />

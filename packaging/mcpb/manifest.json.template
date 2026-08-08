@@ -1,0 +1,23 @@
+{
+  "manifest_version": "0.3",
+  "name": "terrafa-continuum-sandbox",
+  "display_name": "Terrafa Continuum — Data Tree",
+  "version": "__VERSION__",
+  "description": "Read-only access to the signed-in operator's Terrafa Continuum data tree — datasets, schemas, and recent readings.",
+  "long_description": "Lets Claude read the same data tree the Terrafa Continuum desktop app shows: list datasets, fetch a dataset's schema (objects and measure leaves with full paths), and read recent readings for specific leaves, ordered by the dataset's axis column. Answers come from your own signed-in Continuum session — this extension only restores it from the same keychain entry the desktop app already writes, and never signs in on its own. If you are not signed into Continuum, the tool says so rather than guessing.",
+  "author": {
+    "name": "Terrafa Limited"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/terrafa-continuum-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/terrafa-continuum-mcp",
+      "args": [],
+      "env": {}
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin"]
+  }
+}

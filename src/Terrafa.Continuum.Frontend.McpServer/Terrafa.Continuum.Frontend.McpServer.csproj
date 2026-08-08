@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- A local MCP server: the key-free on-ramp into the sandbox. Claude Desktop spawns this over
+       stdio and calls its one tool to read the data tree — no Anthropic API key involved, since
+       Desktop authenticates with the operator's own Claude account. It shares the operator's
+       Terrafa session by reading the same keychain entry the desktop head writes, so "signed into
+       Continuum" is the only sign-in this needs. See SandboxView for the bring-your-own-key
+       sibling, which runs the agent in an Anthropic-hosted container instead of this process. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Terrafa.Continuum.Frontend</RootNamespace>
+    <AssemblyName>terrafa-continuum-mcp</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- For IDatasetCatalog / HttpDatasetCatalog / AuthSession / CognitoAuthenticator / Models and
+         SandboxDataTool — the same read path the in-app sandbox uses. This pulls in Avalonia as a
+         library dependency, but nothing here touches a window, a dispatcher loop, or a platform
+         backend: AuthSession's own event marshalling degrades to a no-op subscriber off the UI
+         thread, which this process never has, and every call site below awaits its result
+         directly rather than relying on that event firing. -->
+    <ProjectReference Include="../Terrafa.Continuum.Frontend.Ui/Terrafa.Continuum.Frontend.Ui.csproj" />
+  </ItemGroup>
+</Project>
